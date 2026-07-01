@@ -1,0 +1,13 @@
+build/
+build-msvc/
+cmake-build-*/
+.vs/
+*.user
+*.db
+*.db-wal
+*.db-shm
+*.log
+aqtinstall.log
+opentree.log
+myeasylog.log
+graphify-out/

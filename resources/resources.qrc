@@ -1,0 +1,8 @@
+<RCC>
+    <qresource prefix="/sql">
+        <file>sql/schema.sql</file>
+    </qresource>
+    <qresource prefix="/js">
+        <file>vis-network.min.js</file>
+    </qresource>
+</RCC>

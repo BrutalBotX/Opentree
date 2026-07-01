@@ -1,0 +1,79 @@
+#pragma once
+
+#include <QObject>
+
+#include <QMap>
+
+#include "domain/ScanTypes.h"
+#include "ui/ThemeManager.h"
+
+namespace opentree {
+
+class ConfigService;
+class DatabaseManager;
+class EverythingClient;
+class FileRepository;
+class FolderRepository;
+class FolderTreeModel;
+class MainWindow;
+class ScanService;
+class SnapshotService;
+
+class AppController : public QObject {
+    Q_OBJECT
+
+public:
+    explicit AppController(QObject *parent = nullptr);
+    ~AppController() override;
+
+    void attachWindow(MainWindow *window);
+    void openPath(const QString &path);
+
+private:
+    void handleScanRequest();
+    void handleCreateSnapshotRequest();
+    void handleCompareSnapshotMenuRequest();
+    void handleScanFinished();
+    void handleScanFailed(const QString &message);
+    void handleEntryActivated(const TreeEntry &entry);
+    void handleChartEntryActivated(const TreeEntry &entry);
+    void handleChartOpenInGraphRequested(const TreeEntry &entry);
+    void handleGraphEntryActivated(const TreeEntry &entry);
+    void handleGraphEntryOpened(const TreeEntry &entry);
+    void handleGraphPathEntered(const QString &path);
+    void handleOthersThresholdRequest();
+    void handleThemeSelected(const QString &themeId);
+    void reloadThemes();
+    void applyCurrentTheme();
+    void applyViewMetric(ViewMetric metric);
+    void handleNavigatePath(const QString &path, bool showGraphTab);
+    RootSession *findRootSessionForPath(const QString &path);
+    const RootSession *findRootSessionForPath(const QString &path) const;
+    void activateRootSession(const QString &rootPath, bool showGraphTab);
+    void focusFolderPath(const QString &path, bool showGraphTab);
+    const TreeEntry *findTreeEntry(const QString &path) const;
+    void handleLocateEverythingRequest();
+    void handleSnapshotSettingsRequest();
+    void handleCompareSnapshotRequest(int snapshotId);
+    void refreshTimeline();
+
+    QString m_activeFolderPath;
+    QString m_lastRequestedRootPath;
+    ScanResult m_currentResult;
+    QVector<RootSession> m_rootSessions;
+    double m_otherThresholdPercent = 1.0;
+    ViewMetric m_viewMetric = ViewMetric::Size;
+    QMap<QString, ThemeDefinition> m_themes;
+
+    MainWindow *m_window = nullptr;
+    ConfigService *m_configService;
+    DatabaseManager *m_databaseManager;
+    EverythingClient *m_everythingClient;
+    ScanService *m_scanService;
+    SnapshotService *m_snapshotService = nullptr;
+    FolderRepository *m_folderRepository = nullptr;
+    FileRepository *m_fileRepository = nullptr;
+    FolderTreeModel *m_treeModel;
+};
+
+}
