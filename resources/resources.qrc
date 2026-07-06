@@ -1,4 +1,7 @@
 <RCC>
+    <qresource prefix="/icons">
+        <file alias="appicon.ico">../appicon.ico</file>
+    </qresource>
     <qresource prefix="/sql">
         <file>sql/schema.sql</file>
     </qresource>

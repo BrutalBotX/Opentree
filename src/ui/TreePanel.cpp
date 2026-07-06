@@ -217,7 +217,20 @@ void TreePanel::selectEntryPath(const QString &path)
     }
 
     m_treeView->setCurrentIndex(proxyIndex);
+    m_treeView->expand(proxyIndex);
     m_treeView->scrollTo(proxyIndex, QAbstractItemView::PositionAtCenter);
+}
+
+void TreePanel::expandAll()
+{
+    m_treeView->expandAll();
+    emit visiblePathsChanged(visibleFolderPaths());
+}
+
+void TreePanel::collapseAll()
+{
+    m_treeView->collapseAll();
+    emit visiblePathsChanged(visibleFolderPaths());
 }
 
 QStringList TreePanel::visibleFolderPaths() const

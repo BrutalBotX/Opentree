@@ -32,6 +32,7 @@ public:
 
     std::function<void(const QString &)> onActivate;
     std::function<void(const QString &)> onOpen;
+    std::function<void(const QString &, int, int)> onContextMenu;
 
     Q_INVOKABLE void activateNode(const QString &path)
     {
@@ -44,6 +45,13 @@ public:
     {
         if (onOpen) {
             onOpen(path);
+        }
+    }
+
+    Q_INVOKABLE void contextMenuNode(const QString &path, int screenX, int screenY)
+    {
+        if (onContextMenu) {
+            onContextMenu(path, screenX, screenY);
         }
     }
 };
@@ -71,6 +79,7 @@ signals:
     void entryActivated(const TreeEntry &entry);
     void entryOpened(const TreeEntry &entry);
     void pathEntered(const QString &path);
+    void viewInTabRequested(const TreeEntry &entry, const QString &tabName);
 
 public slots:
     Q_INVOKABLE
@@ -82,6 +91,7 @@ private slots:
     void handleAddressSubmitted();
 
 private:
+    void showNodeContextMenu(const QString &nodeId, int screenX, int screenY);
     const TreeEntry *findEntryByPath(const QString &path) const;
     QString buildEmptyHtml() const;
     QString buildHtml() const;
@@ -90,8 +100,6 @@ private:
 
     QLineEdit *m_addressBar;
     QLabel *m_summaryLabel;
-    QFileSystemModel *m_pathModel;
-    QCompleter *m_pathCompleter;
 
 #if defined(OPENTREE_HAVE_WEBENGINE)
     GraphBridge *m_bridge;

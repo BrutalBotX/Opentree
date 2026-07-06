@@ -23,6 +23,8 @@ public:
     void setScanResult(const ScanResult &result);
     void setRootSessions(const QVector<RootSession> &sessions);
     void selectEntryPath(const QString &path);
+    void expandAll();
+    void collapseAll();
     QStringList visibleFolderPaths() const;
 
 signals:

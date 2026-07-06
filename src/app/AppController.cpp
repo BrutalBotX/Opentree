@@ -2,12 +2,16 @@
 
 #include <QCoreApplication>
 #include <QApplication>
+#include <QClipboard>
 #include <QDir>
+#include <QDesktopServices>
 #include <QFileDialog>
 #include <QFileInfo>
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QProcess>
+#include <QGuiApplication>
+#include <QUrl>
 
 #include "app/MainWindow.h"
 #include "data/DatabaseManager.h"
@@ -73,7 +77,18 @@ void AppController::attachWindow(MainWindow *window)
 {
     m_window = window;
     m_window->treePanel()->setModel(m_treeModel);
-    m_window->setStatusText(QStringLiteral("Config: %1").arg(m_configService->configPath()));
+    
+    if (!m_snapshotService) {
+        m_window->setStatusText(QStringLiteral("WARNING: Database initialization failed - snapshots disabled"));
+        QMessageBox::warning(
+            m_window,
+            "Database Error",
+            QStringLiteral("Failed to initialize database:\n%1\n\nSnapshot features will be unavailable this session.")
+                .arg(m_databaseManager->lastError()));
+    } else {
+        m_window->setStatusText(QStringLiteral("Config: %1").arg(m_configService->configPath()));
+    }
+    
     m_window->timelinePanel()->setCompareResult({}, {}, {});
 
     connect(m_window, &MainWindow::scanRequested, this, [this]() {
@@ -94,6 +109,17 @@ void AppController::attachWindow(MainWindow *window)
     connect(m_window, &MainWindow::othersThresholdRequested, this, [this]() {
         handleOthersThresholdRequest();
     });
+    connect(m_window, &MainWindow::rescanCurrentRootRequested, this, &AppController::handleRescanCurrentRootRequest);
+    connect(m_window, &MainWindow::clearAllRootsRequested, this, &AppController::handleClearAllRootsRequest);
+    connect(m_window, &MainWindow::recentRootRequested, this, &AppController::handleRecentRootRequested);
+    connect(m_window, &MainWindow::openCurrentInExplorerRequested, this, &AppController::handleOpenCurrentInExplorerRequest);
+    connect(m_window, &MainWindow::openTerminalHereRequested, this, &AppController::handleOpenTerminalHereRequest);
+    connect(m_window, &MainWindow::copyCurrentPathRequested, this, &AppController::handleCopyCurrentPathRequest);
+    connect(m_window, &MainWindow::openConfigFolderRequested, this, &AppController::handleOpenConfigFolderRequest);
+    connect(m_window, &MainWindow::openLogFileRequested, this, &AppController::handleOpenLogFileRequest);
+    connect(m_window, &MainWindow::expandAllRequested, this, &AppController::handleExpandAllRequest);
+    connect(m_window, &MainWindow::collapseAllRequested, this, &AppController::handleCollapseAllRequest);
+    connect(m_window, &MainWindow::treemapDepthChanged, this, &AppController::handleTreemapDepthChanged);
     connect(m_window, &MainWindow::themeSelected, this, &AppController::handleThemeSelected);
     connect(m_window, &MainWindow::reloadThemesRequested, this, [this]() {
         reloadThemes();
@@ -101,6 +127,9 @@ void AppController::attachWindow(MainWindow *window)
     connect(m_window->treePanel(), &TreePanel::entryActivated, this, &AppController::handleEntryActivated);
     connect(m_window->chartPanel(), &ChartPanel::entryActivated, this, &AppController::handleChartEntryActivated);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenInGraphRequested, this, &AppController::handleChartOpenInGraphRequested);
+    connect(m_window->chartPanel(), &ChartPanel::entryOpenRequested, this, &AppController::handleChartOpenRequested);
+    connect(m_window->chartPanel(), &ChartPanel::entryShowInExplorerRequested, this, &AppController::handleChartShowInExplorerRequested);
+    connect(m_window->chartPanel(), &ChartPanel::entryCopyPathRequested, this, &AppController::handleChartCopyPathRequested);
     connect(m_window->chartPanel(), &ChartPanel::pathEntered, this, [this](const QString &path) {
         handleNavigatePath(path, false);
     });
@@ -127,6 +156,7 @@ void AppController::attachWindow(MainWindow *window)
             graph->setGraphRootPath(m_activeFolderPath);
         }
     });
+    connect(m_window, &MainWindow::navigateToEntryRequested, this, &AppController::handleNavigateToEntryRequested);
     connect(m_window->viewBySizeAction(), &QAction::triggered, this, [this]() {
         applyViewMetric(ViewMetric::Size);
     });
@@ -142,6 +172,7 @@ void AppController::attachWindow(MainWindow *window)
     reloadThemes();
     applyCurrentTheme();
     applyViewMetric(m_viewMetric);
+    refreshRecentRoots();
     refreshTimeline();
 }
 
@@ -157,6 +188,7 @@ void AppController::handleScanRequest()
     }
 
     m_lastRequestedRootPath = folder;
+    refreshRecentRoots();
     m_window->timelinePanel()->setCurrentRootPath(folder);
 
     m_window->setBusy(true);
@@ -172,6 +204,24 @@ void AppController::openPath(const QString &path)
     }
 
     activateRootSession(path, false);
+}
+
+void AppController::refreshRecentRoots()
+{
+    if (!m_window) {
+        return;
+    }
+
+    QStringList roots = m_configService->recentRoots();
+    if (!m_lastRequestedRootPath.isEmpty()) {
+        roots.removeAll(m_lastRequestedRootPath);
+        roots.prepend(m_lastRequestedRootPath);
+    }
+    while (roots.size() > 10) {
+        roots.removeLast();
+    }
+    m_configService->setRecentRoots(roots);
+    m_window->setRecentRoots(roots);
 }
 
 void AppController::activateRootSession(const QString &rootPath, bool showGraphTab)
@@ -352,8 +402,8 @@ void AppController::handleScanFinished()
     if (const TreeEntry *rootEntry = findTreeEntry(m_activeFolderPath)) {
         m_window->detailsPanel()->setEntry(*rootEntry);
     }
-    if (m_window->existingGraphPanel() || m_window->currentTabIndex() == 0) {
-        GraphPanel *graph = m_window->graphPanel();
+    if (m_window->existingGraphPanel()) {
+        GraphPanel *graph = m_window->existingGraphPanel();
         graph->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
         graph->setOtherThresholdPercent(m_otherThresholdPercent);
         graph->setGraphData(result.rootPath, result.treeEntries, {});
@@ -484,6 +534,33 @@ void AppController::handleChartEntryActivated(const TreeEntry &entry)
     }
 }
 
+void AppController::handleNavigateToEntryRequested(const TreeEntry &entry, const QString &targetTab)
+{
+    auto *session = findRootSessionForPath(entry.path);
+    const QString rootPath = session ? session->rootPath : entry.path;
+    if (entry.kind == TreeEntryKind::Folder) {
+        activateRootSession(rootPath, false);
+        focusFolderPath(entry.path, false);
+    }
+    if (!m_window) {
+        return;
+    }
+    if (targetTab == QStringLiteral("pie")) {
+        m_window->showChartTab();
+        m_window->chartPanel()->setActiveViewMode(ChartPanel::ViewMode::Pie);
+    } else if (targetTab == QStringLiteral("bars")) {
+        m_window->showChartTab();
+        m_window->chartPanel()->setActiveViewMode(ChartPanel::ViewMode::Bars);
+    } else if (targetTab == QStringLiteral("treemap")) {
+        m_window->showChartTab();
+        m_window->chartPanel()->setActiveViewMode(ChartPanel::ViewMode::Treemap);
+    } else if (targetTab == QStringLiteral("extensions")) {
+        m_window->showExtensionsTab();
+    } else if (targetTab == QStringLiteral("heatmap")) {
+        m_window->showHeatmapTab();
+    }
+}
+
 void AppController::handleChartOpenInGraphRequested(const TreeEntry &entry)
 {
     if (const RootSession *session = findRootSessionForPath(entry.path)) {
@@ -510,6 +587,24 @@ void AppController::handleChartOpenInGraphRequested(const TreeEntry &entry)
     if (m_window->existingGraphPanel()) {
         m_window->existingGraphPanel()->setSelectedPath(entry.path);
     }
+}
+
+void AppController::handleChartOpenRequested(const TreeEntry &entry)
+{
+    QDesktopServices::openUrl(QUrl::fromLocalFile(entry.path));
+}
+
+void AppController::handleChartShowInExplorerRequested(const TreeEntry &entry)
+{
+    const QString argument = QFileInfo(entry.path).isDir()
+        ? entry.path
+        : QStringLiteral("/select,") + QDir::toNativeSeparators(entry.path);
+    QProcess::startDetached("explorer.exe", {argument});
+}
+
+void AppController::handleChartCopyPathRequested(const TreeEntry &entry)
+{
+    QGuiApplication::clipboard()->setText(entry.path);
 }
 
 void AppController::handleOthersThresholdRequest()
@@ -539,6 +634,88 @@ void AppController::handleOthersThresholdRequest()
         m_window->existingGraphPanel()->setOtherThresholdPercent(m_otherThresholdPercent);
     }
     m_window->setStatusText(QStringLiteral("Others threshold set to %1%").arg(QString::number(m_otherThresholdPercent, 'f', 1)));
+}
+
+void AppController::handleRescanCurrentRootRequest()
+{
+    if (!m_currentResult.rootPath.isEmpty()) {
+        openPath(m_currentResult.rootPath);
+    }
+}
+
+void AppController::handleClearAllRootsRequest()
+{
+    m_rootSessions.clear();
+    m_currentResult = {};
+    m_activeFolderPath.clear();
+    if (m_window) {
+        m_window->treePanel()->setRootSessions({});
+        m_window->detailsPanel()->clear();
+        m_window->chartPanel()->setScanResult({});
+        m_window->extensionsPanel()->setScanResult({});
+        m_window->heatmapPanel()->setHeatmapData({}, {});
+        m_window->timelinePanel()->setCurrentRootPath(QString());
+        m_window->timelinePanel()->setCompareResult({}, {}, {});
+        m_window->setStatusText("Cleared all roots");
+    }
+}
+
+void AppController::handleRecentRootRequested(const QString &path)
+{
+    openPath(path);
+}
+
+void AppController::handleOpenCurrentInExplorerRequest()
+{
+    if (!m_activeFolderPath.isEmpty()) {
+        QDesktopServices::openUrl(QUrl::fromLocalFile(m_activeFolderPath));
+    }
+}
+
+void AppController::handleOpenTerminalHereRequest()
+{
+    if (!m_activeFolderPath.isEmpty()) {
+        QProcess::startDetached("cmd.exe", {QStringLiteral("/K"), QStringLiteral("cd /d %1").arg(m_activeFolderPath)});
+    }
+}
+
+void AppController::handleCopyCurrentPathRequest()
+{
+    if (!m_activeFolderPath.isEmpty()) {
+        QGuiApplication::clipboard()->setText(m_activeFolderPath);
+    }
+}
+
+void AppController::handleOpenConfigFolderRequest()
+{
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QFileInfo(m_configService->configPath()).absolutePath()));
+}
+
+void AppController::handleOpenLogFileRequest()
+{
+    QDesktopServices::openUrl(QUrl::fromLocalFile(QDir::current().absoluteFilePath("opentree.log")));
+}
+
+void AppController::handleExpandAllRequest()
+{
+    if (m_window && m_window->treePanel()) {
+        m_window->treePanel()->expandAll();
+    }
+}
+
+void AppController::handleCollapseAllRequest()
+{
+    if (m_window && m_window->treePanel()) {
+        m_window->treePanel()->collapseAll();
+    }
+}
+
+void AppController::handleTreemapDepthChanged(int depth)
+{
+    if (m_window && m_window->chartPanel()) {
+        m_window->chartPanel()->setTreemapDepth(depth);
+        m_window->setStatusText(QStringLiteral("Treemap depth: %1").arg(depth));
+    }
 }
 
 void AppController::handleThemeSelected(const QString &themeId)

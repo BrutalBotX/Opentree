@@ -71,7 +71,11 @@ protected:
     void mousePressEvent(QMouseEvent *event) override
     {
         if (event->button() == Qt::LeftButton && m_owner) {
-            if (const auto *slice = m_owner->sliceAt(m_mode, event->pos(), rect()); slice && slice->activatable) {
+            if (m_mode == ChartPanel::ViewMode::Treemap) {
+                if (const auto *node = m_owner->treemapNodeAt(event->pos(), m_owner->m_treemapNodes); node && node->activatable) {
+                    emit m_owner->entryActivated(node->entry);
+                }
+            } else if (const auto *slice = m_owner->sliceAt(m_mode, event->pos(), rect()); slice && slice->activatable) {
                 emit m_owner->entryActivated(slice->entry);
             }
         }
@@ -81,7 +85,11 @@ protected:
     void mouseDoubleClickEvent(QMouseEvent *event) override
     {
         if (event->button() == Qt::LeftButton && m_owner) {
-            if (const auto *slice = m_owner->sliceAt(m_mode, event->pos(), rect()); slice && slice->activatable) {
+            if (m_mode == ChartPanel::ViewMode::Treemap) {
+                if (const auto *node = m_owner->treemapNodeAt(event->pos(), m_owner->m_treemapNodes); node && node->activatable) {
+                    emit m_owner->entryActivated(node->entry);
+                }
+            } else if (const auto *slice = m_owner->sliceAt(m_mode, event->pos(), rect()); slice && slice->activatable) {
                 emit m_owner->entryActivated(slice->entry);
             }
         }
@@ -95,6 +103,29 @@ protected:
             return;
         }
 
+        if (m_mode == ChartPanel::ViewMode::Treemap) {
+            const auto *node = m_owner->treemapNodeAt(event->pos(), m_owner->m_treemapNodes);
+            if (!node || !node->activatable) {
+                QWidget::contextMenuEvent(event);
+                return;
+            }
+
+            QMenu menu(this);
+            QAction *openAction = menu.addAction("Open");
+            QAction *copyPathAction = menu.addAction("Copy Path");
+            menu.addSeparator();
+            QAction *openGraphAction = menu.addAction("Open in Graph View");
+            QAction *selectedAction = menu.exec(event->globalPos());
+            if (selectedAction == openAction) {
+                emit m_owner->entryOpenRequested(node->entry);
+            } else if (selectedAction == copyPathAction) {
+                emit m_owner->entryCopyPathRequested(node->entry);
+            } else if (selectedAction == openGraphAction) {
+                emit m_owner->entryOpenInGraphRequested(node->entry);
+            }
+            return;
+        }
+
         const auto *slice = m_owner->sliceAt(m_mode, event->pos(), rect());
         if (!slice || !slice->activatable) {
             QWidget::contextMenuEvent(event);
@@ -102,9 +133,16 @@ protected:
         }
 
         QMenu menu(this);
+        QAction *openAction = menu.addAction("Open");
+        QAction *copyPathAction = menu.addAction("Copy Path");
+        menu.addSeparator();
         QAction *openGraphAction = menu.addAction("Open in Graph View");
         QAction *selectedAction = menu.exec(event->globalPos());
-        if (selectedAction == openGraphAction) {
+        if (selectedAction == openAction) {
+            emit m_owner->entryOpenRequested(slice->entry);
+        } else if (selectedAction == copyPathAction) {
+            emit m_owner->entryCopyPathRequested(slice->entry);
+        } else if (selectedAction == openGraphAction) {
             emit m_owner->entryOpenInGraphRequested(slice->entry);
         }
     }
@@ -112,6 +150,21 @@ protected:
     void mouseMoveEvent(QMouseEvent *event) override
     {
         if (!m_owner) {
+            QWidget::mouseMoveEvent(event);
+            return;
+        }
+
+        if (m_mode == ChartPanel::ViewMode::Treemap) {
+            if (const auto *node = m_owner->treemapNodeAt(event->pos(), m_owner->m_treemapNodes)) {
+                const double percent = m_owner->m_activeFolderSize <= 0 ? 0.0 : (100.0 * double(node->size) / double(m_owner->m_activeFolderSize));
+                const QString metricText = m_owner->m_viewMetric == ViewMetric::Files
+                    ? QStringLiteral("Files: %1").arg(node->entry.kind == TreeEntryKind::Folder ? node->entry.fileCount : 1)
+                    : QStringLiteral("Size: %1").arg(SizeFormatter::formatBytes(node->size));
+                QToolTip::showText(mapToGlobal(event->pos()), QStringLiteral("%1\n%2\nPercent: %3%")
+                    .arg(node->label, metricText, QString::number(percent, 'f', 1)), this);
+            } else {
+                QToolTip::hideText();
+            }
             QWidget::mouseMoveEvent(event);
             return;
         }
@@ -143,8 +196,6 @@ ChartPanel::ChartPanel(QWidget *parent)
     , m_pieView(new ::opentree::ChartCanvas(ViewMode::Pie, this))
     , m_barView(new ::opentree::ChartCanvas(ViewMode::Bars, this))
     , m_treemapView(new ::opentree::ChartCanvas(ViewMode::Treemap, this))
-    , m_pathModel(new QFileSystemModel(this))
-    , m_pathCompleter(new QCompleter(m_pathModel, this))
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 12, 12, 12);
@@ -152,11 +203,6 @@ ChartPanel::ChartPanel(QWidget *parent)
     m_summaryLabel->setWordWrap(true);
     layout->addWidget(m_summaryLabel);
     m_addressBar->setPlaceholderText("Enter folder path...");
-    m_pathModel->setFilter(QDir::AllDirs | QDir::Drives | QDir::NoDotAndDotDot);
-    m_pathModel->setRootPath(QString());
-    m_pathCompleter->setCaseSensitivity(Qt::CaseInsensitive);
-    m_pathCompleter->setCompletionMode(QCompleter::PopupCompletion);
-    m_addressBar->setCompleter(m_pathCompleter);
     layout->addWidget(m_addressBar);
     m_subtabs->addTab(m_pieView, "Pie");
     m_subtabs->addTab(m_barView, "Bars");
@@ -207,6 +253,28 @@ void ChartPanel::setViewMetric(ViewMetric metric)
     m_pieView->update();
     m_barView->update();
     m_treemapView->update();
+}
+
+void ChartPanel::setTreemapDepth(int depth)
+{
+    const int clamped = std::clamp(depth, 1, 3);
+    if (m_treemapDepth == clamped) {
+        return;
+    }
+
+    m_treemapDepth = clamped;
+    rebuild();
+}
+
+void ChartPanel::setActiveViewMode(ViewMode mode)
+{
+    int index = 0;
+    switch (mode) {
+    case ViewMode::Pie: index = 0; break;
+    case ViewMode::Bars: index = 1; break;
+    case ViewMode::Treemap: index = 2; break;
+    }
+    m_subtabs->setCurrentIndex(index);
 }
 
 void ChartPanel::rebuild()
@@ -345,9 +413,12 @@ void ChartPanel::rebuild()
         currentAngle += slice.spanAngle;
     }
 
-    m_summaryLabel->setText(QStringLiteral("Charts | Total: %1 | Other cutoff: %2%")
+    m_treemapNodes = buildTreemapNodes(m_activeFolderPath, m_treemapDepth, 0);
+
+    m_summaryLabel->setText(QStringLiteral("Charts | Total: %1 | Other cutoff: %2% | Treemap depth: %3")
                                 .arg(SizeFormatter::formatBytes(activeEntry.size))
-                                .arg(QString::number(m_otherThresholdPercent, 'f', 1)));
+                                .arg(QString::number(m_otherThresholdPercent, 'f', 1))
+                                .arg(m_treemapDepth));
     if (m_addressBar->text().compare(activeEntry.path, Qt::CaseInsensitive) != 0) {
         m_addressBar->setText(activeEntry.path);
     }
@@ -393,21 +464,10 @@ void ChartPanel::paintView(ViewMode mode, QPainter &painter, const QRect &rect) 
 
 void ChartPanel::paintPie(QPainter &painter, const QRect &rect) const
 {
-    const QRectF area = QRectF(rect).adjusted(20, 18, -20, -18);
-    const double legendWidth = std::min(280.0, area.width() * 0.40);
-    const QRectF pieArea(area.left(), area.top(), area.width() - legendWidth - 16.0, area.height());
-    const QRectF legendArea(pieArea.right() + 16.0, area.top(), legendWidth, area.height());
-    const double pieSide = std::max(160.0, std::min(pieArea.width() - 12.0, pieArea.height() - 12.0));
-    const QRectF pie(pieArea.center().x() - (pieSide / 2.0), pieArea.center().y() - (pieSide / 2.0), pieSide, pieSide);
-
-    painter.setPen(QPen(QColor(70, 80, 100), 1));
-    painter.setBrush(Qt::NoBrush);
-    painter.drawEllipse(pie);
-    for (const ChartSlice &slice : m_slices) {
-        painter.setBrush(slice.color);
-        painter.setPen(Qt::NoPen);
-        painter.drawPie(pie, int(-slice.startAngle * 16.0), int(-slice.spanAngle * 16.0));
-    }
+    const QRectF area = QRectF(rect).adjusted(28, 24, -28, -24);
+    const double pieSide = std::max(160.0, std::min(area.width(), area.height()) - 50.0);
+    const QRectF pie(area.center().x() - (pieSide / 2.0), area.center().y() - (pieSide / 2.0), pieSide, pieSide);
+    const double pieRadius = pie.width() / 2.0;
 
     for (ChartSlice &slice : const_cast<QVector<ChartSlice> &>(m_slices)) {
         slice.pieLabelVisible = false;
@@ -416,32 +476,81 @@ void ChartPanel::paintPie(QPainter &painter, const QRect &rect) const
         slice.pieLabelRect = {};
     }
 
-    painter.setPen(QPen(palette().mid().color(), 1));
+    painter.setPen(QPen(QColor(55, 65, 85), 1));
     painter.setBrush(Qt::NoBrush);
-    painter.drawRect(legendArea);
-
-    const double rowHeight = 28.0;
-    const int maxRows = std::max(1, int((legendArea.height() - 12.0) / rowHeight));
-    const int visibleCount = std::min(maxRows, int(m_slices.size()));
-    for (int index = 0; index < visibleCount; ++index) {
-        ChartSlice &slice = const_cast<QVector<ChartSlice> &>(m_slices)[index];
-        const double top = legendArea.top() + 8.0 + (index * rowHeight);
-        const QRectF rowRect(legendArea.left() + 6.0, top, legendArea.width() - 12.0, rowHeight - 4.0);
-        const QRectF swatchRect(rowRect.left() + 6.0, rowRect.top() + 6.0, 14.0, 14.0);
-        const QRectF textRect(swatchRect.right() + 10.0, rowRect.top(), rowRect.width() - 34.0, rowRect.height());
-
-        slice.pieLabelVisible = true;
-        slice.pieLabelRect = rowRect;
-
+    painter.drawEllipse(pie);
+    for (const ChartSlice &slice : m_slices) {
         painter.setBrush(slice.color);
         painter.setPen(Qt::NoPen);
-        painter.drawRect(swatchRect);
-        painter.setPen(palette().text().color());
-        painter.drawText(textRect, Qt::AlignLeft | Qt::AlignVCenter,
-            QStringLiteral("%1 (%2%)")
-                .arg(slice.label,
-                     QString::number(m_activeFolderSize <= 0 ? 0.0 : (100.0 * double(slice.size) / double(m_activeFolderSize)), 'f', 1)));
+        painter.drawPie(pie, int(-slice.startAngle * 16.0), int(-slice.spanAngle * 16.0));
     }
+
+    const int showCount = std::min(int(m_slices.size()), 15);
+    const QRectF clipRect = QRectF(rect).adjusted(8, 8, -8, -8);
+    QFontMetrics fm(painter.font());
+
+    struct PieLabel {
+        int index; QPointF anchor; double cosA, sinA; QString text; double tw;
+    };
+    QVector<PieLabel> leftLabels, rightLabels;
+
+    for (int i = 0; i < showCount; ++i) {
+        const ChartSlice &slice = m_slices[i];
+        const double midRad = (slice.startAngle + slice.spanAngle / 2.0) * M_PI / 180.0;
+        const double c = cos(midRad), s = sin(midRad);
+        const double pct = m_activeFolderSize <= 0 ? 0.0 : (100.0 * double(slice.size) / double(m_activeFolderSize));
+        const QString t = QStringLiteral("%1 (%2%)").arg(slice.label, QString::number(pct, 'f', 1));
+        const double tw = fm.horizontalAdvance(t);
+        const QPointF a(pie.center().x() + pieRadius * c, pie.center().y() + pieRadius * s);
+        (c >= 0 ? rightLabels : leftLabels).append({i, a, c, s, t, tw});
+    }
+
+    // Sort each side by anchor Y
+    auto sortByY = [](QVector<PieLabel> &v) { std::sort(v.begin(), v.end(), [](auto &a, auto &b) { return a.anchor.y() < b.anchor.y(); }); };
+    sortByY(leftLabels);
+    sortByY(rightLabels);
+
+    const double labelH = 20.0;
+    const double topY = clipRect.top() + 4.0;
+    const double botY = clipRect.bottom() - 4.0;
+    const double availY = botY - topY;
+    const double rightEdge = clipRect.right() - 8.0;
+    const double leftEdge = clipRect.left() + 8.0;
+
+    auto placeGroup = [&](QVector<PieLabel> &group, bool rightSide) {
+        if (group.isEmpty()) return;
+        const double spacing = std::min(availY / static_cast<double>(std::max<int>(1, static_cast<int>(group.size()))), labelH + 4.0);
+        const double startY = topY + (availY - spacing * (group.size() - 1)) / 2.0;
+        for (int idx = 0; idx < group.size(); ++idx) {
+            auto &info = group[idx];
+            const double labelY = startY + idx * spacing;
+            const double bendX = info.anchor.x() + 18.0 * info.cosA;
+
+            double lx;
+            if (rightSide) {
+                lx = qMax(bendX + 10.0, pie.right() + 24.0);
+                lx = qMin(lx, rightEdge - info.tw - 4.0);
+            } else {
+                lx = qMin(bendX - info.tw - 14.0, pie.left() - info.tw - 24.0);
+                lx = qMax(lx, leftEdge);
+            }
+            const QRectF labelBox(lx, labelY - labelH / 2.0, info.tw + 4.0, labelH);
+
+            const ChartSlice &slice = m_slices[info.index];
+            painter.setPen(QPen(slice.color, 1.2));
+            painter.drawLine(info.anchor, QPointF(rightSide ? lx - 4 : lx + info.tw + 8, labelY));
+
+            painter.setPen(palette().text().color());
+            painter.drawText(labelBox, rightSide ? Qt::AlignLeft | Qt::AlignVCenter : Qt::AlignRight | Qt::AlignVCenter, info.text);
+
+            ChartSlice &ms = const_cast<QVector<ChartSlice> &>(m_slices)[info.index];
+            ms.pieLabelVisible = true;
+            ms.pieLabelRect = labelBox;
+        }
+    };
+
+    placeGroup(rightLabels, true);
+    placeGroup(leftLabels, false);
 }
 
 void ChartPanel::paintBars(QPainter &painter, const QRect &rect) const
@@ -488,47 +597,8 @@ void ChartPanel::paintBars(QPainter &painter, const QRect &rect) const
 
 void ChartPanel::paintTreemap(QPainter &painter, const QRect &rect) const
 {
-    QRectF remaining = QRectF(rect).adjusted(16, 16, -16, -16);
-    qint64 remainingTotal = 0;
-    for (const ChartSlice &slice : m_slices) {
-        remainingTotal += slice.size;
-    }
-
-    for (int index = 0; index < m_slices.size(); ++index) {
-        const ChartSlice &slice = m_slices[index];
-        QRectF sliceRect;
-        if (index == m_slices.size() - 1 || remainingTotal <= 0) {
-            sliceRect = remaining;
-        } else {
-            const double ratio = double(slice.size) / double(remainingTotal);
-            if (remaining.width() >= remaining.height()) {
-                const double width = remaining.width() * ratio;
-                sliceRect = QRectF(remaining.left(), remaining.top(), width, remaining.height());
-                remaining.adjust(width, 0, 0, 0);
-            } else {
-                const double height = remaining.height() * ratio;
-                sliceRect = QRectF(remaining.left(), remaining.top(), remaining.width(), height);
-                remaining.adjust(0, height, 0, 0);
-            }
-        }
-
-        slice.treemapRect = sliceRect.adjusted(2, 2, -2, -2);
-        remainingTotal -= slice.size;
-
-        painter.setPen(QPen(QColor(25, 30, 40), 1));
-        painter.setBrush(slice.color);
-        painter.drawRect(slice.treemapRect);
-        if (slice.treemapRect.width() > 80 && slice.treemapRect.height() > 30) {
-            painter.setPen(Qt::white);
-            painter.drawText(slice.treemapRect.adjusted(6, 4, -6, -4), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
-                QStringLiteral("%1\n%2\n%3%")
-                    .arg(slice.label,
-                         m_viewMetric == ViewMetric::Files
-                             ? QString::number(slice.entry.kind == TreeEntryKind::Folder ? slice.entry.fileCount : 1) + QStringLiteral(" files")
-                             : SizeFormatter::formatBytes(slice.size),
-                         QString::number(m_activeFolderSize <= 0 ? 0.0 : (100.0 * double(slice.size) / double(m_activeFolderSize)), 'f', 1)));
-        }
-    }
+    layoutTreemapNodes(m_treemapNodes, QRectF(rect).adjusted(16, 16, -16, -16), 0);
+    paintTreemapNodes(painter, m_treemapNodes, 0);
 }
 
 const ChartPanel::ChartSlice *ChartPanel::sliceAt(ViewMode mode, const QPoint &point, const QRect &rect) const
@@ -551,9 +621,11 @@ const ChartPanel::ChartSlice *ChartPanel::sliceAt(ViewMode mode, const QPoint &p
         }
         return nullptr;
     case ViewMode::Treemap:
-        for (const ChartSlice &slice : m_slices) {
-            if (slice.activatable && slice.treemapRect.contains(point)) {
-                return &slice;
+        if (const TreemapNode *node = treemapNodeAt(point, m_treemapNodes)) {
+            for (const ChartSlice &slice : m_slices) {
+                if (slice.entry.path.compare(node->entry.path, Qt::CaseInsensitive) == 0) {
+                    return &slice;
+                }
             }
         }
         return nullptr;
@@ -571,6 +643,137 @@ const ChartPanel::ChartSlice *ChartPanel::hoverSliceAt(ViewMode mode, const QPoi
         return sliceAt(mode, point, rect);
     }
     return sliceAt(mode, point, rect);
+}
+
+QVector<ChartPanel::TreemapNode> ChartPanel::buildTreemapNodes(const QString &rootPath, int remainingDepth, int depth) const
+{
+    if (remainingDepth <= 0) {
+        return {};
+    }
+
+    QVector<TreemapNode> nodes;
+    int colorIndex = depth * 4;
+    qint64 otherBytes = 0;
+    qint64 parentSize = m_activeFolderSize;
+    if (depth > 0) {
+        for (const TreeEntry &candidate : m_result.treeEntries) {
+            if (candidate.path.compare(rootPath, Qt::CaseInsensitive) == 0) {
+                parentSize = candidate.size;
+                break;
+            }
+        }
+    }
+    for (const TreeEntry &entry : m_result.treeEntries) {
+        if (entry.parentPath.compare(rootPath, Qt::CaseInsensitive) != 0) {
+            continue;
+        }
+
+        const double percent = parentSize <= 0 ? 0.0 : (100.0 * double(entry.size) / double(parentSize));
+        if (percent < m_otherThresholdPercent) {
+            otherBytes += entry.size;
+            continue;
+        }
+
+        TreemapNode node;
+        node.entry = entry;
+        node.label = displayNameForPath(entry.path);
+        node.size = entry.size;
+        node.color = chartColor(colorIndex++);
+        node.activatable = true;
+        if (entry.kind == TreeEntryKind::Folder) {
+            node.children = buildTreemapNodes(entry.path, remainingDepth - 1, depth + 1);
+        }
+        nodes.push_back(node);
+    }
+
+    if (otherBytes > 0) {
+        TreemapNode other;
+        other.label = QStringLiteral("Other");
+        other.size = otherBytes;
+        other.color = QColor(120, 120, 120);
+        other.activatable = false;
+        nodes.push_back(other);
+    }
+
+    std::sort(nodes.begin(), nodes.end(), [](const TreemapNode &left, const TreemapNode &right) {
+        return left.size > right.size;
+    });
+    return nodes;
+}
+
+void ChartPanel::layoutTreemapNodes(QVector<TreemapNode> &nodes, const QRectF &rect, int depth) const
+{
+    Q_UNUSED(depth);
+    QRectF remaining = rect;
+    qint64 remainingTotal = 0;
+    for (const TreemapNode &node : nodes) {
+        remainingTotal += node.size;
+    }
+
+    for (int index = 0; index < nodes.size(); ++index) {
+        TreemapNode &node = nodes[index];
+        QRectF sliceRect;
+        if (index == nodes.size() - 1 || remainingTotal <= 0) {
+            sliceRect = remaining;
+        } else {
+            const double ratio = double(node.size) / double(remainingTotal);
+            if (remaining.width() >= remaining.height()) {
+                const double width = remaining.width() * ratio;
+                sliceRect = QRectF(remaining.left(), remaining.top(), width, remaining.height());
+                remaining.adjust(width, 0, 0, 0);
+            } else {
+                const double height = remaining.height() * ratio;
+                sliceRect = QRectF(remaining.left(), remaining.top(), remaining.width(), height);
+                remaining.adjust(0, height, 0, 0);
+            }
+        }
+
+        node.rect = sliceRect.adjusted(2, 2, -2, -2);
+        remainingTotal -= node.size;
+        const double minArea = 300.0;
+        if (!node.children.isEmpty() && node.rect.width() >= 28.0 && node.rect.height() >= 28.0
+            && node.rect.width() * node.rect.height() >= minArea) {
+            layoutTreemapNodes(node.children, node.rect.adjusted(4, 18, -4, -4), depth + 1);
+        } else if (!node.children.isEmpty()) {
+            node.children.clear();
+        }
+    }
+}
+
+void ChartPanel::paintTreemapNodes(QPainter &painter, const QVector<TreemapNode> &nodes, int depth) const
+{
+    Q_UNUSED(depth);
+    for (const TreemapNode &node : nodes) {
+        painter.setPen(QPen(QColor(25, 30, 40), 1));
+        painter.setBrush(node.color);
+        painter.drawRect(node.rect);
+        if (node.rect.width() > 80 && node.rect.height() > 30) {
+            painter.setPen(Qt::white);
+            painter.drawText(node.rect.adjusted(6, 4, -6, -4), Qt::AlignLeft | Qt::AlignTop | Qt::TextWordWrap,
+                QStringLiteral("%1\n%2\n%3%")
+                    .arg(node.label,
+                         m_viewMetric == ViewMetric::Files
+                             ? QString::number(node.entry.kind == TreeEntryKind::Folder ? node.entry.fileCount : 1) + QStringLiteral(" files")
+                             : SizeFormatter::formatBytes(node.size),
+                         QString::number(m_activeFolderSize <= 0 ? 0.0 : (100.0 * double(node.size) / double(m_activeFolderSize)), 'f', 1)));
+        }
+        if (!node.children.isEmpty()) {
+            paintTreemapNodes(painter, node.children, depth + 1);
+        }
+    }
+}
+
+const ChartPanel::TreemapNode *ChartPanel::treemapNodeAt(const QPoint &point, const QVector<TreemapNode> &nodes) const
+{
+    for (const TreemapNode &node : nodes) {
+        if (node.rect.contains(point)) {
+            if (const TreemapNode *child = treemapNodeAt(point, node.children)) {
+                return child;
+            }
+            return &node;
+        }
+    }
+    return nullptr;
 }
 
 }

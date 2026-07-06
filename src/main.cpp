@@ -1,6 +1,7 @@
 #include <QApplication>
 #include <QDateTime>
 #include <QDir>
+#include <QIcon>
 
 #include <QCoreApplication>
 
@@ -74,6 +75,7 @@ int main(int argc, char *argv[])
 
     try {
         QApplication app(argc, argv);
+        QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/appicon.ico")));
         opentree::Logger::initialize();
         opentree::Logger::info("Application startup begin");
 

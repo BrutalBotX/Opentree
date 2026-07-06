@@ -38,10 +38,25 @@ private:
     void handleEntryActivated(const TreeEntry &entry);
     void handleChartEntryActivated(const TreeEntry &entry);
     void handleChartOpenInGraphRequested(const TreeEntry &entry);
+    void handleChartOpenRequested(const TreeEntry &entry);
+    void handleChartShowInExplorerRequested(const TreeEntry &entry);
+    void handleChartCopyPathRequested(const TreeEntry &entry);
     void handleGraphEntryActivated(const TreeEntry &entry);
     void handleGraphEntryOpened(const TreeEntry &entry);
     void handleGraphPathEntered(const QString &path);
+    void handleNavigateToEntryRequested(const TreeEntry &entry, const QString &targetTab);
     void handleOthersThresholdRequest();
+    void handleRescanCurrentRootRequest();
+    void handleClearAllRootsRequest();
+    void handleRecentRootRequested(const QString &path);
+    void handleOpenCurrentInExplorerRequest();
+    void handleOpenTerminalHereRequest();
+    void handleCopyCurrentPathRequest();
+    void handleOpenConfigFolderRequest();
+    void handleOpenLogFileRequest();
+    void handleExpandAllRequest();
+    void handleCollapseAllRequest();
+    void handleTreemapDepthChanged(int depth);
     void handleThemeSelected(const QString &themeId);
     void reloadThemes();
     void applyCurrentTheme();
@@ -56,6 +71,7 @@ private:
     void handleSnapshotSettingsRequest();
     void handleCompareSnapshotRequest(int snapshotId);
     void refreshTimeline();
+    void refreshRecentRoots();
 
     QString m_activeFolderPath;
     QString m_lastRequestedRootPath;

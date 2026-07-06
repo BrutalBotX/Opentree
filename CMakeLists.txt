@@ -17,6 +17,7 @@ qt_standard_project_setup()
 
 qt_add_executable(OpenTree
     src/main.cpp
+    resources/opentree.rc
     src/app/MainWindow.h
     src/app/MainWindow.cpp
     src/app/AppController.h
@@ -72,10 +73,6 @@ qt_add_executable(OpenTree
     src/utils/TaskSchedulerUtils.cpp
     resources/resources.qrc
 )
-
-if (WIN32)
-    target_sources(OpenTree PRIVATE resources/windows/opentree.rc)
-endif()
 
 target_include_directories(OpenTree PRIVATE
     src

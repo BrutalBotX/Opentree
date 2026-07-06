@@ -9,11 +9,12 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 - Multi-root disk tree browsing in one app session
 - Explorer-style path/address entry for graph and chart workspaces
 - Details pane for files and folders
-- Graph view for folder structure and top direct files
+- Graph view with neon-styled planetary node icons, flowing physics, and galaxy particle background
+- Graph right-click context menu for cross-tab navigation (Pie, Bars, Treemap, Extensions, Heatmap)
 - Chart workspace:
-  - Pie
+  - Pie with surround labels and color-matched leader lines
   - Bars
-  - Treemap
+  - Treemap with recursive depth control and per-level Other aggregation
 - Heatmap view
 - Extensions view
 - Timeline and snapshot comparison
@@ -172,27 +173,24 @@ themes/
 ## Known Limitations
 
 - The deployed Qt tree may warn about missing `Qt6SerialPort.dll` for an optional Positioning plugin during deployment.
-- Some chart/graph UX is still under active refinement.
-- Treemap nested subfolder depth is intentionally deferred until recursive box subdivision is implemented properly.
-- Pie chart interaction now relies on legend-based hover/click to avoid misleading slice hit areas.
 - Multi-root tree browsing is supported, but right-side panels still follow one active root context at a time.
 - Graph view remains dependent on Qt WebEngine for full functionality.
+- App icon may not render on titlebar in some Windows configurations — shell cache or `.ico` format compatibility.
 
 ## Known Bugs / Rough Edges
 
-- Some graph/chart interactions are still being refined for large or visually dense folders.
 - The graph deployment step may emit non-blocking optional plugin warnings on some Qt installs.
 - Installer/output polish is present, but packaging should still be validated on a clean machine before release.
-- Pie mode currently uses legend-based interaction instead of direct slice hit interaction to avoid misleading slice hover/click behavior.
-- Treemap nested depth control is intentionally deferred until recursive subdivision is implemented properly.
+- App icon may not appear on titlebar in some Windows configurations.
+- Some graph layouts on very large folder sets (>500 nodes) may need longer stabilization.
 
 ## Roadmap
 
 Short-term:
 
-- Proper recursive treemap depth rendering
-- Better graph/treemap visual polish for dense datasets
-- Cleaner chart legend/data presentation
+- Address bar autocomplete using scanned paths (replace removed QFileSystemModel)
+- Graph visual refinement for dense datasets
+- App icon fix for Windows titlebar
 - More packaging polish and release assets
 
 Medium-term:
@@ -201,7 +199,6 @@ Medium-term:
 - More advanced snapshot analytics
 - Improved theme packaging and community theme docs
 - Better multi-root workflow polish across all panels
-- Real recursive treemap depth support
 
 Long-term:
 
