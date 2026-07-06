@@ -206,22 +206,6 @@ Long-term:
 - Broader Windows integration polish
 - Optional deeper search/index integration paths
 
-## Upload Checklist
-
-Before pushing to GitHub:
-
-1. confirm `build/` and `build-msvc/` are not included
-2. confirm log files are not included
-3. confirm only required `third_party` subsets are included
-4. confirm `README.md` renders correctly
-5. confirm installer script paths match your build output
-
-## Additional Project Docs
-
-- `CHANGELOG.md`
-- `CONTRIBUTING.md`
-- `docs/PROJECT_STATUS.md`
-
 ## License
 
 MIT. See `LICENSE`.
