@@ -26,8 +26,24 @@ jobs:
           arch: 'win64_msvc2022_64'
           modules: 'qtwebengine qtwebchannel'
 
+      - name: Restore build docs
+        run: |
+          copy .\TIMELINE_PLAN.md .\github\TIMELINE_PLAN.md
+          copy .\PROJECT_STATUS.md .\github\PROJECT_STATUS.md
+        shell: cmd
+
       - name: Configure
         run: cmake -S . -B build-msvc -G "NMake Makefiles" -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build-msvc --config Release
+
+      - name: Package github docs
+        run: |
+          if not exist github mkdir github
+          copy README.md github\README.md
+          copy CHANGELOG.md github\CHANGELOG.md
+          copy CONTRIBUTING.md github\CONTRIBUTING.md
+          copy TIMELINE_PLAN.md github\TIMELINE_PLAN.md
+          copy PROJECT_STATUS.md github\PROJECT_STATUS.md
+        shell: cmd

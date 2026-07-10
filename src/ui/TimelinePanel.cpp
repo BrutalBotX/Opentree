@@ -1,89 +1,109 @@
 #include "ui/TimelinePanel.h"
 
-#include "ui/SnapshotTrendWidget.h"
-#include "ui/SnapshotTimelineWidget.h"
-
+#include <QBrush>
+#include <QClipboard>
+#include <QColor>
+#include <QFileInfo>
+#include <QGuiApplication>
+#include <QGroupBox>
 #include <QHeaderView>
 #include <QLabel>
 #include <QListWidget>
+#include <QMenu>
 #include <QPushButton>
+#include <QSplitter>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
 
-#include <algorithm>
+#include <cstdlib>
 
+#include "ui/SnapshotTrendWidget.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
 
 TimelinePanel::TimelinePanel(QWidget *parent)
     : QWidget(parent)
+    , m_overviewCard(new QWidget(this))
+    , m_historyCard(new QWidget(this))
+    , m_bodySplitter(new QSplitter(Qt::Horizontal, this))
+    , m_trendWidget(new SnapshotTrendWidget(this))
+    , m_compareCard(new QGroupBox(QStringLiteral("Snapshot Compare"), this))
     , m_scopeLabel(new QLabel(this))
     , m_emptyStateLabel(new QLabel(this))
     , m_diagnosticsLabel(new QLabel(this))
     , m_summaryCardsLabel(new QLabel(this))
-    , m_timelineWidget(new SnapshotTimelineWidget(this))
-    , m_trendWidget(new SnapshotTrendWidget(this))
     , m_snapshotList(new QListWidget(this))
     , m_compareButton(new QPushButton("Compare with Current Scan", this))
     , m_compareSummaryLabel(new QLabel(this))
-    , m_topChangesLabel(new QLabel(this))
-    , m_topChangesTable(new QTableWidget(this))
     , m_compareTable(new QTableWidget(this))
-    , m_eventSummaryLabel(new QLabel(this))
-    , m_eventList(new QListWidget(this))
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(10);
 
-    auto *label = new QLabel("Snapshots", this);
-    layout->addWidget(label);
-    layout->addWidget(m_scopeLabel);
+    auto makeCard = [this](QWidget *card, const QString &title) {
+        auto *cardLayout = new QVBoxLayout(card);
+        cardLayout->setContentsMargins(14, 14, 14, 14);
+        cardLayout->setSpacing(8);
+        auto *heading = new QLabel(title, card);
+        heading->setStyleSheet(QStringLiteral("font-size: 15px; font-weight: 600;"));
+        cardLayout->addWidget(heading);
+        return cardLayout;
+    };
+
+    auto *overviewLayout = makeCard(m_overviewCard, QStringLiteral("Overview"));
+    m_scopeLabel->setStyleSheet(QStringLiteral("font-size: 12px; font-weight: 600;"));
+    overviewLayout->addWidget(m_scopeLabel);
     m_diagnosticsLabel->setWordWrap(true);
-    layout->addWidget(m_diagnosticsLabel);
+    overviewLayout->addWidget(m_diagnosticsLabel);
     m_summaryCardsLabel->setWordWrap(true);
-    layout->addWidget(m_summaryCardsLabel);
-    layout->addWidget(m_timelineWidget);
-    layout->addWidget(m_trendWidget);
+    overviewLayout->addWidget(m_summaryCardsLabel);
 
-    m_emptyStateLabel->setWordWrap(true);
-    layout->addWidget(m_emptyStateLabel);
+    m_bodySplitter->setChildrenCollapsible(false);
+
+    auto *historyLayout = makeCard(m_historyCard, QStringLiteral("Snapshot History"));
+    m_trendWidget->setMinimumHeight(120);
+    historyLayout->addWidget(m_trendWidget);
     m_snapshotList->setSelectionMode(QAbstractItemView::SingleSelection);
-    layout->addWidget(m_snapshotList);
-    layout->addWidget(m_compareButton);
-    m_compareSummaryLabel->setWordWrap(true);
-    layout->addWidget(m_compareSummaryLabel);
-    m_topChangesLabel->setWordWrap(true);
-    layout->addWidget(m_topChangesLabel);
-    m_topChangesTable->setColumnCount(3);
-    m_topChangesTable->setHorizontalHeaderLabels({"Path", "Delta", "%"});
-    m_topChangesTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_topChangesTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    m_topChangesTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_topChangesTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_topChangesTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    layout->addWidget(m_topChangesTable);
+    historyLayout->addWidget(m_snapshotList, 1);
+    m_emptyStateLabel->setWordWrap(true);
+    historyLayout->addWidget(m_emptyStateLabel);
+    historyLayout->addWidget(m_compareButton);
 
-    m_compareTable->setColumnCount(5);
-    m_compareTable->setHorizontalHeaderLabels({"Folder", "Previous", "Current", "Delta", "% Change"});
-    m_compareTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_compareTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    m_compareTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_compareTable->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    m_compareTable->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    auto *leftStack = new QWidget(this);
+    auto *leftLayout = new QVBoxLayout(leftStack);
+    leftLayout->setContentsMargins(0, 0, 0, 0);
+    leftLayout->setSpacing(10);
+    leftLayout->addWidget(m_overviewCard);
+    leftLayout->addWidget(m_historyCard, 1);
+    m_bodySplitter->addWidget(leftStack);
+
+    auto *compareLayout = new QVBoxLayout(m_compareCard);
+    compareLayout->setContentsMargins(12, 12, 12, 12);
+    compareLayout->setSpacing(6);
+    m_compareSummaryLabel->setWordWrap(true);
+    m_compareSummaryLabel->setTextFormat(Qt::RichText);
+    compareLayout->addWidget(m_compareSummaryLabel);
+
+    m_compareTable->setColumnCount(2);
+    m_compareTable->setHorizontalHeaderLabels({"Name", "Delta"});
     m_compareTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_compareTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    layout->addWidget(m_compareTable, 1);
-
-    m_eventSummaryLabel->setWordWrap(true);
-    layout->addWidget(m_eventSummaryLabel);
-    layout->addWidget(m_eventList, 1);
+    m_compareTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_compareTable->horizontalHeader()->setStretchLastSection(true);
+    m_compareTable->setMinimumHeight(120);
+    compareLayout->addWidget(m_compareTable);
+    m_bodySplitter->addWidget(m_compareCard);
+    m_bodySplitter->setStretchFactor(0, 3);
+    m_bodySplitter->setStretchFactor(1, 2);
+    layout->addWidget(m_bodySplitter, 1);
+    m_compareCard->setVisible(true);
 
     setCurrentRootPath(QString());
     setDiagnosticsState({});
-    setCompareResult({}, {}, {});
+    resetCompareState();
 
     connect(m_compareButton, &QPushButton::clicked, this, [this]() {
         const int snapshotId = selectedSnapshotId();
@@ -97,11 +117,27 @@ TimelinePanel::TimelinePanel(QWidget *parent)
         if (row < 0 || row >= m_visibleSnapshots.size()) {
             return;
         }
-        m_timelineWidget->selectSnapshotId(m_visibleSnapshots[row].id);
+        emit snapshotSelected(m_visibleSnapshots[row].id);
     });
 
-    connect(m_timelineWidget, &SnapshotTimelineWidget::snapshotSelected, this, [this](int snapshotId) {
-        selectSnapshotId(snapshotId);
+    m_snapshotList->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_snapshotList, &QListWidget::customContextMenuRequested, this, [this](const QPoint &position) {
+        QListWidgetItem *item = m_snapshotList->itemAt(position);
+        if (!item) {
+            return;
+        }
+        QMenu menu(this);
+        QAction *compareAction = menu.addAction("Compare with Current Scan");
+        QAction *copyAction = menu.addAction("Copy Snapshot Text");
+        QAction *selected = menu.exec(m_snapshotList->viewport()->mapToGlobal(position));
+        if (selected == compareAction) {
+            const int snapshotId = item->data(Qt::UserRole).toInt();
+            if (snapshotId != 0) {
+                emit compareSnapshotRequested(snapshotId);
+            }
+        } else if (selected == copyAction) {
+            QGuiApplication::clipboard()->setText(item->text());
+        }
     });
 }
 
@@ -116,6 +152,7 @@ void TimelinePanel::setCurrentRootPath(const QString &rootPath)
 void TimelinePanel::setSnapshots(const QVector<SnapshotSummary> &snapshots)
 {
     const int previouslySelectedId = selectedSnapshotId();
+    resetCompareState();
     m_visibleSnapshots.clear();
     m_snapshotList->clear();
     for (const SnapshotSummary &snapshot : snapshots) {
@@ -125,11 +162,14 @@ void TimelinePanel::setSnapshots(const QVector<SnapshotSummary> &snapshots)
         m_visibleSnapshots.push_back(snapshot);
     }
 
+    std::reverse(m_visibleSnapshots.begin(), m_visibleSnapshots.end());
+
     for (int index = 0; index < m_visibleSnapshots.size(); ++index) {
         const SnapshotSummary &snapshot = m_visibleSnapshots[index];
+        const QString createdAt = snapshot.createdAt.contains('T') ? QString(snapshot.createdAt).replace('T', ' ') : snapshot.createdAt;
         auto *item = new QListWidgetItem(
             QStringLiteral("%1  |  %2 changed folders  |  %3 files  |  %4")
-                .arg(snapshot.createdAt)
+                .arg(createdAt)
                 .arg(snapshot.itemCount)
                 .arg(snapshot.fileCount)
                 .arg(snapshot.rootPath),
@@ -140,13 +180,13 @@ void TimelinePanel::setSnapshots(const QVector<SnapshotSummary> &snapshots)
         }
     }
 
-    m_timelineWidget->setSnapshots(m_visibleSnapshots);
     m_trendWidget->setSnapshots(m_visibleSnapshots);
+
     const bool hasSnapshots = !m_visibleSnapshots.isEmpty();
     m_emptyStateLabel->setVisible(!hasSnapshots);
     m_snapshotList->setVisible(hasSnapshots);
-    m_timelineWidget->setVisible(hasSnapshots);
     m_trendWidget->setVisible(hasSnapshots);
+    m_historyCard->setVisible(true);
     if (!m_currentRootPath.isEmpty()) {
         m_scopeLabel->setText(QStringLiteral("Current root: %1 | Snapshots: %2").arg(m_currentRootPath).arg(m_visibleSnapshots.size()));
     }
@@ -176,10 +216,21 @@ void TimelinePanel::selectSnapshotId(int snapshotId)
     for (int index = 0; index < m_visibleSnapshots.size(); ++index) {
         if (m_visibleSnapshots[index].id == snapshotId) {
             m_snapshotList->setCurrentRow(index);
-            m_timelineWidget->selectSnapshotId(snapshotId);
             return;
         }
     }
+}
+
+void TimelinePanel::setCompareEnabled(bool enabled)
+{
+    m_compareButton->setEnabled(enabled && !m_visibleSnapshots.isEmpty());
+}
+
+void TimelinePanel::resetCompareState()
+{
+    m_compareSummaryLabel->setText(QStringLiteral("Select a snapshot to compare with the current scan."));
+    m_compareTable->clearContents();
+    m_compareTable->setRowCount(0);
 }
 
 int TimelinePanel::selectedSnapshotId() const
@@ -188,7 +239,7 @@ int TimelinePanel::selectedSnapshotId() const
     if (item) {
         return item->data(Qt::UserRole).toInt();
     }
-    return m_timelineWidget->selectedSnapshotId();
+    return 0;
 }
 
 int TimelinePanel::visibleSnapshotCount() const
@@ -221,72 +272,48 @@ void TimelinePanel::setDiagnosticsState(const DiagnosticsState &state)
 void TimelinePanel::setCompareResult(const SnapshotCompareResult &summary, const QVector<SnapshotCompareRow> &rows, const QVector<SnapshotFileEvent> &events)
 {
     if (!summary.found) {
-        m_compareSummaryLabel->setText(QStringLiteral("Select a snapshot and compare it with the current scan."));
-        m_topChangesLabel->setText(QString());
-        m_topChangesTable->setRowCount(0);
-    } else {
-        m_compareSummaryLabel->setText(
-            QStringLiteral("Snapshot: %1 | Changed folders: %2 | File events: %3 | Total delta: %4 bytes | Largest growth: %5 (%6 bytes) | Largest shrink: %7 (%8 bytes)")
-                .arg(summary.snapshotCreatedAt)
-                .arg(summary.changedFolderCount)
-                .arg(summary.fileEventCount)
-                .arg(summary.totalDeltaBytes)
-                .arg(summary.largestGrowthPath.isEmpty() ? QStringLiteral("-") : summary.largestGrowthPath)
-                .arg(summary.largestGrowthBytes)
-                .arg(summary.largestShrinkPath.isEmpty() ? QStringLiteral("-") : summary.largestShrinkPath)
-                .arg(summary.largestShrinkBytes));
-
-        QVector<SnapshotCompareRow> sortedRows = rows;
-        std::sort(sortedRows.begin(), sortedRows.end(), [](const SnapshotCompareRow &left, const SnapshotCompareRow &right) {
-            return std::llabs(left.deltaBytes) > std::llabs(right.deltaBytes);
-        });
-        QStringList highlights;
-        QVector<SnapshotCompareRow> topRows;
-        int growths = 0;
-        int shrinks = 0;
-        for (const SnapshotCompareRow &row : sortedRows) {
-            if (row.deltaBytes > 0 && growths < 3) {
-                highlights << QStringLiteral("grow: %1 (%2)").arg(row.path, SizeFormatter::formatBytes(row.deltaBytes));
-                topRows.push_back(row);
-                ++growths;
-            } else if (row.deltaBytes < 0 && shrinks < 3) {
-                highlights << QStringLiteral("shrink: %1 (%2)").arg(row.path, SizeFormatter::formatBytes(-row.deltaBytes));
-                topRows.push_back(row);
-                ++shrinks;
-            }
-            if (growths >= 3 && shrinks >= 3) {
-                break;
-            }
-        }
-        m_topChangesLabel->setText(highlights.isEmpty() ? QString() : QStringLiteral("Top movers: %1").arg(highlights.join(QStringLiteral(" | "))));
-        m_topChangesTable->setRowCount(topRows.size());
-        for (int rowIndex = 0; rowIndex < topRows.size(); ++rowIndex) {
-            const SnapshotCompareRow &row = topRows[rowIndex];
-            m_topChangesTable->setItem(rowIndex, 0, new QTableWidgetItem(row.path));
-            m_topChangesTable->setItem(rowIndex, 1, new QTableWidgetItem(QString::number(row.deltaBytes)));
-            m_topChangesTable->setItem(rowIndex, 2, new QTableWidgetItem(row.percentChangeText));
-        }
+        m_compareSummaryLabel->setText(QStringLiteral("Select a snapshot to compare with the current scan."));
+        m_compareTable->setRowCount(0);
+        return;
     }
 
-    m_compareTable->setRowCount(rows.size());
-    for (int rowIndex = 0; rowIndex < rows.size(); ++rowIndex) {
-        const SnapshotCompareRow &row = rows[rowIndex];
-        m_compareTable->setItem(rowIndex, 0, new QTableWidgetItem(row.path));
-        m_compareTable->setItem(rowIndex, 1, new QTableWidgetItem(QString::number(row.previousSize)));
-        m_compareTable->setItem(rowIndex, 2, new QTableWidgetItem(QString::number(row.currentSize)));
-        m_compareTable->setItem(rowIndex, 3, new QTableWidgetItem(QString::number(row.deltaBytes)));
-        m_compareTable->setItem(rowIndex, 4, new QTableWidgetItem(row.percentChangeText));
-    }
+    const QString deltaText = summary.totalDeltaBytes >= 0
+        ? QStringLiteral("+%1").arg(SizeFormatter::formatAdaptiveBytes(summary.totalDeltaBytes))
+        : QStringLiteral("-%1").arg(SizeFormatter::formatAdaptiveBytes(std::llabs(summary.totalDeltaBytes)));
+    const QString color = summary.totalDeltaBytes >= 0 ? QStringLiteral("#4cd964") : QStringLiteral("#ff6b6b");
+    m_compareSummaryLabel->setText(
+        QStringLiteral("<span style='font-weight:600;'>Compared snapshot:</span> %1<br>"
+                       "<span style='font-weight:600;'>Size change:</span> <span style='color:%5;'>%2</span><br>"
+                       "<span style='font-weight:600;'>Folders changed:</span> %3 | "
+                       "<span style='font-weight:600;'>Files/events changed:</span> %4")
+            .arg(summary.snapshotCreatedAt)
+            .arg(deltaText)
+            .arg(summary.changedFolderCount)
+            .arg(summary.fileEventCount)
+            .arg(color));
 
-    m_eventSummaryLabel->setText(QStringLiteral("File Events: %1").arg(events.size()));
-    m_eventList->clear();
-    for (const SnapshotFileEvent &event : events) {
-        m_eventList->addItem(
-            QStringLiteral("[%1] %2 | old: %3 | new: %4")
-                .arg(event.eventType)
-                .arg(event.path)
-                .arg(event.oldSize)
-                .arg(event.newSize));
+    QVector<SnapshotCompareRow> sortedRows = rows;
+    std::sort(sortedRows.begin(), sortedRows.end(), [](const SnapshotCompareRow &left, const SnapshotCompareRow &right) {
+        return std::abs(left.deltaBytes) > std::abs(right.deltaBytes);
+    });
+    const qsizetype rowCount = std::min<qsizetype>(12, sortedRows.size());
+    m_compareTable->setRowCount(rowCount);
+    for (int i = 0; i < rowCount; ++i) {
+        const SnapshotCompareRow &row = sortedRows[i];
+        const QString name = QFileInfo(row.path).fileName().isEmpty() ? row.path : QFileInfo(row.path).fileName();
+        auto *nameItem = new QTableWidgetItem(name);
+        nameItem->setToolTip(row.path);
+        auto *deltaItem = new QTableWidgetItem(QStringLiteral("%1%2")
+            .arg(row.deltaBytes >= 0 ? QStringLiteral("+") : QStringLiteral("-"))
+            .arg(SizeFormatter::formatAdaptiveBytes(std::llabs(row.deltaBytes))));
+        deltaItem->setToolTip(row.path);
+        if (row.deltaBytes > 0) {
+            deltaItem->setForeground(QBrush(QColor(76, 217, 100)));
+        } else if (row.deltaBytes < 0) {
+            deltaItem->setForeground(QBrush(QColor(255, 107, 107)));
+        }
+        m_compareTable->setItem(i, 0, nameItem);
+        m_compareTable->setItem(i, 1, deltaItem);
     }
 }
 

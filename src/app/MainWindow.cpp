@@ -5,6 +5,7 @@
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
+#include <QList>
 #include <QMenu>
 #include <QMenuBar>
 #include <QMessageBox>
@@ -25,6 +26,7 @@
 #include "ui/HeatmapPanel.h"
 #include "ui/TimelinePanel.h"
 #include "ui/TreePanel.h"
+#include "utils/Logger.h"
 namespace opentree {
 
 MainWindow::MainWindow(QWidget *parent)
@@ -60,6 +62,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_viewBySizeAction(nullptr)
     , m_viewByPercentageAction(nullptr)
     , m_viewByFilesAction(nullptr)
+    , m_sizeUnitsAdaptiveAction(nullptr)
     , m_setOthersThresholdAction(nullptr)
     , m_exitAction(nullptr)
     , m_locateEverythingAction(nullptr)
@@ -74,7 +77,9 @@ MainWindow::MainWindow(QWidget *parent)
     , m_mainSplitter(nullptr)
     , m_rightSplitter(nullptr)
 {
+    Logger::info("main-window-debug ctor: body enter");
     m_scanAction = new QAction("Scan Folder", this);
+    Logger::info("main-window-debug ctor: first action allocated");
     m_createSnapshotAction = new QAction("Create Snapshot", this);
     m_compareSnapshotAction = new QAction("Compare Snapshot", this);
     m_rescanCurrentRootAction = new QAction("Rescan Current Root", this);
@@ -98,6 +103,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_viewBySizeAction = new QAction("View by Size", this);
     m_viewByPercentageAction = new QAction("View by Percentage", this);
     m_viewByFilesAction = new QAction("View by File Count", this);
+    m_sizeUnitsAdaptiveAction = new QAction("Adaptive Size Units", this);
     m_setOthersThresholdAction = new QAction("Set Others Threshold...", this);
     m_exitAction = new QAction("Exit", this);
     m_locateEverythingAction = new QAction("Locate Everything SDK", this);
@@ -111,17 +117,32 @@ MainWindow::MainWindow(QWidget *parent)
     m_centralContainer = new QWidget(this);
     m_mainSplitter = new QSplitter(this);
     m_rightSplitter = new QSplitter(this);
+    Logger::info("main-window-debug ctor: base widgets allocated");
+    Logger::info("main-window-debug ctor: new TreePanel start");
     m_treePanel = new TreePanel(this);
+    Logger::info("main-window-debug ctor: new TreePanel done");
+    Logger::info("main-window-debug ctor: new DetailsPanel start");
     m_detailsPanel = new DetailsPanel(this);
+    Logger::info("main-window-debug ctor: new DetailsPanel done");
+    Logger::info("main-window-debug ctor: new ChartPanel start");
     m_chartPanel = new ChartPanel(this);
+    Logger::info("main-window-debug ctor: new ChartPanel done");
+    Logger::info("main-window-debug ctor: new ExtensionsPanel start");
     m_extensionsPanel = new ExtensionsPanel(this);
+    Logger::info("main-window-debug ctor: new ExtensionsPanel done");
+    Logger::info("main-window-debug ctor: new HeatmapPanel start");
     m_heatmapPanel = new HeatmapPanel(this);
+    Logger::info("main-window-debug ctor: new HeatmapPanel done");
+    Logger::info("main-window-debug ctor: new TimelinePanel start");
     m_timelinePanel = new TimelinePanel(this);
+    Logger::info("main-window-debug ctor: new TimelinePanel done");
 
     setWindowTitle("OpenTree");
     setWindowIcon(QIcon(QStringLiteral(":/icons/appicon.ico")));
     resize(1400, 900);
     setMinimumSize(1100, 720);
+
+    Logger::info("main-window-debug ctor: window basics configured");
 
     auto *fileMenu = menuBar()->addMenu("File");
     fileMenu->addAction(m_scanAction);
@@ -134,6 +155,7 @@ MainWindow::MainWindow(QWidget *parent)
     auto *snapshotMenu = menuBar()->addMenu("Snapshots");
     snapshotMenu->addAction(m_createSnapshotAction);
     snapshotMenu->addAction(m_compareSnapshotAction);
+    snapshotMenu->addAction("Manage Snapshots...", this, [this]() { emit snapshotManagementRequested(); });
     snapshotMenu->addSeparator();
     snapshotMenu->addAction(m_snapshotSettingsAction);
 
@@ -166,6 +188,7 @@ MainWindow::MainWindow(QWidget *parent)
     viewMenu->addAction(m_viewBySizeAction);
     viewMenu->addAction(m_viewByPercentageAction);
     viewMenu->addAction(m_viewByFilesAction);
+    viewMenu->addAction(m_sizeUnitsAdaptiveAction);
     viewMenu->addSeparator();
     viewMenu->addAction(m_setOthersThresholdAction);
     m_themeMenu = viewMenu->addMenu("Theme");
@@ -175,6 +198,8 @@ MainWindow::MainWindow(QWidget *parent)
     helpMenu->addAction("About OpenTree", this, [this]() {
         QMessageBox::information(this, "About OpenTree", "OpenTree\nDisk explorer and snapshot viewer.");
     });
+
+    Logger::info("main-window-debug ctor: menus wired");
 
     connect(m_scanAction, &QAction::triggered, this, &MainWindow::scanRequested);
     connect(m_rescanCurrentRootAction, &QAction::triggered, this, &MainWindow::rescanCurrentRootRequested);
@@ -229,6 +254,8 @@ MainWindow::MainWindow(QWidget *parent)
     treemapDepthGroup->addAction(m_treemapDepth3Action);
     m_treemapDepth1Action->setChecked(true);
 
+    Logger::info("main-window-debug ctor: action groups configured");
+
     m_scanAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+O")));
     m_refreshAction->setShortcut(QKeySequence(Qt::Key_F5));
     m_copyCurrentPathAction->setShortcut(QKeySequence::Copy);
@@ -249,22 +276,16 @@ MainWindow::MainWindow(QWidget *parent)
     m_mainToolBar->addAction(m_openCurrentInExplorerAction);
     m_mainToolBar->addAction(m_copyCurrentPathAction);
 
+    Logger::info("main-window-debug ctor: toolbar configured");
+
     m_tabs->setContentsMargins(8, 8, 8, 8);
     m_tabs->addTab(m_graphPlaceholder, "Graph");
     m_tabs->addTab(m_chartPanel, "Chart");
     m_tabs->addTab(m_extensionsPanel, "Extensions");
     m_tabs->addTab(m_heatmapPanel, "Heatmap");
     m_tabs->addTab(m_timelinePanel, "Timeline");
-    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
-        if (index == 0) {
-            ensureGraphPanel();
-            QTimer::singleShot(0, this, [this]() {
-                emit graphTabActivated();
-            });
-        }
-    });
 
-    m_mainSplitter->addWidget(m_treePanel);
+    Logger::info("main-window-debug ctor: tabs added");
 
     m_rightSplitter->addWidget(m_tabs);
     m_rightSplitter->addWidget(m_detailsPanel);
@@ -272,6 +293,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_rightSplitter->setStretchFactor(1, 1);
     m_rightSplitter->setChildrenCollapsible(false);
 
+    m_mainSplitter->addWidget(m_treePanel);
     m_mainSplitter->addWidget(m_rightSplitter);
     m_mainSplitter->setStretchFactor(0, 1);
     m_mainSplitter->setStretchFactor(1, 3);
@@ -282,6 +304,8 @@ MainWindow::MainWindow(QWidget *parent)
     centralLayout->setSpacing(10);
     centralLayout->addWidget(m_mainSplitter);
     setCentralWidget(m_centralContainer);
+
+    Logger::info("main-window-debug ctor: layout attached");
 
     m_mainSplitter->setHandleWidth(8);
     m_rightSplitter->setHandleWidth(8);
@@ -295,6 +319,20 @@ MainWindow::MainWindow(QWidget *parent)
     m_treePanel->setContentsMargins(0, 8, 0, 0);
     m_detailsPanel->setContentsMargins(0, 22, 0, 0);
 
+    connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
+        const bool timelineMode = index == 4;
+        setTimelineMode(timelineMode);
+        emit tabModeChanged(timelineMode);
+        if (index == 0) {
+            ensureGraphPanel();
+            QTimer::singleShot(0, this, [this]() {
+                emit graphTabActivated();
+            });
+        }
+    });
+
+    Logger::info("main-window-debug ctor: tab signal connected");
+
     m_progressBar->setRange(0, 100);
     m_progressBar->setMinimumWidth(240);
     m_progressBar->setTextVisible(true);
@@ -303,6 +341,8 @@ MainWindow::MainWindow(QWidget *parent)
     statusBar()->addWidget(m_statusLabel, 1);
     statusBar()->addPermanentWidget(m_progressBar);
     setStatusText("Ready");
+
+    Logger::info("main-window-debug ctor: complete");
 }
 
 void MainWindow::ensureGraphPanel()
@@ -311,7 +351,10 @@ void MainWindow::ensureGraphPanel()
         return;
     }
 
+    Logger::info("main-window-debug ensureGraphPanel start");
+
     m_graphPanel = new GraphPanel(this);
+    connect(m_graphPanel, &GraphPanel::nodeActivated, this, &MainWindow::graphNodeActivated);
     connect(m_graphPanel, &GraphPanel::viewInTabRequested, this, [this](const TreeEntry &entry, const QString &tabName) {
         emit navigateToEntryRequested(entry, tabName);
     });
@@ -321,6 +364,8 @@ void MainWindow::ensureGraphPanel()
         m_graphPlaceholder->deleteLater();
         m_graphPlaceholder = nullptr;
     }
+
+    Logger::info("main-window-debug ensureGraphPanel done");
 }
 
 TreePanel *MainWindow::treePanel() const
@@ -514,6 +559,32 @@ void MainWindow::setProgress(int percent)
 void MainWindow::setStatusText(const QString &text)
 {
     m_statusLabel->setText(text);
+}
+
+void MainWindow::setTimelineMode(bool active)
+{
+    if (!m_rightSplitter || !m_detailsPanel) {
+        return;
+    }
+
+    if (active) {
+        if (m_savedRightSplitterSizes.isEmpty()) {
+            m_savedRightSplitterSizes = m_rightSplitter->sizes();
+        }
+        m_detailsPanel->setMinimumWidth(0);
+        m_detailsPanel->setMaximumWidth(0);
+        m_rightSplitter->setSizes({1, 0});
+        return;
+    }
+
+    m_detailsPanel->setMaximumWidth(QWIDGETSIZE_MAX);
+    m_detailsPanel->setMinimumWidth(260);
+    if (!m_savedRightSplitterSizes.isEmpty()) {
+        m_rightSplitter->setSizes(m_savedRightSplitterSizes);
+    } else {
+        m_rightSplitter->setSizes({820, 260});
+    }
+    m_savedRightSplitterSizes.clear();
 }
 
 }

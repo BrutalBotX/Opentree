@@ -102,6 +102,35 @@ bool DatabaseManager::initialize()
         }
     }
 
+    QSqlQuery columnsQuery(db);
+    if (!columnsQuery.exec(QStringLiteral("PRAGMA table_info(files)"))) {
+        m_lastError = columnsQuery.lastError().text();
+        return false;
+    }
+
+    bool hasRootPathColumn = false;
+    while (columnsQuery.next()) {
+        if (columnsQuery.value(1).toString().compare(QStringLiteral("root_path"), Qt::CaseInsensitive) == 0) {
+            hasRootPathColumn = true;
+            break;
+        }
+    }
+
+    if (!hasRootPathColumn) {
+        QSqlQuery alterQuery(db);
+        if (!alterQuery.exec(QStringLiteral("ALTER TABLE files ADD COLUMN root_path TEXT"))) {
+            m_lastError = alterQuery.lastError().text();
+            Logger::error(QStringLiteral("Schema migration failed: %1").arg(m_lastError));
+            return false;
+        }
+        QSqlQuery backfillQuery(db);
+        if (!backfillQuery.exec(QStringLiteral("UPDATE files SET root_path = '' WHERE root_path IS NULL"))) {
+            m_lastError = backfillQuery.lastError().text();
+            Logger::error(QStringLiteral("Schema migration backfill failed: %1").arg(m_lastError));
+            return false;
+        }
+    }
+
     Logger::info("Database initialized successfully");
 
     return true;

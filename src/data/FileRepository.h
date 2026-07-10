@@ -11,7 +11,8 @@ class FileRepository {
 public:
     explicit FileRepository(const QSqlDatabase &database);
 
-    bool replaceAll(const QVector<FileEntry> &files, QString *errorMessage = nullptr);
+    bool replaceAll(const QVector<FileEntry> &files, const QString &rootPath, QString *errorMessage = nullptr);
+    QVector<FileEntry> loadByRoot(const QString &rootPath, QString *errorMessage = nullptr) const;
 
 private:
     QSqlDatabase m_database;

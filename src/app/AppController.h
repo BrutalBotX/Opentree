@@ -18,6 +18,7 @@ class FolderTreeModel;
 class MainWindow;
 class ScanService;
 class SnapshotService;
+struct SnapshotCompareRow;
 
 class AppController : public QObject {
     Q_OBJECT
@@ -44,6 +45,7 @@ private:
     void handleGraphEntryActivated(const TreeEntry &entry);
     void handleGraphEntryOpened(const TreeEntry &entry);
     void handleGraphPathEntered(const QString &path);
+    void handleGraphNodeActivated(const QString &path);
     void handleNavigateToEntryRequested(const TreeEntry &entry, const QString &targetTab);
     void handleOthersThresholdRequest();
     void handleRescanCurrentRootRequest();
@@ -61,6 +63,9 @@ private:
     void reloadThemes();
     void applyCurrentTheme();
     void applyViewMetric(ViewMetric metric);
+    void syncActiveResultUi(const ScanResult &result, const QString &activeFolderPath, const QVector<SnapshotCompareRow> &compareRows, bool resetCompare);
+    void syncFolderFocusUi(const TreeEntry &entry, bool showGraphTab);
+    void syncFileSelectionUi(const TreeEntry &entry);
     void handleNavigatePath(const QString &path, bool showGraphTab);
     RootSession *findRootSessionForPath(const QString &path);
     const RootSession *findRootSessionForPath(const QString &path) const;
@@ -69,9 +74,11 @@ private:
     const TreeEntry *findTreeEntry(const QString &path) const;
     void handleLocateEverythingRequest();
     void handleSnapshotSettingsRequest();
+    void handleSnapshotManagementRequest();
     void handleCompareSnapshotRequest(int snapshotId);
     void refreshTimeline();
     void refreshRecentRoots();
+    bool loadCachedRootResult(const QString &rootPath, ScanResult *result, QString *errorMessage = nullptr) const;
 
     QString m_activeFolderPath;
     QString m_lastRequestedRootPath;

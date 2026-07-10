@@ -11,6 +11,7 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QGuiApplication>
+#include <QTimer>
 #include <QUrl>
 
 #include "app/MainWindow.h"
@@ -28,13 +29,63 @@
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
 #include "ui/SnapshotSettingsDialog.h"
+#include "ui/SnapshotManagerDialog.h"
 #include "ui/ThemeManager.h"
 #include "ui/TimelinePanel.h"
 #include "ui/TreePanel.h"
 #include "utils/Logger.h"
 #include "utils/TaskSchedulerUtils.h"
+#include "utils/PathUtils.h"
 
 namespace opentree {
+
+namespace {
+
+QString normalizeRootKey(const QString &path)
+{
+    return PathUtils::normalizePath(path);
+}
+
+bool isSameOrDescendantPath(const QString &path, const QString &rootPath)
+{
+    if (rootPath.isEmpty()) {
+        return true;
+    }
+
+    if (path.compare(rootPath, Qt::CaseInsensitive) == 0) {
+        return true;
+    }
+
+    if (!path.startsWith(rootPath, Qt::CaseInsensitive) || path.length() <= rootPath.length()) {
+        return false;
+    }
+
+    if (rootPath.endsWith(QLatin1Char('/')) || rootPath.endsWith(QLatin1Char('\\'))) {
+        return true;
+    }
+
+    const QChar next = path.at(rootPath.length());
+    return next == QLatin1Char('/') || next == QLatin1Char('\\');
+}
+
+template <typename Fn>
+void updateGraphPanel(GraphPanel *graph, Fn &&fn)
+{
+    if (!graph) {
+        return;
+    }
+
+    graph->beginBatchUpdate();
+    fn(graph);
+    graph->endBatchUpdate();
+}
+
+GraphPanel *ensureGraphPanel(MainWindow *window)
+{
+    return window ? window->graphPanel() : nullptr;
+}
+
+}
 
 AppController::AppController(QObject *parent)
     : QObject(parent)
@@ -89,8 +140,6 @@ void AppController::attachWindow(MainWindow *window)
         m_window->setStatusText(QStringLiteral("Config: %1").arg(m_configService->configPath()));
     }
     
-    m_window->timelinePanel()->setCompareResult({}, {}, {});
-
     connect(m_window, &MainWindow::scanRequested, this, [this]() {
         handleScanRequest();
     });
@@ -99,6 +148,9 @@ void AppController::attachWindow(MainWindow *window)
     });
     connect(m_window->compareSnapshotAction(), &QAction::triggered, this, [this]() {
         handleCompareSnapshotMenuRequest();
+    });
+    connect(m_window, &MainWindow::snapshotManagementRequested, this, [this]() {
+        handleSnapshotManagementRequest();
     });
     connect(m_window, &MainWindow::everythingLocationRequested, this, [this]() {
         handleLocateEverythingRequest();
@@ -124,7 +176,23 @@ void AppController::attachWindow(MainWindow *window)
     connect(m_window, &MainWindow::reloadThemesRequested, this, [this]() {
         reloadThemes();
     });
+    connect(m_window, &MainWindow::tabModeChanged, this, [this](bool timelineCompareMode) {
+        if (!m_window) {
+            return;
+        }
+
+        if (!timelineCompareMode) {
+            if (const TreeEntry *entry = findTreeEntry(m_activeFolderPath)) {
+                m_window->detailsPanel()->setEntry(*entry);
+            } else {
+                m_window->detailsPanel()->clear();
+            }
+        } else {
+            m_window->detailsPanel()->clear();
+        }
+    });
     connect(m_window->treePanel(), &TreePanel::entryActivated, this, &AppController::handleEntryActivated);
+    connect(m_window->treePanel(), &TreePanel::entryOpened, this, &AppController::handleGraphEntryOpened);
     connect(m_window->chartPanel(), &ChartPanel::entryActivated, this, &AppController::handleChartEntryActivated);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenInGraphRequested, this, &AppController::handleChartOpenInGraphRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenRequested, this, &AppController::handleChartOpenRequested);
@@ -134,27 +202,45 @@ void AppController::attachWindow(MainWindow *window)
         handleNavigatePath(path, false);
     });
     connect(m_window->treePanel(), &TreePanel::visiblePathsChanged, this, [this](const QStringList &paths) {
-        if (m_window && m_window->existingGraphPanel()) {
-            m_window->existingGraphPanel()->setVisiblePaths(paths);
+        Logger::info(QStringLiteral("graph-debug tree visiblePathsChanged count=%1 first=%2")
+                         .arg(paths.size())
+                         .arg(paths.isEmpty() ? QStringLiteral("<none>") : paths.first()));
+        if (m_window) {
+            updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
+                graph->beginBatchUpdate();
+                graph->setVisiblePaths(paths);
+                graph->endBatchUpdate();
+            });
         }
     });
+    connect(m_window->timelinePanel(), &TimelinePanel::snapshotSelected, this, [this](int snapshotId) {
+        Q_UNUSED(snapshotId);
+    });
     connect(m_window->timelinePanel(), &TimelinePanel::compareSnapshotRequested, this, &AppController::handleCompareSnapshotRequest);
+    connect(m_window, &MainWindow::graphNodeActivated, this, &AppController::handleGraphNodeActivated);
     connect(m_window, &MainWindow::graphTabActivated, this, [this]() {
         if (!m_window) {
             return;
         }
 
+        Logger::info(QStringLiteral("graph-debug graphTabActivated currentTab=%1 root=%2 active=%3")
+                         .arg(m_window->currentTabIndex())
+                         .arg(m_currentResult.rootPath)
+                         .arg(m_activeFolderPath));
+
         GraphPanel *graph = m_window->graphPanel();
         connect(graph, &GraphPanel::entryActivated, this, &AppController::handleGraphEntryActivated, Qt::UniqueConnection);
         connect(graph, &GraphPanel::entryOpened, this, &AppController::handleGraphEntryOpened, Qt::UniqueConnection);
         connect(graph, &GraphPanel::pathEntered, this, &AppController::handleGraphPathEntered, Qt::UniqueConnection);
-        graph->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
-        graph->setOtherThresholdPercent(m_otherThresholdPercent);
-        graph->setGraphData(m_currentResult.rootPath, m_currentResult.treeEntries, {});
-        if (!m_activeFolderPath.isEmpty()) {
-            graph->setSelectedPath(m_activeFolderPath);
-            graph->setGraphRootPath(m_activeFolderPath);
-        }
+        updateGraphPanel(graph, [&](GraphPanel *panel) {
+            panel->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
+            panel->setOtherThresholdPercent(m_otherThresholdPercent);
+            panel->setGraphData(m_currentResult.rootPath, m_currentResult.treeEntries, {});
+            if (!m_activeFolderPath.isEmpty()) {
+                panel->setSelectedPath(m_activeFolderPath);
+                panel->setGraphRootPath(m_activeFolderPath);
+            }
+        });
     });
     connect(m_window, &MainWindow::navigateToEntryRequested, this, &AppController::handleNavigateToEntryRequested);
     connect(m_window->viewBySizeAction(), &QAction::triggered, this, [this]() {
@@ -187,14 +273,40 @@ void AppController::handleScanRequest()
         return;
     }
 
-    m_lastRequestedRootPath = folder;
+    const QString normalizedFolder = normalizeRootKey(folder);
+
+    m_lastRequestedRootPath = normalizedFolder;
     refreshRecentRoots();
-    m_window->timelinePanel()->setCurrentRootPath(folder);
+    m_window->timelinePanel()->setCurrentRootPath(normalizedFolder);
+
+    ScanResult cachedResult;
+    QString cacheError;
+    if (loadCachedRootResult(normalizedFolder, &cachedResult, &cacheError)) {
+        m_currentResult = cachedResult;
+        m_activeFolderPath = cachedResult.rootPath;
+        bool replaced = false;
+        for (RootSession &session : m_rootSessions) {
+            if (session.rootPath.compare(cachedResult.rootPath, Qt::CaseInsensitive) == 0) {
+                session.result = cachedResult;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            m_rootSessions.push_back({cachedResult.rootPath, cachedResult});
+        }
+        syncActiveResultUi(cachedResult, m_activeFolderPath, {}, true);
+        m_window->setStatusText(QStringLiteral("Showing cached result for %1, refreshing...").arg(normalizedFolder));
+    } else if (!cacheError.isEmpty()) {
+        m_window->setStatusText(QStringLiteral("Cache load failed, scanning %1").arg(normalizedFolder));
+    }
 
     m_window->setBusy(true);
     m_window->setProgress(0);
-    m_window->setStatusText(QStringLiteral("Scanning %1").arg(folder));
-    m_scanService->scanPath(folder);
+    if (cachedResult.rootPath.isEmpty()) {
+        m_window->setStatusText(QStringLiteral("Scanning %1").arg(normalizedFolder));
+    }
+    m_scanService->scanPath(normalizedFolder);
 }
 
 void AppController::openPath(const QString &path)
@@ -230,40 +342,52 @@ void AppController::activateRootSession(const QString &rootPath, bool showGraphT
         return;
     }
 
+    const QString normalizedRoot = normalizeRootKey(rootPath);
+
     for (const RootSession &session : m_rootSessions) {
-        if (session.rootPath.compare(rootPath, Qt::CaseInsensitive) == 0 && !session.result.rootPath.isEmpty()) {
+        if (session.rootPath.compare(normalizedRoot, Qt::CaseInsensitive) == 0 && !session.result.rootPath.isEmpty()) {
             m_currentResult = session.result;
             m_activeFolderPath = session.result.rootPath;
-            m_window->treePanel()->setRootSessions(m_rootSessions);
-            m_window->treePanel()->selectEntryPath(m_activeFolderPath);
-            m_window->chartPanel()->setScanResult(session.result);
-            m_window->chartPanel()->setOtherThresholdPercent(m_otherThresholdPercent);
-            m_window->chartPanel()->setActiveFolderPath(m_activeFolderPath);
-            m_window->extensionsPanel()->setScanResult(session.result);
-            m_window->extensionsPanel()->setActiveFolderPath(m_activeFolderPath);
-            m_window->heatmapPanel()->setHeatmapData(session.result.treeEntries, {});
-            m_window->timelinePanel()->setCurrentRootPath(session.result.rootPath);
-            if (m_window->existingGraphPanel()) {
-                m_window->existingGraphPanel()->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
-                m_window->existingGraphPanel()->setOtherThresholdPercent(m_otherThresholdPercent);
-                m_window->existingGraphPanel()->setGraphData(session.result.rootPath, session.result.treeEntries, {});
-                m_window->existingGraphPanel()->setSelectedPath(m_activeFolderPath);
-                m_window->existingGraphPanel()->setGraphRootPath(m_activeFolderPath);
-            }
+            syncActiveResultUi(session.result, m_activeFolderPath, {}, false);
             if (showGraphTab) {
                 m_window->showGraphTab();
             }
-            m_window->setStatusText(QStringLiteral("Switched to %1").arg(rootPath));
+            m_window->setStatusText(QStringLiteral("Switched to %1").arg(normalizedRoot));
             return;
         }
     }
 
-    m_lastRequestedRootPath = rootPath;
-    m_window->timelinePanel()->setCurrentRootPath(rootPath);
+    m_lastRequestedRootPath = normalizedRoot;
+    m_window->timelinePanel()->setCurrentRootPath(normalizedRoot);
+
+    ScanResult cachedResult;
+    QString cacheError;
+    if (loadCachedRootResult(normalizedRoot, &cachedResult, &cacheError)) {
+        m_currentResult = cachedResult;
+        m_activeFolderPath = cachedResult.rootPath;
+        bool replaced = false;
+        for (RootSession &session : m_rootSessions) {
+            if (session.rootPath.compare(cachedResult.rootPath, Qt::CaseInsensitive) == 0) {
+                session.result = cachedResult;
+                replaced = true;
+                break;
+            }
+        }
+        if (!replaced) {
+            m_rootSessions.push_back({cachedResult.rootPath, cachedResult});
+        }
+        syncActiveResultUi(cachedResult, m_activeFolderPath, {}, true);
+        m_window->setStatusText(QStringLiteral("Showing cached result for %1, refreshing...").arg(normalizedRoot));
+    } else if (!cacheError.isEmpty()) {
+        m_window->setStatusText(QStringLiteral("Cache load failed, scanning %1").arg(normalizedRoot));
+    }
+
     m_window->setBusy(true);
     m_window->setProgress(0);
-    m_window->setStatusText(QStringLiteral("Scanning %1").arg(rootPath));
-    m_scanService->scanPath(rootPath);
+    if (cachedResult.rootPath.isEmpty()) {
+        m_window->setStatusText(QStringLiteral("Scanning %1").arg(normalizedRoot));
+    }
+    m_scanService->scanPath(normalizedRoot);
 }
 
 void AppController::refreshTimeline()
@@ -391,33 +515,12 @@ void AppController::handleScanFinished()
     if (!replaced) {
         m_rootSessions.push_back({result.rootPath, result});
     }
-    m_window->treePanel()->setRootSessions(m_rootSessions);
-    m_window->treePanel()->selectEntryPath(m_activeFolderPath);
-    m_window->chartPanel()->setScanResult(result);
-    m_window->chartPanel()->setOtherThresholdPercent(m_otherThresholdPercent);
-    m_window->chartPanel()->setActiveFolderPath(m_activeFolderPath);
-    m_window->extensionsPanel()->setScanResult(result);
-    m_window->extensionsPanel()->setActiveFolderPath(m_activeFolderPath);
-    applyViewMetric(m_viewMetric);
-    if (const TreeEntry *rootEntry = findTreeEntry(m_activeFolderPath)) {
-        m_window->detailsPanel()->setEntry(*rootEntry);
-    }
-    if (m_window->existingGraphPanel()) {
-        GraphPanel *graph = m_window->existingGraphPanel();
-        graph->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
-        graph->setOtherThresholdPercent(m_otherThresholdPercent);
-        graph->setGraphData(result.rootPath, result.treeEntries, {});
-        graph->setSelectedPath(m_activeFolderPath);
-        graph->setGraphRootPath(m_activeFolderPath);
-    }
-    m_window->heatmapPanel()->setHeatmapData(result.treeEntries, {});
-    m_window->timelinePanel()->setCurrentRootPath(result.rootPath);
-    m_window->timelinePanel()->setCompareResult({}, {}, {});
+    syncActiveResultUi(result, m_activeFolderPath, {}, true);
     refreshTimeline();
     if (m_folderRepository && m_fileRepository) {
         QString error;
         if (!m_folderRepository->replaceAll(result.folders, result.rootPath, &error)
-            || !m_fileRepository->replaceAll(result.files, &error)) {
+            || !m_fileRepository->replaceAll(result.files, result.rootPath, &error)) {
             Logger::warning("Failed to persist scan: " + error);
         }
     }
@@ -447,29 +550,21 @@ void AppController::handleEntryActivated(const TreeEntry &entry)
         return;
     }
 
-    if (const RootSession *session = findRootSessionForPath(entry.path)) {
-        if (m_currentResult.rootPath.compare(session->result.rootPath, Qt::CaseInsensitive) != 0) {
-            activateRootSession(session->result.rootPath, false);
-        }
-    }
-
-    if (entry.kind != TreeEntryKind::Folder) {
-        if (!entry.parentPath.isEmpty()) {
-            focusFolderPath(entry.parentPath, false);
-            m_window->treePanel()->selectEntryPath(entry.path);
-        }
-        m_window->detailsPanel()->setEntry(entry);
-        if (m_window->existingGraphPanel()) {
-            m_window->existingGraphPanel()->setSelectedPath(entry.path);
-        }
-        return;
-    }
-
-    focusFolderPath(entry.path, false);
+    m_activeFolderPath = entry.kind == TreeEntryKind::Folder ? entry.path : entry.parentPath;
+    m_window->detailsPanel()->setEntry(entry);
+    m_window->chartPanel()->setActiveFolderPath(m_activeFolderPath);
+    m_window->extensionsPanel()->setActiveFolderPath(m_activeFolderPath);
+    updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
+        graph->setSelectedPath(entry.path);
+    });
 }
 
 void AppController::handleGraphEntryActivated(const TreeEntry &entry)
 {
+    Logger::info(QStringLiteral("graph-debug graph activate kind=%1 path=%2 parent=%3")
+                     .arg(entry.kind == TreeEntryKind::Folder ? QStringLiteral("folder") : QStringLiteral("file"))
+                     .arg(entry.path)
+                     .arg(entry.parentPath));
     if (const RootSession *session = findRootSessionForPath(entry.path)) {
         if (m_currentResult.rootPath.compare(session->result.rootPath, Qt::CaseInsensitive) != 0) {
             activateRootSession(session->result.rootPath, true);
@@ -477,7 +572,14 @@ void AppController::handleGraphEntryActivated(const TreeEntry &entry)
     }
 
     if (entry.kind == TreeEntryKind::Folder) {
-        focusFolderPath(entry.path, true);
+        if (!m_window) {
+            return;
+        }
+
+        m_window->detailsPanel()->setEntry(entry);
+        updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
+            graph->setSelectedPath(entry.path);
+        });
         return;
     }
 
@@ -485,19 +587,40 @@ void AppController::handleGraphEntryActivated(const TreeEntry &entry)
         return;
     }
 
-    m_window->detailsPanel()->setEntry(entry);
-    if (!entry.parentPath.isEmpty()) {
-        focusFolderPath(entry.parentPath, true);
+    syncFileSelectionUi(entry);
+}
+
+void AppController::handleGraphNodeActivated(const QString &path)
+{
+    if (!m_window || !m_snapshotService || path.isEmpty()) {
+        return;
     }
-    m_window->treePanel()->selectEntryPath(entry.path);
-    m_window->detailsPanel()->setEntry(entry);
-    if (m_window->existingGraphPanel()) {
-        m_window->existingGraphPanel()->setSelectedPath(entry.path);
+
+    m_window->showTimelineTab();
+    const QVector<SnapshotSummary> snapshots = m_snapshotService->listSnapshots(nullptr);
+    for (const SnapshotSummary &snapshot : snapshots) {
+        const QString snapshotRoot = snapshot.rootPath;
+        if (snapshotRoot.isEmpty()) {
+            continue;
+        }
+        if (snapshotRoot.compare(path, Qt::CaseInsensitive) == 0 || path.startsWith(snapshotRoot, Qt::CaseInsensitive)) {
+            m_window->timelinePanel()->selectSnapshotId(snapshot.id);
+            break;
+        }
     }
 }
 
 void AppController::handleGraphEntryOpened(const TreeEntry &entry)
 {
+    Logger::info(QStringLiteral("graph-debug graph open kind=%1 path=%2 parent=%3")
+                     .arg(entry.kind == TreeEntryKind::Folder ? QStringLiteral("folder") : QStringLiteral("file"))
+                     .arg(entry.path)
+                     .arg(entry.parentPath));
+    if (entry.kind == TreeEntryKind::Folder) {
+        focusFolderPath(entry.path, true);
+        return;
+    }
+
     handleGraphEntryActivated(entry);
 }
 
@@ -523,15 +646,11 @@ void AppController::handleChartEntryActivated(const TreeEntry &entry)
         return;
     }
 
-    m_window->detailsPanel()->setEntry(entry);
     if (!entry.parentPath.isEmpty()) {
         focusFolderPath(entry.parentPath, false);
     }
     m_window->treePanel()->selectEntryPath(entry.path);
-    m_window->detailsPanel()->setEntry(entry);
-    if (m_window->existingGraphPanel()) {
-        m_window->existingGraphPanel()->setSelectedPath(entry.path);
-    }
+    syncFileSelectionUi(entry);
 }
 
 void AppController::handleNavigateToEntryRequested(const TreeEntry &entry, const QString &targetTab)
@@ -578,15 +697,11 @@ void AppController::handleChartOpenInGraphRequested(const TreeEntry &entry)
         return;
     }
 
-    m_window->detailsPanel()->setEntry(entry);
     if (!entry.parentPath.isEmpty()) {
         focusFolderPath(entry.parentPath, true);
     }
     m_window->treePanel()->selectEntryPath(entry.path);
-    m_window->detailsPanel()->setEntry(entry);
-    if (m_window->existingGraphPanel()) {
-        m_window->existingGraphPanel()->setSelectedPath(entry.path);
-    }
+    syncFileSelectionUi(entry);
 }
 
 void AppController::handleChartOpenRequested(const TreeEntry &entry)
@@ -655,7 +770,8 @@ void AppController::handleClearAllRootsRequest()
         m_window->extensionsPanel()->setScanResult({});
         m_window->heatmapPanel()->setHeatmapData({}, {});
         m_window->timelinePanel()->setCurrentRootPath(QString());
-        m_window->timelinePanel()->setCompareResult({}, {}, {});
+        m_window->timelinePanel()->setSnapshots({});
+        m_window->timelinePanel()->resetCompareState();
         m_window->setStatusText("Cleared all roots");
     }
 }
@@ -793,9 +909,7 @@ RootSession *AppController::findRootSessionForPath(const QString &path)
         if (session.result.rootPath.isEmpty()) {
             continue;
         }
-        if (path.compare(session.result.rootPath, Qt::CaseInsensitive) == 0
-            || path.startsWith(session.result.rootPath + QLatin1Char('\\'), Qt::CaseInsensitive)
-            || path.startsWith(session.result.rootPath + QLatin1Char('/'), Qt::CaseInsensitive)) {
+        if (isSameOrDescendantPath(path, session.result.rootPath)) {
             return &session;
         }
     }
@@ -808,9 +922,7 @@ const RootSession *AppController::findRootSessionForPath(const QString &path) co
         if (session.result.rootPath.isEmpty()) {
             continue;
         }
-        if (path.compare(session.result.rootPath, Qt::CaseInsensitive) == 0
-            || path.startsWith(session.result.rootPath + QLatin1Char('\\'), Qt::CaseInsensitive)
-            || path.startsWith(session.result.rootPath + QLatin1Char('/'), Qt::CaseInsensitive)) {
+        if (isSameOrDescendantPath(path, session.result.rootPath)) {
             return &session;
         }
     }
@@ -865,17 +977,95 @@ void AppController::focusFolderPath(const QString &path, bool showGraphTab)
     }
 
     m_activeFolderPath = entry->path;
-    m_window->treePanel()->selectEntryPath(entry->path);
-    m_window->detailsPanel()->setEntry(*entry);
-    m_window->chartPanel()->setActiveFolderPath(entry->path);
-    m_window->extensionsPanel()->setActiveFolderPath(entry->path);
+    syncFolderFocusUi(*entry, showGraphTab);
+}
+
+void AppController::syncActiveResultUi(const ScanResult &result, const QString &activeFolderPath, const QVector<SnapshotCompareRow> &compareRows, bool resetCompare)
+{
+    if (!m_window) {
+        return;
+    }
+
+    Logger::info(QStringLiteral("graph-debug syncActiveResultUi root=%1 active=%2 entries=%3 compareRows=%4 resetCompare=%5")
+                     .arg(result.rootPath)
+                     .arg(activeFolderPath)
+                     .arg(result.treeEntries.size())
+                     .arg(compareRows.size())
+                     .arg(resetCompare ? QStringLiteral("true") : QStringLiteral("false")));
+
+    m_window->treePanel()->setRootSessions(m_rootSessions);
+    m_window->treePanel()->selectEntryPath(activeFolderPath);
+    m_window->chartPanel()->setScanResult(result);
+    m_window->chartPanel()->setOtherThresholdPercent(m_otherThresholdPercent);
+    m_window->chartPanel()->setActiveFolderPath(activeFolderPath);
+    m_window->extensionsPanel()->setScanResult(result);
+    m_window->extensionsPanel()->setActiveFolderPath(activeFolderPath);
+    applyViewMetric(m_viewMetric);
+    if (m_window->currentTabIndex() != 4) {
+        if (const TreeEntry *rootEntry = findTreeEntry(activeFolderPath)) {
+            m_window->detailsPanel()->setEntry(*rootEntry);
+        } else {
+            m_window->detailsPanel()->clear();
+        }
+    }
+    updateGraphPanel(ensureGraphPanel(m_window), [&](GraphPanel *graph) {
+        graph->beginBatchUpdate();
+        graph->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
+        graph->setOtherThresholdPercent(m_otherThresholdPercent);
+        graph->setGraphData(result.rootPath, result.treeEntries, compareRows);
+        graph->setSelectedPath(activeFolderPath);
+        graph->setGraphRootPath(activeFolderPath);
+        graph->endBatchUpdate();
+    });
+    m_window->heatmapPanel()->setHeatmapData(result.treeEntries, compareRows);
+    m_window->timelinePanel()->setCurrentRootPath(result.rootPath);
+    if (resetCompare) {
+        m_window->timelinePanel()->resetCompareState();
+    }
+    Q_UNUSED(resetCompare);
+}
+
+void AppController::syncFolderFocusUi(const TreeEntry &entry, bool showGraphTab)
+{
+    if (!m_window) {
+        return;
+    }
+
+    Logger::info(QStringLiteral("graph-debug syncFolderFocusUi path=%1 showGraphTab=%2")
+                     .arg(entry.path)
+                     .arg(showGraphTab ? QStringLiteral("true") : QStringLiteral("false")));
+
+    m_activeFolderPath = entry.path;
+    m_window->treePanel()->selectEntryPath(entry.path);
+    m_window->detailsPanel()->setEntry(entry);
+    m_window->chartPanel()->setActiveFolderPath(entry.path);
+    m_window->extensionsPanel()->setActiveFolderPath(entry.path);
+    updateGraphPanel(ensureGraphPanel(m_window), [&](GraphPanel *graph) {
+        graph->beginBatchUpdate();
+        graph->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
+        graph->setSelectedPath(entry.path);
+        graph->setGraphRootPath(entry.path);
+        graph->endBatchUpdate();
+    });
     if (showGraphTab) {
         m_window->showGraphTab();
     }
-    if (m_window->existingGraphPanel()) {
-        m_window->existingGraphPanel()->setSelectedPath(entry->path);
-        m_window->existingGraphPanel()->setGraphRootPath(entry->path);
+}
+
+void AppController::syncFileSelectionUi(const TreeEntry &entry)
+{
+    if (!m_window) {
+        return;
     }
+
+    Logger::info(QStringLiteral("graph-debug syncFileSelectionUi path=%1 parent=%2")
+                     .arg(entry.path)
+                     .arg(entry.parentPath));
+
+    m_window->detailsPanel()->setEntry(entry);
+    updateGraphPanel(ensureGraphPanel(m_window), [&](GraphPanel *graph) {
+        graph->setSelectedPath(entry.path);
+    });
 }
 
 const TreeEntry *AppController::findTreeEntry(const QString &path) const
@@ -932,6 +1122,16 @@ void AppController::handleSnapshotSettingsRequest()
     m_window->setStatusText("Snapshot settings updated");
 }
 
+void AppController::handleSnapshotManagementRequest()
+{
+    if (!m_window || !m_snapshotService) {
+        return;
+    }
+
+    SnapshotManagerDialog dialog(m_snapshotService, m_window);
+    dialog.exec();
+}
+
 void AppController::handleCompareSnapshotRequest(int snapshotId)
 {
     if (!m_window || !m_snapshotService) {
@@ -952,16 +1152,51 @@ void AppController::handleCompareSnapshotRequest(int snapshotId)
         return;
     }
 
-    m_window->timelinePanel()->setCompareResult(compare, rows, events);
-    if (m_window->existingGraphPanel()) {
-        m_window->existingGraphPanel()->setGraphData(m_currentResult.rootPath, m_currentResult.treeEntries, rows);
-        m_window->existingGraphPanel()->setSelectedPath(m_activeFolderPath.isEmpty() ? m_currentResult.rootPath : m_activeFolderPath);
-        if (!m_activeFolderPath.isEmpty()) {
-            m_window->existingGraphPanel()->setGraphRootPath(m_activeFolderPath);
-        }
+    if (m_window->currentTabIndex() == 4) {
+        m_window->timelinePanel()->setCompareResult(compare, rows, events);
+        return;
     }
+
+    updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
+        graph->beginBatchUpdate();
+        graph->setGraphData(m_currentResult.rootPath, m_currentResult.treeEntries, rows);
+        graph->setSelectedPath(m_activeFolderPath.isEmpty() ? m_currentResult.rootPath : m_activeFolderPath);
+        if (!m_activeFolderPath.isEmpty()) {
+            graph->setGraphRootPath(m_activeFolderPath);
+        }
+        graph->endBatchUpdate();
+    });
     m_window->heatmapPanel()->setHeatmapData(m_currentResult.treeEntries, rows);
     m_window->setStatusText(QStringLiteral("Compared snapshot from %1").arg(compare.snapshotCreatedAt));
+}
+
+bool AppController::loadCachedRootResult(const QString &rootPath, ScanResult *result, QString *errorMessage) const
+{
+    if (!result) {
+        return false;
+    }
+    *result = {};
+    const QString normalizedRoot = normalizeRootKey(rootPath);
+    if (!m_folderRepository || !m_fileRepository || normalizedRoot.isEmpty()) {
+        return false;
+    }
+
+    QString folderError;
+    const QVector<FolderEntry> folders = m_folderRepository->loadByRoot(normalizedRoot, &folderError);
+    if (!folderError.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = folderError;
+        }
+        return false;
+    }
+
+    if (folders.isEmpty()) {
+        return false;
+    }
+
+    *result = ScanService::buildTreeResult(normalizedRoot, folders, {});
+    result->usedEverything = false;
+    return true;
 }
 
 }

@@ -7,6 +7,7 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 ## Current Features
 
 - Multi-root disk tree browsing in one app session
+- Cached root reload path: previously scanned roots can show cached folder data first while a fresh scan runs in the background
 - Explorer-style path/address entry for graph and chart workspaces
 - Details pane for files and folders
 - Graph view with neon-styled planetary node icons, flowing physics, and galaxy particle background
@@ -18,6 +19,7 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 - Heatmap view
 - Extensions view
 - Timeline and snapshot comparison
+- Snapshot manager dialog with tabulated snapshot rows and delete support
 - Background snapshot mode
 - Theme support with built-in light/dark themes and reloadable external themes
 - Windows installer scaffold with Inno Setup
@@ -38,18 +40,22 @@ OpenTree/
 ├── build_msvc.bat
 ├── src/
 ├── resources/
+├── TIMELINE_PLAN.md
+├── PROJECT_STATUS.md
 ├── third_party/
 │   ├── include/
 │   ├── dll/
 │   └── lib/
-├── installer/
-│   ├── OpenTree.iss
-│   └── build_installer.bat
-├── CHANGELOG.md
-├── CONTRIBUTING.md
-└── docs/
+└── github/
+    ├── README.md
+    ├── CHANGELOG.md
+    ├── CONTRIBUTING.md
+    ├── TIMELINE_PLAN.md
     └── PROJECT_STATUS.md
 ```
+
+The `github/` folder is the export/release bundle for this repo.
+It is meant to contain the source and release docs, not the generated `build-msvc/` output.
 
 ## Requirements
 
@@ -89,6 +95,12 @@ That script:
 2. configures CMake into `build-msvc/`
 3. builds the app
 4. runs `windeployqt` through CMake post-build deployment
+
+Expected output:
+
+```text
+build-msvc/OpenTree.exe
+```
 
 ### Manual CMake build
 
@@ -169,17 +181,20 @@ themes/
 - Graph view depends on Qt WebEngine.
 - The app currently targets Windows-first workflows.
 - The repo includes Everything SDK headers/imports/binaries used by the project, but filesystem scanning remains the active default path.
+- The scan/cache handoff stays centered on `ScanResult` so an Everything-backed scan path can be revisited later without changing the UI contract.
 
 ## Known Limitations
 
 - The deployed Qt tree may warn about missing `Qt6SerialPort.dll` for an optional Positioning plugin during deployment.
 - Multi-root tree browsing is supported, but right-side panels still follow one active root context at a time.
 - Graph view remains dependent on Qt WebEngine for full functionality.
+- Cached reload currently prioritizes fast folder-tree display; the background refresh still does a full filesystem scan.
 - App icon may not render on titlebar in some Windows configurations — shell cache or `.ico` format compatibility.
 
 ## Known Bugs / Rough Edges
 
 - The graph deployment step may emit non-blocking optional plugin warnings on some Qt installs.
+- Timeline can still leave the global details pane visible in some pre-scan activation cases.
 - Installer/output polish is present, but packaging should still be validated on a clean machine before release.
 - App icon may not appear on titlebar in some Windows configurations.
 - Some graph layouts on very large folder sets (>500 nodes) may need longer stabilization.
@@ -188,6 +203,7 @@ themes/
 
 Short-term:
 
+- Tighten cached-root loading so repeat scans feel instant on very large roots
 - Address bar autocomplete using scanned paths (replace removed QFileSystemModel)
 - Graph visual refinement for dense datasets
 - App icon fix for Windows titlebar

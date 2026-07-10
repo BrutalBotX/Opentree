@@ -29,7 +29,7 @@ build_msvc.bat
 
 1. Build the app successfully.
 2. Smoke test the changed workflow.
-3. Update `README.md` or docs if behavior changed.
+3. Update `github/README.md` and `github/CHANGELOG.md` if behavior changed.
 4. Keep the repo free of build artifacts.
 
 ## Bug Reports

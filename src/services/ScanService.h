@@ -21,6 +21,7 @@ public:
     ScanResult lastResult() const;
     QString lastError() const;
     static ScanResult performFilesystemScan(const QString &rootPath, const QStringList &excludedPatterns);
+    static ScanResult buildTreeResult(const QString &rootPath, const QVector<FolderEntry> &folders, const QVector<FileEntry> &files);
 
 signals:
     void scanStarted(const QString &rootPath);
@@ -30,7 +31,6 @@ signals:
 
 private:
     ScanResult performScan(const QString &rootPath, const QStringList &excludedPatterns);
-    static ScanResult buildTreeResult(const QString &rootPath, const QVector<FolderEntry> &folders, const QVector<FileEntry> &files);
     static QVector<FileEntry> collectFilesystemFiles(const QString &rootPath, const QStringList &excludedPatterns, std::function<void(int, const QString &)> progressCallback);
 
     ConfigService *m_configService;

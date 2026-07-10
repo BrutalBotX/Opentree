@@ -4,6 +4,47 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.3.1] - 2026-07-10
+
+### Fixed
+
+- Embedded schema resource alias now matches the database bootstrap path, so installed builds can initialize the database without falling back to a missing external file.
+
+### Changed
+
+- GitHub export docs and installer/build versioning were bumped to keep the packaged release metadata in sync with the current build.
+
+## [0.3.0] - 2026-07-10
+
+### Added
+
+- Snapshot manager dialog with a real tabulated table view for snapshots.
+- Snapshot manager delete flow that removes snapshots and their related snapshot items/file events.
+- Graph-to-Timeline selection wiring so graph node activation can jump to Timeline snapshot context.
+- Root-scoped cached scan reload path: previously scanned roots can show cached folder data before the fresh scan completes.
+- Database migration for cached file rows to store `root_path`.
+
+### Changed
+
+- Timeline snapshot ordering now renders oldest to newest for list/trend flow.
+- Timeline compare state now resets more aggressively on scan and clear-root transitions to avoid stale compare output.
+- Cached reload now prefers fast folder-summary display instead of loading every cached file row before showing UI.
+- Folder/file cache persistence is now root-scoped instead of deleting all cached scan rows globally.
+- Shared theme coverage/readability was extended across menus, dialogs, tables, inputs, and buttons.
+
+### Fixed
+
+- Snapshot timestamps now render with a space-separated date/time instead of raw ISO `T` formatting.
+- Dead Timeline compare plumbing in the normal details panel path was removed.
+- Graph click plumbing now routes through the main window/controller instead of stopping inside the graph widget.
+- Cache root lookup now normalizes root keys consistently so repeat scans can match stored root data.
+
+### Known Issues
+
+- Timeline can still leave the global details pane visible in some pre-scan activation cases.
+- Cached reload is faster than a cold scan, but a full background filesystem scan still runs after the cached tree is shown.
+- Deployed Qt may emit non-blocking warning about missing `Qt6SerialPort.dll` for optional NMEA positioning plugin.
+
 ## [0.2.0] - 2026-07-06
 
 ### Added

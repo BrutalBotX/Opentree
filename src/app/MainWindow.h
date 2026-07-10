@@ -62,11 +62,13 @@ public:
     void setBusy(bool busy);
     void setProgress(int percent);
     void setStatusText(const QString &text);
+    void setTimelineMode(bool active);
 
 signals:
     void scanRequested();
     void createSnapshotRequested();
     void compareSnapshotRequested();
+    void snapshotManagementRequested();
     void everythingLocationRequested();
     void snapshotSettingsRequested();
     void othersThresholdRequested();
@@ -84,6 +86,8 @@ signals:
     void themeSelected(const QString &themeId);
     void reloadThemesRequested();
     void graphTabActivated();
+    void tabModeChanged(bool timelineCompareMode);
+    void graphNodeActivated(const QString &path);
     void navigateToEntryRequested(const TreeEntry &entry, const QString &targetTab);
 
 private:
@@ -122,6 +126,7 @@ private:
     QAction *m_viewBySizeAction;
     QAction *m_viewByPercentageAction;
     QAction *m_viewByFilesAction;
+    QAction *m_sizeUnitsAdaptiveAction;
     QAction *m_setOthersThresholdAction;
     QAction *m_exitAction;
     QAction *m_locateEverythingAction;
@@ -141,6 +146,7 @@ private:
     QMap<QString, QString> m_themeNames;
     QString m_selectedThemeId;
     QStringList m_recentRoots;
+    QList<int> m_savedRightSplitterSizes;
 };
 
 }
