@@ -43,6 +43,8 @@ qt_add_executable(OpenTree
     src/ui/ThemeManager.cpp
     src/ui/SnapshotSettingsDialog.h
     src/ui/SnapshotSettingsDialog.cpp
+    src/ui/SettingsDialog.h
+    src/ui/SettingsDialog.cpp
     src/ui/SnapshotManagerDialog.h
     src/ui/SnapshotManagerDialog.cpp
     src/ui/SnapshotTimelineWidget.h

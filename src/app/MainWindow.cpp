@@ -17,6 +17,7 @@
 #include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
+#include <QSystemTrayIcon>
 #include <QTabWidget>
 #include <QTimer>
 #include <QToolBar>
@@ -121,6 +122,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_sizeUnitsAdaptiveAction = new QAction("Adaptive Size Units", this);
     m_setOthersThresholdAction = new QAction("Set Others Threshold...", this);
     m_exitAction = new QAction("Exit", this);
+    m_settingsAction = new QAction("Settings...", this);
     m_locateEverythingAction = new QAction("Locate Everything Executable...", this);
     m_useEverythingAction = new QAction("Use Everything when available", this);
     m_useEverythingAction->setCheckable(true);
@@ -198,6 +200,8 @@ MainWindow::MainWindow(QWidget *parent)
     snapshotMenu->addAction(m_snapshotSettingsAction);
 
     auto *toolsMenu = menuBar()->addMenu("Tools");
+    toolsMenu->addAction(m_settingsAction);
+    toolsMenu->addSeparator();
     toolsMenu->addAction(m_useEverythingAction);
     toolsMenu->addAction(m_locateEverythingAction);
     toolsMenu->addAction(m_testEverythingAction);
@@ -264,6 +268,7 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
     connect(m_locateEverythingAction, &QAction::triggered, this, &MainWindow::everythingLocationRequested);
+    connect(m_settingsAction, &QAction::triggered, this, &MainWindow::settingsRequested);
     connect(m_useEverythingAction, &QAction::toggled, this, &MainWindow::useEverythingToggled);
     connect(m_testEverythingAction, &QAction::triggered, this, &MainWindow::testEverythingRequested);
     connect(m_exportReportHtmlAction, &QAction::triggered, this, [this]() { emit exportReportRequested(QStringLiteral("html")); });
@@ -428,9 +433,44 @@ MainWindow::MainWindow(QWidget *parent)
     statusBar()->addPermanentWidget(m_progressBar);
     setStatusText("Ready");
 
+    // Tray residency: the window can be hidden and reopened from the tray, and long jobs
+    // can notify when the window is not in front.
+    if (QSystemTrayIcon::isSystemTrayAvailable()) {
+        m_trayIcon = new QSystemTrayIcon(windowIcon(), this);
+        auto *trayMenu = new QMenu(this);
+        trayMenu->addAction("Show OpenTree", this, [this]() {
+            showNormal();
+            raise();
+            activateWindow();
+        });
+        trayMenu->addAction("Hide", this, [this]() { hide(); });
+        trayMenu->addSeparator();
+        trayMenu->addAction("Scan Folder...", this, [this]() { emit scanRequested(); });
+        trayMenu->addAction("Create Snapshot", this, [this]() { emit createSnapshotRequested(); });
+        trayMenu->addSeparator();
+        trayMenu->addAction("Exit", this, [this]() {
+            m_quitRequested = true;
+            close();
+        });
+        m_trayIcon->setContextMenu(trayMenu);
+        m_trayIcon->setToolTip("OpenTree");
+        connect(m_trayIcon, &QSystemTrayIcon::activated, this, [this](QSystemTrayIcon::ActivationReason reason) {
+            if (reason != QSystemTrayIcon::Trigger && reason != QSystemTrayIcon::DoubleClick) {
+                return;
+            }
+            if (isVisible()) {
+                hide();
+            } else {
+                showNormal();
+                raise();
+                activateWindow();
+            }
+        });
+        m_trayIcon->show();
+    }
+
     Logger::info("main-window-debug ctor: complete");
 }
-
 void MainWindow::ensureGraphPanel()
 {
     if (m_graphPanel) {
@@ -561,10 +601,37 @@ void MainWindow::showDetailsTableTab()
     m_tabs->setCurrentWidget(m_detailsTablePanel);
 }
 
+QMap<QString, QString> MainWindow::availableThemes() const
+{
+    return m_themeNames;
+}
+
+void MainWindow::setCloseToTrayEnabled(bool enabled)
+{
+    m_closeToTrayEnabled = enabled;
+}
+
+void MainWindow::notify(const QString &title, const QString &message)
+{
+    if (m_trayIcon && !isActiveWindow()) {
+        m_trayIcon->showMessage(title, message, QSystemTrayIcon::Information, 4000);
+    }
+}
+
 void MainWindow::closeEvent(QCloseEvent *event)
 {
     QSettings settings;
     settings.setValue(QStringLiteral("Window/Geometry"), saveGeometry());
+
+    if (m_closeToTrayEnabled && !m_quitRequested && m_trayIcon) {
+        event->ignore();
+        hide();
+        m_trayIcon->showMessage(QStringLiteral("OpenTree"),
+                                QStringLiteral("OpenTree is still running in the tray."),
+                                QSystemTrayIcon::Information, 3000);
+        return;
+    }
+
     QMainWindow::closeEvent(event);
 }
 
@@ -742,8 +809,7 @@ void MainWindow::setStatusText(const QString &text)
     m_statusLabel->setText(text);
 }
 
-void MainWindow::setTimelineMode(bool active)
-{
+void MainWindow::setTimelineMode(bool active){
     if (!m_rightSplitter || !m_detailsPanel) {
         return;
     }

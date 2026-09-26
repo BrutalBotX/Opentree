@@ -36,6 +36,7 @@
 #include "ui/ChartPanel.h"
 #include "ui/DetailsTablePanel.h"
 #include "ui/DuplicatesPanel.h"
+#include "ui/SettingsDialog.h"
 #include "ui/ThemeManager.h"
 #include "ui/TreePanel.h"
 #include "utils/Logger.h"
@@ -706,6 +707,14 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
         expandLoop.exec();
     }
     QCoreApplication::processEvents();
+
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_SETTINGS")) {
+        opentree::SettingsDialog dialog(&configService, window.availableThemes(), &window);
+        dialog.show();
+        QCoreApplication::processEvents();
+        dialog.grab().save(outputPath);
+        return 0;
+    }
 
     const bool saved = window.grab().save(outputPath);
     return saved ? 0 : 1;

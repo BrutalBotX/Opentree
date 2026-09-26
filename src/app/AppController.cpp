@@ -38,6 +38,7 @@
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
 #include "ui/SnapshotSettingsDialog.h"
+#include "ui/SettingsDialog.h"
 #include "ui/SnapshotManagerDialog.h"
 #include "ui/ThemeManager.h"
 #include "ui/TimelinePanel.h"
@@ -135,6 +136,7 @@ void AppController::attachWindow(MainWindow *window)
     if (m_window->useEverythingAction()) {
         m_window->setUseEverythingChecked(m_configService->useEverything());
     }
+    m_window->setCloseToTrayEnabled(m_configService->closeToTray());
 
     connect(m_window, &MainWindow::scanRequested, this, [this]() {
         handleScanRequest();
@@ -162,6 +164,9 @@ void AppController::attachWindow(MainWindow *window)
                     : QStringLiteral("Graph now shows the whole subtree"));
             }
         });
+    });
+    connect(m_window, &MainWindow::settingsRequested, this, [this]() {
+        handleSettingsRequest();
     });
     connect(m_window, &MainWindow::everythingLocationRequested, this, [this]() {
         handleLocateEverythingRequest();
@@ -588,6 +593,11 @@ void AppController::handleScanFinished()
                                 .arg(result.folders.size())
                                 .arg(result.files.size())
                                 .arg(result.usedEverything ? "Everything" : "filesystem"));
+    m_window->notify(QStringLiteral("Scan complete"),
+                     QStringLiteral("%1 folders and %2 files via %3")
+                         .arg(result.folders.size())
+                         .arg(result.files.size())
+                         .arg(result.usedEverything ? QStringLiteral("Everything") : QStringLiteral("filesystem")));
 }
 
 void AppController::handleScanFailed(const QString &message)
@@ -1362,6 +1372,44 @@ void AppController::handleExportReportRequest(const QString &format)
         QMessageBox::warning(m_window, QStringLiteral("Export report"),
                              error.isEmpty() ? QStringLiteral("Export failed.") : error);
     }
+}
+
+void AppController::handleSettingsRequest()
+{
+    if (!m_window) {
+        return;
+    }
+
+    SettingsDialog dialog(m_configService, m_window->availableThemes(), m_window);
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    // Push the new settings into the running UI.
+    applyCurrentTheme();
+    applyViewMetric(m_configService->viewMetric());
+    m_otherThresholdPercent = m_configService->othersThresholdPercent();
+    if (GraphPanel *graph = m_window->existingGraphPanel()) {
+        graph->setMaxNodes(m_configService->graphMaxNodes());
+        graph->setFollowTreeExpansion(m_configService->graphFollowTreeExpansion());
+        graph->setOtherThresholdPercent(m_otherThresholdPercent);
+    }
+    m_window->setCloseToTrayEnabled(m_configService->closeToTray());
+    m_window->setUseEverythingChecked(m_configService->useEverything());
+
+    // Keep the scheduled task in sync with the snapshot settings.
+    QString error;
+    if (!TaskSchedulerUtils::syncSnapshotTask(
+            QCoreApplication::applicationFilePath(),
+            m_configService->snapshotScheduleEnabled(),
+            m_configService->snapshotScheduleMode(),
+            m_configService->snapshotScheduleTime(),
+            &error)) {
+        QMessageBox::warning(m_window, QStringLiteral("Settings"),
+                             error.isEmpty() ? QStringLiteral("Failed to update the scheduled task.") : error);
+    }
+
+    m_window->setStatusText(QStringLiteral("Settings updated"));
 }
 
 void AppController::handleSnapshotSettingsRequest()

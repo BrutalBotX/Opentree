@@ -80,6 +80,18 @@ QStringList ConfigService::excludedPatterns() const
     return m_settings.value("Scanning/ExclusionPatterns").toString().split(';', Qt::SkipEmptyParts);
 }
 
+void ConfigService::setExcludedPatterns(const QStringList &patterns)
+{
+    m_settings.setValue("Scanning/ExclusionPatterns", patterns.join(QLatin1Char(';')));
+    m_settings.sync();
+}
+
+void ConfigService::setGraphMaxNodes(int maxNodes)
+{
+    m_settings.setValue("Graph/MaxNodes", std::clamp(maxNodes, 20, 600));
+    m_settings.sync();
+}
+
 int ConfigService::graphMaxNodes() const
 {
     return m_settings.value("Graph/MaxNodes", 500).toInt();
@@ -158,6 +170,17 @@ QString ConfigService::themeId() const
 void ConfigService::setThemeId(const QString &themeId)
 {
     m_settings.setValue("General/Theme", themeId);
+    m_settings.sync();
+}
+
+bool ConfigService::closeToTray() const
+{
+    return m_settings.value("General/CloseToTray", false).toBool();
+}
+
+void ConfigService::setCloseToTray(bool enabled)
+{
+    m_settings.setValue("General/CloseToTray", enabled);
     m_settings.sync();
 }
 
@@ -288,6 +311,7 @@ void ConfigService::ensureDefaults()
         m_settings.setValue("General/ViewMetric", "size");
         m_settings.setValue("General/SizeDisplayMode", "adaptive");
         m_settings.setValue("General/OthersThresholdPercent", 1.0);
+        m_settings.setValue("General/CloseToTray", false);
         m_settings.setValue("Scanning/ExclusionPatterns", "$Recycle.Bin;System Volume Information");
         m_settings.setValue("Scanning/EverythingExecutablePath", QString());
         m_settings.setValue("Scanning/UseEverything", true);

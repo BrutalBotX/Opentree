@@ -29,7 +29,9 @@ public:
     bool dedupSkipSystemFolders() const;
     void setDedupSkipSystemFolders(bool skip);
     QStringList excludedPatterns() const;
+    void setExcludedPatterns(const QStringList &patterns);
     int graphMaxNodes() const;
+    void setGraphMaxNodes(int maxNodes);
     bool graphFollowTreeExpansion() const;
     void setGraphFollowTreeExpansion(bool follow);
     qint64 graphMinimumFolderBytes() const;
@@ -41,6 +43,8 @@ public:
     void setOthersThresholdPercent(double percent);
     QString themeId() const;
     void setThemeId(const QString &themeId);
+    bool closeToTray() const;
+    void setCloseToTray(bool enabled);
     QString themesDirectory() const;
     QStringList recentRoots() const;
     void setRecentRoots(const QStringList &paths);

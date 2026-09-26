@@ -81,6 +81,7 @@ private:
     void handleLocateEverythingRequest();
     void handleExportDetailsCsvRequest();
     void handleExportReportRequest(const QString &format);
+    void handleSettingsRequest();
     void handleTestEverythingRequest();
     void handleSnapshotSettingsRequest();
     void handleSnapshotManagementRequest();

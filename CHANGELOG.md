@@ -8,6 +8,13 @@ The format is loosely based on Keep a Changelog.
 
 ### Added
 
+- Unified Settings dialog (Tools > Settings...) covering General (theme, view metric, others
+  cutoff, close-to-tray), Scanning (Everything, exclusions), Snapshots (schedule, threshold,
+  retention, tracked folders), Graph (node budget, follow-tree) and Deduplication (minimum
+  size, skip system folders). Accepting applies the changes live and re-syncs the scheduled
+  task.
+- Tray icon with Show/Hide, Scan Folder, Create Snapshot and Exit, plus notifications on
+  scan completion when the window is not in front. Optional "close to tray" behaviour.
 - Insights tab: disk-full forecast from saved snapshots (linear size trend plus free space),
   stale-file detection over the largest files of a scan, and pattern-based junk detection
   (temporary files, logs, crash dumps, caches, backup copies, shell clutter) with a

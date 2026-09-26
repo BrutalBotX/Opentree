@@ -16,6 +16,7 @@ QT_FORWARD_DECLARE_CLASS(QProgressBar)
 QT_FORWARD_DECLARE_CLASS(QTabWidget)
 QT_FORWARD_DECLARE_CLASS(QToolBar)
 QT_FORWARD_DECLARE_CLASS(QSplitter)
+QT_FORWARD_DECLARE_CLASS(QSystemTrayIcon)
 QT_FORWARD_DECLARE_CLASS(QWidget)
 
 namespace opentree {
@@ -82,12 +83,16 @@ public:
     void setProgress(int percent);
     void setStatusText(const QString &text);
     void setTimelineMode(bool active);
+    QMap<QString, QString> availableThemes() const;
+    void setCloseToTrayEnabled(bool enabled);
+    void notify(const QString &title, const QString &message);
 
 signals:
     void scanRequested();    void createSnapshotRequested();
     void compareSnapshotRequested();
     void snapshotManagementRequested();
     void everythingLocationRequested();
+    void settingsRequested();
     void exportDetailsCsvRequested();
     void exportReportRequested(const QString &format);
     void useEverythingToggled(bool enabled);
@@ -164,6 +169,10 @@ private:
     QAction *m_setOthersThresholdAction;
     QAction *m_exitAction;
     QAction *m_locateEverythingAction;
+    QAction *m_settingsAction;
+    QSystemTrayIcon *m_trayIcon = nullptr;
+    bool m_closeToTrayEnabled = false;
+    bool m_quitRequested = false;
     QAction *m_useEverythingAction;
     QAction *m_testEverythingAction;
     QAction *m_exportReportHtmlAction;
