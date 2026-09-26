@@ -8,6 +8,7 @@
 #include <QFileInfo>
 #include <QLabel>
 #include <QProcess>
+#include <QMenu>
 #include <QToolButton>
 #include <QDesktopServices>
 #include <QDir>
@@ -109,6 +110,7 @@ DetailsPanel::DetailsPanel(QWidget *parent)
     form->addRow("Permissions :", m_permissionsLabel);
     form->addRow("Path Length :", m_pathLengthLabel);
     outerLayout->addLayout(form);
+
     outerLayout->addStretch();
 
     connect(m_openAction, &QAction::triggered, this, [this]() {
@@ -131,6 +133,22 @@ DetailsPanel::DetailsPanel(QWidget *parent)
         }
     });
 
+    setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint &position) {
+        QMenu menu(this);
+        QAction *openAction = menu.addAction("Open");
+        QAction *explorerAction = menu.addAction("Show in Explorer");
+        QAction *copyAction = menu.addAction("Copy Path");
+        QAction *selected = menu.exec(mapToGlobal(position));
+        if (selected == openAction) {
+            m_openAction->trigger();
+        } else if (selected == explorerAction) {
+            m_showInExplorerAction->trigger();
+        } else if (selected == copyAction) {
+            m_copyPathAction->trigger();
+        }
+    });
+
     clear();
 }
 
@@ -148,11 +166,16 @@ void DetailsPanel::setEntry(const TreeEntry &entry)
     const QFileInfo info(entry.path);
     const FileMetadataDetails metadata = FileMetadataUtils::readMetadata(entry.path);
 
+    // AllocationSize is only meaningful per file. For a folder it describes the
+    // directory entry (often a few KB or zero), which is meaningless next to the
+    // aggregated subtree size and produced nonsense like "96% compression".
+    const bool allocationMeaningful = entry.kind == TreeEntryKind::File && metadata.allocatedBytesKnown;
+
     setValue(m_kindBadgeLabel, entry.kind == TreeEntryKind::Folder ? QStringLiteral("Folder") : QStringLiteral("File"));
     setValue(m_nameLabel, entry.name);
     setValue(m_pathLabel, entry.path);
     setValue(m_sizeLabel, SizeFormatter::formatBytes(entry.size));
-    setValue(m_allocatedLabel, metadata.allocatedBytesKnown ? SizeFormatter::formatBytes(metadata.allocatedBytes) : QStringLiteral("-"));
+    setValue(m_allocatedLabel, allocationMeaningful ? SizeFormatter::formatBytes(metadata.allocatedBytes) : QStringLiteral("-"));
     setValue(m_percentOfParentLabel, FileMetadataUtils::formatPercentOfParent(entry.size, entry.parentSize));
     setValue(m_filesLabel, entry.kind == TreeEntryKind::Folder ? QString::number(entry.fileCount) : QStringLiteral("-"));
     setValue(m_foldersLabel, entry.kind == TreeEntryKind::Folder ? QString::number(entry.folderCount) : QStringLiteral("-"));
@@ -161,7 +184,9 @@ void DetailsPanel::setEntry(const TreeEntry &entry)
     setValue(m_creationDateLabel, FileMetadataUtils::formatTimestamp(info.birthTime()));
     setValue(m_ownerLabel, metadata.owner);
     setValue(m_attributesLabel, metadata.attributes);
-    setValue(m_compressionRateLabel, FileMetadataUtils::formatCompressionRate(entry.size, metadata.allocatedBytes, metadata.allocatedBytesKnown));
+    setValue(m_compressionRateLabel, allocationMeaningful
+                                         ? FileMetadataUtils::formatCompressionRate(entry.size, metadata.allocatedBytes, true)
+                                         : QStringLiteral("-"));
     setValue(m_permissionsLabel, metadata.permissions);
     setValue(m_pathLengthLabel, QString::number(entry.path.size()));
     updateActionState();

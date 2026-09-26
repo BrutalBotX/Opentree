@@ -29,6 +29,7 @@ public:
 
 signals:
     void entryActivated(const TreeEntry &entry);
+    void entryOpened(const TreeEntry &entry);
     void visiblePathsChanged(const QStringList &paths);
 
 protected:

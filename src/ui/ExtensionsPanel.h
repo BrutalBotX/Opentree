@@ -4,6 +4,7 @@
 
 #include "domain/ScanTypes.h"
 
+QT_FORWARD_DECLARE_CLASS(QComboBox)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QTableWidget)
 
@@ -13,6 +14,11 @@ class ExtensionsPanel : public QWidget {
     Q_OBJECT
 
 public:
+    enum class GroupMode {
+        Extension,
+        Category,
+    };
+
     explicit ExtensionsPanel(QWidget *parent = nullptr);
 
     void setScanResult(const ScanResult &result);
@@ -21,12 +27,15 @@ public:
 
 private:
     void rebuild();
+    static QString categoryForExtension(const QString &extension);
 
     QLabel *m_summaryLabel;
+    QComboBox *m_modeCombo;
     QTableWidget *m_table;
     ScanResult m_result;
     QString m_activeFolderPath;
     ViewMetric m_viewMetric = ViewMetric::Percentage;
+    GroupMode m_groupMode = GroupMode::Extension;
 };
 
 }

@@ -336,6 +336,56 @@ QVector<SnapshotSummary> SnapshotService::listSnapshots(QString *errorMessage) c
     return snapshots;
 }
 
+bool SnapshotService::deleteSnapshot(int snapshotId, QString *errorMessage)
+{
+    if (snapshotId <= 0) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("Invalid snapshot id.");
+        }
+        return false;
+    }
+
+    if (!m_database.transaction()) {
+        if (errorMessage) {
+            *errorMessage = m_database.lastError().text();
+        }
+        return false;
+    }
+
+    auto execDelete = [&](const QString &sql) -> bool {
+        QSqlQuery query(m_database);
+        query.prepare(sql);
+        query.addBindValue(snapshotId);
+        if (!query.exec()) {
+            if (errorMessage) {
+                *errorMessage = query.lastError().text();
+            }
+            m_database.rollback();
+            return false;
+        }
+        return true;
+    };
+
+    if (!execDelete("DELETE FROM snapshot_file_events WHERE snapshot_id = ?")) {
+        return false;
+    }
+    if (!execDelete("DELETE FROM snapshot_items WHERE snapshot_id = ?")) {
+        return false;
+    }
+    if (!execDelete("DELETE FROM snapshots WHERE id = ?")) {
+        return false;
+    }
+
+    if (!m_database.commit()) {
+        if (errorMessage) {
+            *errorMessage = m_database.lastError().text();
+        }
+        return false;
+    }
+
+    return true;
+}
+
 SnapshotCompareResult SnapshotService::compareSnapshotToCurrent(int snapshotId, const ScanResult &current, QString *errorMessage) const
 {
     SnapshotCompareResult result;

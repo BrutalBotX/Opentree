@@ -2,7 +2,7 @@
 
 namespace opentree::SizeFormatter {
 
-QString formatBytes(qint64 bytes)
+QString formatAdaptiveBytes(qint64 bytes)
 {
     static const char *units[] = {"B", "KB", "MB", "GB", "TB"};
     double value = static_cast<double>(bytes);
@@ -17,6 +17,11 @@ QString formatBytes(qint64 bytes)
     }
 
     return QString::number(value, 'f', value >= 10.0 ? 1 : 2) + " " + units[unitIndex];
+}
+
+QString formatBytes(qint64 bytes)
+{
+    return formatAdaptiveBytes(bytes);
 }
 
 }

@@ -30,7 +30,14 @@ signals:
     void scanFailed(const QString &message);
 
 private:
-    ScanResult performScan(const QString &rootPath, const QStringList &excludedPatterns);
+    ScanResult performScan(const QString &rootPath,
+                           const QStringList &excludedPatterns,
+                           bool useEverything,
+                           const QString &everythingExecutablePath);
+    static ScanResult performEverythingScan(const QString &rootPath,
+                                            const QStringList &excludedPatterns,
+                                            QVector<FileEntry> files,
+                                            QVector<FolderEntry> folders);
     static QVector<FileEntry> collectFilesystemFiles(const QString &rootPath, const QStringList &excludedPatterns, std::function<void(int, const QString &)> progressCallback);
 
     ConfigService *m_configService;

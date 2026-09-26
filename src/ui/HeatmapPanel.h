@@ -17,11 +17,17 @@ public:
     explicit HeatmapPanel(QWidget *parent = nullptr);
 
     void setHeatmapData(const QVector<TreeEntry> &entries, const QVector<SnapshotCompareRow> &compareRows);
+    void setActiveFolderPath(const QString &path);
     void setViewMetric(ViewMetric metric);
 
 private:
+    void rebuild();
+
     QLabel *m_summaryLabel;
     QTableWidget *m_table;
+    QVector<TreeEntry> m_entries;
+    QVector<SnapshotCompareRow> m_compareRows;
+    QString m_activeFolderPath;
     ViewMetric m_viewMetric = ViewMetric::Percentage;
 };
 

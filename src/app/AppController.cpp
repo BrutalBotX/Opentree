@@ -10,6 +10,7 @@
 #include <QInputDialog>
 #include <QMessageBox>
 #include <QProcess>
+#include <QPushButton>
 #include <QGuiApplication>
 #include <QTimer>
 #include <QUrl>
@@ -25,6 +26,9 @@
 #include "services/SnapshotService.h"
 #include "ui/DetailsPanel.h"
 #include "ui/ChartPanel.h"
+#include "ui/DetailsTablePanel.h"
+#include "ui/DriveSelector.h"
+#include "ui/DuplicatesPanel.h"
 #include "ui/ExtensionsPanel.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
@@ -48,24 +52,7 @@ QString normalizeRootKey(const QString &path)
 
 bool isSameOrDescendantPath(const QString &path, const QString &rootPath)
 {
-    if (rootPath.isEmpty()) {
-        return true;
-    }
-
-    if (path.compare(rootPath, Qt::CaseInsensitive) == 0) {
-        return true;
-    }
-
-    if (!path.startsWith(rootPath, Qt::CaseInsensitive) || path.length() <= rootPath.length()) {
-        return false;
-    }
-
-    if (rootPath.endsWith(QLatin1Char('/')) || rootPath.endsWith(QLatin1Char('\\'))) {
-        return true;
-    }
-
-    const QChar next = path.at(rootPath.length());
-    return next == QLatin1Char('/') || next == QLatin1Char('\\');
+    return PathUtils::isSameOrDescendant(path, rootPath);
 }
 
 template <typename Fn>
@@ -139,7 +126,11 @@ void AppController::attachWindow(MainWindow *window)
     } else {
         m_window->setStatusText(QStringLiteral("Config: %1").arg(m_configService->configPath()));
     }
-    
+
+    if (m_window->useEverythingAction()) {
+        m_window->setUseEverythingChecked(m_configService->useEverything());
+    }
+
     connect(m_window, &MainWindow::scanRequested, this, [this]() {
         handleScanRequest();
     });
@@ -152,8 +143,38 @@ void AppController::attachWindow(MainWindow *window)
     connect(m_window, &MainWindow::snapshotManagementRequested, this, [this]() {
         handleSnapshotManagementRequest();
     });
+    connect(m_window, &MainWindow::graphPanelCreated, this, [this](GraphPanel *graph) {
+        if (!graph || !m_configService) {
+            return;
+        }
+        graph->setMaxNodes(m_configService->graphMaxNodes());
+        graph->setFollowTreeExpansion(m_configService->graphFollowTreeExpansion());
+        connect(graph, &GraphPanel::followTreeExpansionChanged, this, [this](bool follow) {
+            m_configService->setGraphFollowTreeExpansion(follow);
+            if (m_window) {
+                m_window->setStatusText(follow
+                    ? QStringLiteral("Graph now follows the tree expansion")
+                    : QStringLiteral("Graph now shows the whole subtree"));
+            }
+        });
+    });
     connect(m_window, &MainWindow::everythingLocationRequested, this, [this]() {
         handleLocateEverythingRequest();
+    });
+    connect(m_window, &MainWindow::exportDetailsCsvRequested, this, [this]() {
+        handleExportDetailsCsvRequest();
+    });
+    connect(m_window->detailsTablePanel(), &DetailsTablePanel::exportRequested, this, [this]() {
+        handleExportDetailsCsvRequest();
+    });
+    connect(m_window, &MainWindow::useEverythingToggled, this, [this](bool enabled) {
+        m_configService->setUseEverything(enabled);
+        m_window->setStatusText(enabled
+            ? QStringLiteral("Everything scan engine enabled")
+            : QStringLiteral("Everything scan engine disabled; filesystem scanning will be used"));
+    });
+    connect(m_window, &MainWindow::testEverythingRequested, this, [this]() {
+        handleTestEverythingRequest();
     });
     connect(m_window, &MainWindow::snapshotSettingsRequested, this, [this]() {
         handleSnapshotSettingsRequest();
@@ -195,6 +216,11 @@ void AppController::attachWindow(MainWindow *window)
     connect(m_window->treePanel(), &TreePanel::entryOpened, this, &AppController::handleGraphEntryOpened);
     connect(m_window->chartPanel(), &ChartPanel::entryActivated, this, &AppController::handleChartEntryActivated);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenInGraphRequested, this, &AppController::handleChartOpenInGraphRequested);
+    connect(m_window->detailsTablePanel(), &DetailsTablePanel::entryActivated, this, &AppController::handleChartEntryActivated);
+    m_duplicatesPanel = new DuplicatesPanel(m_configService, m_window);
+    m_window->setDuplicatesPanel(m_duplicatesPanel);
+    connect(m_duplicatesPanel, &DuplicatesPanel::entryActivated, this, &AppController::handleChartEntryActivated);
+    connect(m_window->driveSelector(), &DriveSelector::driveActivated, this, &AppController::handleRecentRootRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenRequested, this, &AppController::handleChartOpenRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryShowInExplorerRequested, this, &AppController::handleChartShowInExplorerRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryCopyPathRequested, this, &AppController::handleChartCopyPathRequested);
@@ -202,16 +228,26 @@ void AppController::attachWindow(MainWindow *window)
         handleNavigatePath(path, false);
     });
     connect(m_window->treePanel(), &TreePanel::visiblePathsChanged, this, [this](const QStringList &paths) {
-        Logger::info(QStringLiteral("graph-debug tree visiblePathsChanged count=%1 first=%2")
-                         .arg(paths.size())
-                         .arg(paths.isEmpty() ? QStringLiteral("<none>") : paths.first()));
-        if (m_window) {
-            updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
-                graph->beginBatchUpdate();
-                graph->setVisiblePaths(paths);
-                graph->endBatchUpdate();
+        // Expanding/collapsing many folders fires this for every node. Coalesce the burst
+        // so the graph is rebuilt once instead of thousands of times (Expand All used to
+        // lock up or crash the app on large trees).
+        m_pendingGraphPaths = paths;
+        if (!m_graphPathTimer) {
+            m_graphPathTimer = new QTimer(this);
+            m_graphPathTimer->setSingleShot(true);
+            m_graphPathTimer->setInterval(200);
+            connect(m_graphPathTimer, &QTimer::timeout, this, [this]() {
+                if (!m_window) {
+                    return;
+                }
+                updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
+                    graph->beginBatchUpdate();
+                    graph->setVisiblePaths(m_pendingGraphPaths);
+                    graph->endBatchUpdate();
+                });
             });
         }
+        m_graphPathTimer->start();
     });
     connect(m_window->timelinePanel(), &TimelinePanel::snapshotSelected, this, [this](int snapshotId) {
         Q_UNUSED(snapshotId);
@@ -359,6 +395,7 @@ void AppController::activateRootSession(const QString &rootPath, bool showGraphT
 
     m_lastRequestedRootPath = normalizedRoot;
     m_window->timelinePanel()->setCurrentRootPath(normalizedRoot);
+    m_window->driveSelector()->setRootPath(normalizedRoot);
 
     ScanResult cachedResult;
     QString cacheError;
@@ -550,10 +587,20 @@ void AppController::handleEntryActivated(const TreeEntry &entry)
         return;
     }
 
+    // Selecting an item that belongs to another scanned root has to switch the active
+    // root first; otherwise the panels stay scoped to the old root and can show nothing.
+    if (const RootSession *session = findRootSessionForPath(entry.path)) {
+        if (m_currentResult.rootPath.compare(session->result.rootPath, Qt::CaseInsensitive) != 0) {
+            activateRootSession(session->result.rootPath, false);
+        }
+    }
+
     m_activeFolderPath = entry.kind == TreeEntryKind::Folder ? entry.path : entry.parentPath;
     m_window->detailsPanel()->setEntry(entry);
     m_window->chartPanel()->setActiveFolderPath(m_activeFolderPath);
+    m_window->detailsTablePanel()->setActiveFolderPath(m_activeFolderPath);
     m_window->extensionsPanel()->setActiveFolderPath(m_activeFolderPath);
+    m_window->heatmapPanel()->setActiveFolderPath(m_activeFolderPath);
     updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
         graph->setSelectedPath(entry.path);
     });
@@ -596,7 +643,8 @@ void AppController::handleGraphNodeActivated(const QString &path)
         return;
     }
 
-    m_window->showTimelineTab();
+    // Highlight the matching snapshot for this graph node, but never switch tabs:
+    // clicking a graph node must not yank the user out of the Graph view.
     const QVector<SnapshotSummary> snapshots = m_snapshotService->listSnapshots(nullptr);
     for (const SnapshotSummary &snapshot : snapshots) {
         const QString snapshotRoot = snapshot.rootPath;
@@ -760,6 +808,18 @@ void AppController::handleRescanCurrentRootRequest()
 
 void AppController::handleClearAllRootsRequest()
 {
+    if (m_window && !m_rootSessions.isEmpty()) {
+        const QMessageBox::StandardButton answer = QMessageBox::question(
+            m_window,
+            "Clear All Roots",
+            QStringLiteral("Close all %1 scanned roots? Cached data stays on disk, but the current session is cleared.").arg(m_rootSessions.size()),
+            QMessageBox::Yes | QMessageBox::No,
+            QMessageBox::No);
+        if (answer != QMessageBox::Yes) {
+            return;
+        }
+    }
+
     m_rootSessions.clear();
     m_currentResult = {};
     m_activeFolderPath.clear();
@@ -768,7 +828,13 @@ void AppController::handleClearAllRootsRequest()
         m_window->detailsPanel()->clear();
         m_window->chartPanel()->setScanResult({});
         m_window->extensionsPanel()->setScanResult({});
+        m_window->detailsTablePanel()->setScanResult({});
+        if (m_duplicatesPanel) {
+            m_duplicatesPanel->setScanResult({});
+        }
+        m_window->driveSelector()->setRootPath(QString());
         m_window->heatmapPanel()->setHeatmapData({}, {});
+        m_window->heatmapPanel()->setActiveFolderPath(QString());
         m_window->timelinePanel()->setCurrentRootPath(QString());
         m_window->timelinePanel()->setSnapshots({});
         m_window->timelinePanel()->resetCompareState();
@@ -814,9 +880,53 @@ void AppController::handleOpenLogFileRequest()
 
 void AppController::handleExpandAllRequest()
 {
-    if (m_window && m_window->treePanel()) {
-        m_window->treePanel()->expandAll();
+    if (!m_window || !m_window->treePanel()) {
+        return;
     }
+
+    // Expanding walks the whole model and re-lays out the view, so a whole drive root
+    // (hundreds of thousands of folders) would freeze or crash the app. Warn first, and
+    // refuse outright above a hard ceiling.
+    const int folderCount = m_currentResult.folders.size();
+    constexpr int kExpandAllWarnThreshold = 200;
+    constexpr int kExpandAllBlockThreshold = 5000;
+
+    if (folderCount > kExpandAllBlockThreshold) {
+        QMessageBox::warning(
+            m_window,
+            QStringLiteral("Expand All"),
+            QStringLiteral("This root has %1 folders, which is far too many to expand at once.\n\n"
+                           "Doing it would very likely freeze or crash the app. Expand the folders you "
+                           "need one at a time instead, or scan a smaller root.")
+                .arg(folderCount));
+        m_window->setStatusText(QStringLiteral("Expand All skipped: %1 folders is too many").arg(folderCount));
+        return;
+    }
+
+    if (folderCount > kExpandAllWarnThreshold) {
+        QMessageBox box(m_window);
+        box.setIcon(QMessageBox::Warning);
+        box.setWindowTitle(QStringLiteral("Expand All"));
+        box.setText(QStringLiteral("Expand every folder in the tree?"));
+        box.setInformativeText(QStringLiteral(
+            "The current root has %1 folders under it. Expanding all of them is very "
+            "expensive and can freeze or crash the app, especially when several roots are "
+            "open.\n\nExpand folders a few at a time if you only need part of the tree.")
+                .arg(folderCount));
+        QPushButton *expandButton = box.addButton(QStringLiteral("Expand All Anyway"), QMessageBox::AcceptRole);
+        QPushButton *cancelButton = box.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
+        box.setDefaultButton(cancelButton);
+        box.exec();
+        if (box.clickedButton() != expandButton) {
+            if (m_window) {
+                m_window->setStatusText(QStringLiteral("Expand All cancelled"));
+            }
+            return;
+        }
+    }
+
+    m_window->treePanel()->expandAll();
+    m_window->setStatusText(QStringLiteral("Expanded all folders"));
 }
 
 void AppController::handleCollapseAllRequest()
@@ -901,6 +1011,7 @@ void AppController::applyViewMetric(ViewMetric metric)
     m_window->chartPanel()->setViewMetric(metric);
     m_window->extensionsPanel()->setViewMetric(metric);
     m_window->heatmapPanel()->setViewMetric(metric);
+    m_window->detailsTablePanel()->setViewMetric(metric);
 }
 
 RootSession *AppController::findRootSessionForPath(const QString &path)
@@ -1000,8 +1111,13 @@ void AppController::syncActiveResultUi(const ScanResult &result, const QString &
     m_window->chartPanel()->setActiveFolderPath(activeFolderPath);
     m_window->extensionsPanel()->setScanResult(result);
     m_window->extensionsPanel()->setActiveFolderPath(activeFolderPath);
+    m_window->detailsTablePanel()->setScanResult(result);
+    m_window->detailsTablePanel()->setActiveFolderPath(activeFolderPath);
+    if (m_duplicatesPanel) {
+        m_duplicatesPanel->setScanResult(result);
+    }
     applyViewMetric(m_viewMetric);
-    if (m_window->currentTabIndex() != 4) {
+    if (!m_window->isTimelineTabVisible()) {
         if (const TreeEntry *rootEntry = findTreeEntry(activeFolderPath)) {
             m_window->detailsPanel()->setEntry(*rootEntry);
         } else {
@@ -1017,6 +1133,7 @@ void AppController::syncActiveResultUi(const ScanResult &result, const QString &
         graph->setGraphRootPath(activeFolderPath);
         graph->endBatchUpdate();
     });
+    m_window->heatmapPanel()->setActiveFolderPath(activeFolderPath);
     m_window->heatmapPanel()->setHeatmapData(result.treeEntries, compareRows);
     m_window->timelinePanel()->setCurrentRootPath(result.rootPath);
     if (resetCompare) {
@@ -1039,7 +1156,9 @@ void AppController::syncFolderFocusUi(const TreeEntry &entry, bool showGraphTab)
     m_window->treePanel()->selectEntryPath(entry.path);
     m_window->detailsPanel()->setEntry(entry);
     m_window->chartPanel()->setActiveFolderPath(entry.path);
+    m_window->detailsTablePanel()->setActiveFolderPath(entry.path);
     m_window->extensionsPanel()->setActiveFolderPath(entry.path);
+    m_window->heatmapPanel()->setActiveFolderPath(entry.path);
     updateGraphPanel(ensureGraphPanel(m_window), [&](GraphPanel *graph) {
         graph->beginBatchUpdate();
         graph->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
@@ -1087,14 +1206,85 @@ void AppController::handleLocateEverythingRequest()
     const QString filePath = QFileDialog::getOpenFileName(
         m_window,
         "Locate Everything executable",
-        m_configService->everythingExecutablePath(),
+        m_configService->resolvedEverythingExecutablePath(),
         "Everything executable (Everything.exe);;All files (*.*)");
     if (filePath.isEmpty()) {
         return;
     }
 
     m_configService->setEverythingExecutablePath(filePath);
-    m_window->setStatusText(QStringLiteral("Everything executable set to %1").arg(filePath));
+
+    QString error;
+    if (m_everythingClient && m_everythingClient->ensureEverythingRunning(filePath, &error)) {
+        m_window->setStatusText(QStringLiteral("Everything executable set to %1 and service is reachable").arg(filePath));
+        QMessageBox::information(m_window, "Everything",
+            QStringLiteral("Everything is available.\nExecutable: %1").arg(filePath));
+    } else {
+        m_window->setStatusText(QStringLiteral("Everything executable set to %1 (not reachable)").arg(filePath));
+        QMessageBox::warning(m_window, "Everything",
+            error.isEmpty() ? QStringLiteral("Everything is not reachable.") : error);
+    }
+}
+
+void AppController::handleTestEverythingRequest()
+{
+    if (!m_window || !m_everythingClient) {
+        return;
+    }
+
+    const QString libraryPath = m_everythingClient->libraryPath();
+    if (!m_everythingClient->isLibraryLoaded()) {
+        const QString message = QStringLiteral("Everything SDK library could not be loaded.\n%1\n%2")
+                                    .arg(libraryPath, m_everythingClient->availabilityError());
+        m_window->setStatusText(QStringLiteral("Everything unavailable: %1").arg(m_everythingClient->availabilityError()));
+        QMessageBox::warning(m_window, "Everything", message);
+        return;
+    }
+
+    QString error;
+    if (m_everythingClient->testConnection(&error)) {
+        m_window->setStatusText(QStringLiteral("Everything is available (%1)").arg(libraryPath));
+        QMessageBox::information(m_window, "Everything",
+            QStringLiteral("Everything is available.\nSDK: %1\nService: reachable").arg(libraryPath));
+        return;
+    }
+
+    const QString executablePath = m_configService->resolvedEverythingExecutablePath();
+    if (!executablePath.isEmpty() && m_everythingClient->ensureEverythingRunning(executablePath, &error)) {
+        m_window->setStatusText(QStringLiteral("Everything is available (started %1)").arg(executablePath));
+        QMessageBox::information(m_window, "Everything",
+            QStringLiteral("Everything was started and is now available.\nExecutable: %1").arg(executablePath));
+        return;
+    }
+
+    const QString message = QStringLiteral("Everything is not reachable.\nSDK: %1\n%2")
+                                .arg(libraryPath, error.isEmpty() ? QStringLiteral("Everything service is not running.") : error);
+    m_window->setStatusText(QStringLiteral("Everything unavailable: %1").arg(error));
+    QMessageBox::warning(m_window, "Everything", message);
+}
+
+void AppController::handleExportDetailsCsvRequest()
+{
+    if (!m_window || !m_window->detailsTablePanel()) {
+        return;
+    }
+
+    const QString suggested = QDir(QDir(m_activeFolderPath.isEmpty() ? m_currentResult.rootPath : m_activeFolderPath).absolutePath())
+                                  .filePath(QStringLiteral("opentree-details.csv"));
+    QString filePath = QFileDialog::getSaveFileName(m_window, "Export details as CSV", suggested, "CSV files (*.csv)");
+    if (filePath.isEmpty()) {
+        return;
+    }
+    if (!filePath.endsWith(QStringLiteral(".csv"), Qt::CaseInsensitive)) {
+        filePath += QStringLiteral(".csv");
+    }
+
+    QString error;
+    if (m_window->detailsTablePanel()->exportCsv(filePath, &error)) {
+        m_window->setStatusText(QStringLiteral("Exported details table to %1").arg(filePath));
+    } else {
+        QMessageBox::warning(m_window, "Export CSV", error.isEmpty() ? QStringLiteral("Export failed.") : error);
+    }
 }
 
 void AppController::handleSnapshotSettingsRequest()
@@ -1152,7 +1342,7 @@ void AppController::handleCompareSnapshotRequest(int snapshotId)
         return;
     }
 
-    if (m_window->currentTabIndex() == 4) {
+    if (m_window->isTimelineTabVisible()) {
         m_window->timelinePanel()->setCompareResult(compare, rows, events);
         return;
     }
@@ -1166,6 +1356,7 @@ void AppController::handleCompareSnapshotRequest(int snapshotId)
         }
         graph->endBatchUpdate();
     });
+    m_window->heatmapPanel()->setActiveFolderPath(m_activeFolderPath);
     m_window->heatmapPanel()->setHeatmapData(m_currentResult.treeEntries, rows);
     m_window->setStatusText(QStringLiteral("Compared snapshot from %1").arg(compare.snapshotCreatedAt));
 }

@@ -5,6 +5,7 @@
 #include <QVector>
 
 #include "domain/ScanTypes.h"
+#include "services/SnapshotService.h"
 
 QT_FORWARD_DECLARE_CLASS(QAction)
 QT_FORWARD_DECLARE_CLASS(QToolButton)
@@ -26,8 +27,8 @@ private:
     QLabel *createValueLabel(bool multiLine = false);
     void setValue(QLabel *label, const QString &value);
     void updateActionState();
-
     TreeEntry m_currentEntry;
+    QVector<QLabel *> m_allValueLabels;
 
     QLabel *m_kindBadgeLabel;
     QLabel *m_nameLabel;
@@ -48,7 +49,6 @@ private:
     QAction *m_openAction;
     QAction *m_showInExplorerAction;
     QAction *m_copyPathAction;
-    QVector<QLabel *> m_allValueLabels;
 };
 
 }

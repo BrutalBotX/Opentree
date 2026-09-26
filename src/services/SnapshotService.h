@@ -70,6 +70,7 @@ public:
 
     SnapshotCreateResult createSnapshot(const ScanResult &result, qint64 thresholdBytes, QString *errorMessage = nullptr);
     QVector<SnapshotSummary> listSnapshots(QString *errorMessage = nullptr) const;
+    bool deleteSnapshot(int snapshotId, QString *errorMessage = nullptr);
     SnapshotCompareResult compareSnapshotToCurrent(int snapshotId, const ScanResult &current, QString *errorMessage = nullptr) const;
     QVector<SnapshotCompareRow> compareSnapshotRows(int snapshotId, const ScanResult &current, QString *errorMessage = nullptr) const;
     QVector<SnapshotFileEvent> snapshotFileEvents(int snapshotId, QString *errorMessage = nullptr) const;

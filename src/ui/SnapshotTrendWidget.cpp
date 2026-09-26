@@ -2,6 +2,7 @@
 
 #include <QPaintEvent>
 #include <QPainter>
+#include <QPolygonF>
 
 #include <algorithm>
 
@@ -33,7 +34,7 @@ void SnapshotTrendWidget::paintEvent(QPaintEvent *)
         return;
     }
 
-    const QRectF plot = rect().adjusted(14, 14, -14, -18);
+    const QRectF plot = rect().adjusted(20, 18, -16, -22);
     qint64 minSize = m_snapshots.first().totalSize;
     qint64 maxSize = m_snapshots.first().totalSize;
     for (const SnapshotSummary &snapshot : m_snapshots) {
@@ -44,11 +45,16 @@ void SnapshotTrendWidget::paintEvent(QPaintEvent *)
     painter.setPen(QPen(QColor(48, 58, 82), 1));
     painter.drawRoundedRect(plot, 8, 8);
 
+    painter.setPen(QPen(QColor(34, 41, 57), 1, Qt::DashLine));
+    const double midY = plot.center().y();
+    painter.drawLine(QPointF(plot.left(), midY), QPointF(plot.right(), midY));
+
     QPolygonF line;
     for (int index = 0; index < m_snapshots.size(); ++index) {
         const double x = m_snapshots.size() == 1 ? plot.center().x() : plot.left() + (plot.width() * index) / (m_snapshots.size() - 1);
         const double ratio = maxSize == minSize ? 0.5 : double(m_snapshots[index].totalSize - minSize) / double(maxSize - minSize);
-        const double y = plot.bottom() - ratio * plot.height();
+        const double safeRatio = std::clamp(ratio, 0.0, 1.0);
+        const double y = plot.bottom() - safeRatio * plot.height();
         line << QPointF(x, y);
     }
 
@@ -61,8 +67,8 @@ void SnapshotTrendWidget::paintEvent(QPaintEvent *)
     }
 
     painter.setPen(QColor(190, 200, 220));
-    painter.drawText(QRectF(plot.left(), 0, plot.width(), 14), Qt::AlignLeft | Qt::AlignVCenter, SizeFormatter::formatBytes(maxSize));
-    painter.drawText(QRectF(plot.left(), plot.bottom() + 2, plot.width(), 14), Qt::AlignLeft | Qt::AlignVCenter, SizeFormatter::formatBytes(minSize));
+    painter.drawText(QRectF(plot.left(), 2, plot.width(), 14), Qt::AlignLeft | Qt::AlignVCenter, SizeFormatter::formatBytes(maxSize));
+    painter.drawText(QRectF(plot.left(), plot.bottom() - 14, plot.width(), 14), Qt::AlignLeft | Qt::AlignVCenter, SizeFormatter::formatBytes(minSize));
 }
 
 }

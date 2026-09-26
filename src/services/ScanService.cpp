@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <utility>
 
 #include <QHash>
 #include <vector>
@@ -60,8 +61,10 @@ void ScanService::scanPath(const QString &rootPath)
     emit scanProgress(0, QStringLiteral("Starting scan"));
 
     const QStringList excluded = m_configService->excludedPatterns();
-    m_watcher.setFuture(QtConcurrent::run([this, normalizedRoot, excluded]() {
-        return performScan(normalizedRoot, excluded);
+    const bool useEverything = m_configService->useEverything();
+    const QString everythingExecutablePath = m_configService->resolvedEverythingExecutablePath();
+    m_watcher.setFuture(QtConcurrent::run([this, normalizedRoot, excluded, useEverything, everythingExecutablePath]() {
+        return performScan(normalizedRoot, excluded, useEverything, everythingExecutablePath);
     }));
 }
 
@@ -80,8 +83,42 @@ QString ScanService::lastError() const
     return m_lastError;
 }
 
-ScanResult ScanService::performScan(const QString &rootPath, const QStringList &excludedPatterns)
+ScanResult ScanService::performScan(const QString &rootPath,
+                                    const QStringList &excludedPatterns,
+                                    bool useEverything,
+                                    const QString &everythingExecutablePath)
 {
+    if (useEverything && m_everythingClient) {
+        emit scanProgress(5, QStringLiteral("Querying Everything index"));
+
+        QString everythingError;
+        bool everythingReady = m_everythingClient->testConnection(&everythingError);
+        if (!everythingReady && !everythingExecutablePath.isEmpty()) {
+            emit scanProgress(8, QStringLiteral("Starting Everything"));
+            everythingReady = m_everythingClient->ensureEverythingRunning(everythingExecutablePath, &everythingError);
+        }
+
+        if (everythingReady) {
+            QVector<FileEntry> everythingFiles;
+            QVector<FolderEntry> everythingFolders;
+            if (m_everythingClient->queryRoot(rootPath, &everythingFiles, &everythingFolders, &everythingError)) {
+                emit scanProgress(85, QStringLiteral("Building tree from Everything index"));
+                ScanResult result = performEverythingScan(rootPath, excludedPatterns, std::move(everythingFiles), std::move(everythingFolders));
+                result.usedEverything = true;
+                emit scanProgress(100, QStringLiteral("Scan complete"));
+                Logger::info(QStringLiteral("Everything scan complete for %1: %2 files, %3 folders")
+                                 .arg(rootPath)
+                                 .arg(result.files.size())
+                                 .arg(result.folders.size()));
+                return result;
+            }
+        }
+
+        Logger::warning(QStringLiteral("Everything scan unavailable for %1, falling back to filesystem: %2")
+                            .arg(rootPath, everythingError));
+        emit scanProgress(7, QStringLiteral("Everything unavailable, scanning filesystem"));
+    }
+
     emit scanProgress(10, QStringLiteral("Scanning filesystem"));
     QVector<FileEntry> files = collectFilesystemFiles(rootPath, excludedPatterns, [this](int percent, const QString &message) {
         emit scanProgress(percent, message);
@@ -92,6 +129,34 @@ ScanResult ScanService::performScan(const QString &rootPath, const QStringList &
     result.usedEverything = false;
     emit scanProgress(100, QStringLiteral("Scan complete"));
     return result;
+}
+
+ScanResult ScanService::performEverythingScan(const QString &rootPath,
+                                              const QStringList &excludedPatterns,
+                                              QVector<FileEntry> files,
+                                              QVector<FolderEntry> folders)
+{
+    if (!excludedPatterns.isEmpty()) {
+        QVector<FileEntry> filteredFiles;
+        filteredFiles.reserve(files.size());
+        for (const FileEntry &file : files) {
+            if (!isExcluded(file.path, excludedPatterns)) {
+                filteredFiles.push_back(file);
+            }
+        }
+        files = std::move(filteredFiles);
+
+        QVector<FolderEntry> filteredFolders;
+        filteredFolders.reserve(folders.size());
+        for (const FolderEntry &folder : folders) {
+            if (!isExcluded(folder.path, excludedPatterns)) {
+                filteredFolders.push_back(folder);
+            }
+        }
+        folders = std::move(filteredFolders);
+    }
+
+    return buildTreeResult(rootPath, folders, files);
 }
 
 ScanResult ScanService::performFilesystemScan(const QString &rootPath, const QStringList &excludedPatterns)

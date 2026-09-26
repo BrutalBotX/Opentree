@@ -33,6 +33,10 @@ enum class ViewMetric {
     Files,
 };
 
+enum class SizeDisplayMode {
+    Adaptive,
+};
+
 struct TreeEntry {
     TreeEntryKind kind = TreeEntryKind::Folder;
     QString path;

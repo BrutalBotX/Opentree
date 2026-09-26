@@ -5,6 +5,8 @@
 
 #include "domain/ScanTypes.h"
 
+QT_FORWARD_DECLARE_CLASS(QCheckBox)
+QT_FORWARD_DECLARE_CLASS(QComboBox)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QLineEdit)
 QT_FORWARD_DECLARE_CLASS(QTabWidget)
@@ -31,6 +33,7 @@ public:
     void setViewMetric(ViewMetric metric);
     void setTreemapDepth(int depth);
     void setActiveViewMode(ViewMode mode);
+    void setIncludeFreeSpace(bool enabled);
 
 signals:
     void entryActivated(const TreeEntry &entry);
@@ -85,6 +88,8 @@ private:
     void paintTreemap(QPainter &painter, const QRect &rect) const;
 
     QLabel *m_summaryLabel;
+    QCheckBox *m_freeSpaceCheck;
+    QComboBox *m_treemapDepthCombo;
     QLineEdit *m_addressBar;
     QTabWidget *m_subtabs;
     QWidget *m_pieView;

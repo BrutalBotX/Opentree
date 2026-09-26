@@ -1,6 +1,7 @@
 #include "ui/HeatmapPanel.h"
 
 #include <QColor>
+#include <QHash>
 #include <QHeaderView>
 #include <QLabel>
 #include <QTableWidget>
@@ -8,12 +9,18 @@
 #include <QVBoxLayout>
 
 #include <algorithm>
+#include <cstdlib>
 
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
 
 namespace {
+
+bool samePath(const QString &left, const QString &right)
+{
+    return left.compare(right, Qt::CaseInsensitive) == 0;
+}
 
 class NumericTableWidgetItem : public QTableWidgetItem {
 public:
@@ -32,7 +39,25 @@ public:
     double m_sortValue = 0.0;
 };
 
+// Blue heat scale by share of the parent folder; growth/shrink override it so the
+// delta is readable at a glance.
+QColor heatColor(double percent, qint64 delta)
+{
+    if (delta > 0) {
+        return QColor(176, 58, 58);
+    }
+    if (delta < 0) {
+        return QColor(52, 142, 88);
+    }
+
+    const double t = std::clamp(percent / 100.0, 0.0, 1.0);
+    const int red = int(34 + t * 70);
+    const int green = int(52 + t * 110);
+    const int blue = int(92 + t * 160);
+    return QColor(red, green, blue);
 }
+
+} // namespace
 
 HeatmapPanel::HeatmapPanel(QWidget *parent)
     : QWidget(parent)
@@ -43,21 +68,27 @@ HeatmapPanel::HeatmapPanel(QWidget *parent)
     layout->setContentsMargins(12, 12, 12, 12);
     layout->setSpacing(10);
     m_summaryLabel->setWordWrap(true);
+
     m_table->setColumnCount(5);
-    m_table->setHorizontalHeaderLabels({"Folder", "%", "Size", "Files", "Delta"});
+    m_table->setHorizontalHeaderLabels({"Folder", "% of Parent", "Size", "Files", "Delta"});
+    // Fixed widths: Qt's header size hint ignores stylesheet padding, which clipped the
+    // header text once a sort indicator was added.
     m_table->horizontalHeader()->setStretchLastSection(false);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
-    m_table->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
-    m_table->horizontalHeader()->setSectionResizeMode(4, QHeaderView::ResizeToContents);
+    for (int column = 1; column < 5; ++column) {
+        m_table->horizontalHeader()->setSectionResizeMode(column, QHeaderView::Interactive);
+    }
+    m_table->setColumnWidth(1, 130);
+    m_table->setColumnWidth(2, 120);
+    m_table->setColumnWidth(3, 80);
+    m_table->setColumnWidth(4, 110);
     m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
     m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
     m_table->setSortingEnabled(true);
     layout->addWidget(m_summaryLabel);
     layout->addWidget(m_table, 1);
 
-    setHeatmapData({}, {});
+    rebuild();
 }
 
 void HeatmapPanel::setViewMetric(ViewMetric metric)
@@ -74,51 +105,88 @@ void HeatmapPanel::setViewMetric(ViewMetric metric)
 
 void HeatmapPanel::setHeatmapData(const QVector<TreeEntry> &entries, const QVector<SnapshotCompareRow> &compareRows)
 {
-    if (entries.isEmpty()) {
-        m_summaryLabel->setText("Heatmap: scan a folder to see the largest folders and deltas.");
+    m_entries = entries;
+    m_compareRows = compareRows;
+    rebuild();
+}
+
+void HeatmapPanel::setActiveFolderPath(const QString &path)
+{
+    if (samePath(m_activeFolderPath, path)) {
+        return;
+    }
+    m_activeFolderPath = path;
+    rebuild();
+}
+
+void HeatmapPanel::rebuild()
+{
+    if (m_entries.isEmpty() || m_activeFolderPath.isEmpty()) {
+        m_summaryLabel->setText(QStringLiteral("Heatmap: scan a folder to see its immediate child folders."));
         m_table->setRowCount(0);
         return;
     }
 
     QHash<QString, qint64> deltaByPath;
-    for (const SnapshotCompareRow &row : compareRows) {
+    for (const SnapshotCompareRow &row : m_compareRows) {
         deltaByPath.insert(row.path, row.deltaBytes);
     }
 
-    QVector<TreeEntry> folders;
-    for (const TreeEntry &entry : entries) {
-        if (entry.kind == TreeEntryKind::Folder) {
-            folders.push_back(entry);
+    // Only the folders directly inside the selected folder.
+    QVector<TreeEntry> children;
+    qint64 childrenSize = 0;
+    qint64 parentSize = 0;
+    for (const TreeEntry &entry : m_entries) {
+        if (entry.kind != TreeEntryKind::Folder) {
+            continue;
+        }
+        if (samePath(entry.path, m_activeFolderPath)) {
+            parentSize = entry.size;
+            continue;
+        }
+        if (samePath(entry.parentPath, m_activeFolderPath)) {
+            children.push_back(entry);
+            childrenSize += entry.size;
         }
     }
-    std::sort(folders.begin(), folders.end(), [](const TreeEntry &left, const TreeEntry &right) {
+
+    std::sort(children.begin(), children.end(), [](const TreeEntry &left, const TreeEntry &right) {
         return left.size > right.size;
     });
-    if (folders.size() > 30) {
-        folders.resize(30);
+    if (children.size() > 40) {
+        children.resize(40);
     }
 
-    const qint64 totalSize = folders.isEmpty() ? 0 : folders.first().size;
+    const qint64 denominator = parentSize > 0 ? parentSize : childrenSize;
     m_table->setSortingEnabled(false);
-    m_table->setRowCount(folders.size());
-    for (int rowIndex = 0; rowIndex < folders.size(); ++rowIndex) {
-        const TreeEntry &entry = folders[rowIndex];
+    m_table->setRowCount(children.size());
+    for (int rowIndex = 0; rowIndex < children.size(); ++rowIndex) {
+        const TreeEntry &entry = children[rowIndex];
         const qint64 delta = deltaByPath.value(entry.path, 0);
-        const double percent = totalSize <= 0 ? 0.0 : (100.0 * double(entry.size) / double(totalSize));
+        const double percent = denominator <= 0 ? 0.0 : (100.0 * double(entry.size) / double(denominator));
 
-        auto *nameItem = new QTableWidgetItem(entry.path);
+        auto *nameItem = new QTableWidgetItem(entry.name.isEmpty() ? entry.path : entry.name);
+        nameItem->setToolTip(entry.path);
         auto *percentItem = new NumericTableWidgetItem(percent, QString::number(percent, 'f', 1) + "%");
         auto *sizeItem = new NumericTableWidgetItem(double(entry.size), SizeFormatter::formatBytes(entry.size));
         auto *filesItem = new NumericTableWidgetItem(double(entry.fileCount), QString::number(entry.fileCount));
-        auto *deltaItem = new NumericTableWidgetItem(double(delta), QString::number(delta));
+        auto *deltaItem = new NumericTableWidgetItem(
+            double(delta),
+            delta == 0 ? QStringLiteral("-")
+                       : QStringLiteral("%1%2").arg(delta > 0 ? QStringLiteral("+") : QStringLiteral("-"),
+                                                   SizeFormatter::formatBytes(std::abs(delta))));
 
-        QColor tint = QColor(70, 90, 130, 70);
-        if (delta > 0) {
-            tint = QColor(180, 60, 60, 110);
-        } else if (delta < 0) {
-            tint = QColor(60, 150, 90, 110);
+        // Shade the whole row so the table reads like a heat map.
+        const QColor tint = heatColor(percent, delta);
+        const QColor textColor = tint.lightness() < 120 ? QColor(255, 255, 255) : QColor(20, 26, 36);
+        for (QTableWidgetItem *item : {static_cast<QTableWidgetItem *>(nameItem),
+                                       static_cast<QTableWidgetItem *>(percentItem),
+                                       static_cast<QTableWidgetItem *>(sizeItem),
+                                       static_cast<QTableWidgetItem *>(filesItem),
+                                       static_cast<QTableWidgetItem *>(deltaItem)}) {
+            item->setBackground(tint);
+            item->setForeground(textColor);
         }
-        nameItem->setBackground(tint);
 
         m_table->setItem(rowIndex, 0, nameItem);
         m_table->setItem(rowIndex, 1, percentItem);
@@ -136,9 +204,17 @@ void HeatmapPanel::setHeatmapData(const QVector<TreeEntry> &entries, const QVect
         m_table->sortByColumn(1, Qt::DescendingOrder);
     }
 
-    m_summaryLabel->setText(QStringLiteral("Heatmap: top %1 folders%2")
-                                .arg(folders.size())
-                                .arg(compareRows.isEmpty() ? QString() : QStringLiteral(" with delta coloring")));
+    if (children.isEmpty()) {
+        m_summaryLabel->setText(QStringLiteral("Heatmap: %1 has no child folders in the current scan.").arg(m_activeFolderPath));
+        return;
+    }
+
+    m_summaryLabel->setText(QStringLiteral("Heatmap: %1 child folder%2 of %3 | Total: %4%5")
+                                .arg(children.size())
+                                .arg(children.size() == 1 ? QString() : QStringLiteral("s"))
+                                .arg(m_activeFolderPath)
+                                .arg(SizeFormatter::formatBytes(childrenSize))
+                                .arg(m_compareRows.isEmpty() ? QString() : QStringLiteral(" | delta coloring active")));
 }
 
 }

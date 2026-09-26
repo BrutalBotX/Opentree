@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QObject>
+#include <QStringList>
 
 #include <QMap>
 
@@ -11,6 +12,7 @@ namespace opentree {
 
 class ConfigService;
 class DatabaseManager;
+class DuplicatesPanel;
 class EverythingClient;
 class FileRepository;
 class FolderRepository;
@@ -73,6 +75,8 @@ private:
     void focusFolderPath(const QString &path, bool showGraphTab);
     const TreeEntry *findTreeEntry(const QString &path) const;
     void handleLocateEverythingRequest();
+    void handleExportDetailsCsvRequest();
+    void handleTestEverythingRequest();
     void handleSnapshotSettingsRequest();
     void handleSnapshotManagementRequest();
     void handleCompareSnapshotRequest(int snapshotId);
@@ -89,8 +93,11 @@ private:
     QMap<QString, ThemeDefinition> m_themes;
 
     MainWindow *m_window = nullptr;
+    QStringList m_pendingGraphPaths;
+    QTimer *m_graphPathTimer = nullptr;
     ConfigService *m_configService;
     DatabaseManager *m_databaseManager;
+    DuplicatesPanel *m_duplicatesPanel = nullptr;
     EverythingClient *m_everythingClient;
     ScanService *m_scanService;
     SnapshotService *m_snapshotService = nullptr;

@@ -9,6 +9,7 @@
 #include "domain/ScanTypes.h"
 
 QT_FORWARD_DECLARE_CLASS(QAction)
+QT_FORWARD_DECLARE_CLASS(QCloseEvent)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QMenu)
 QT_FORWARD_DECLARE_CLASS(QProgressBar)
@@ -26,6 +27,9 @@ class GraphPanel;
 class HeatmapPanel;
 class TimelinePanel;
 class TreePanel;
+class DetailsTablePanel;
+class DriveSelector;
+class DuplicatesPanel;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -43,6 +47,8 @@ public:
     QAction *treemapDepth3Action() const;
     QAction *rescanCurrentRootAction() const;
     QAction *refreshAction() const;
+    QAction *useEverythingAction() const;
+    void setUseEverythingChecked(bool checked);
     TreePanel *treePanel() const;
     DetailsPanel *detailsPanel() const;
     ChartPanel *chartPanel() const;
@@ -51,12 +57,19 @@ public:
     GraphPanel *graphPanel();
     HeatmapPanel *heatmapPanel() const;
     TimelinePanel *timelinePanel() const;
+    DetailsTablePanel *detailsTablePanel() const;
+    DuplicatesPanel *duplicatesPanel() const;
+    void setDuplicatesPanel(DuplicatesPanel *panel);
+    DriveSelector *driveSelector() const;
     int currentTabIndex() const;
+    bool isTimelineTabVisible() const;
+    void setCurrentTabIndex(int index);
     void showGraphTab();
     void showChartTab();
     void showExtensionsTab();
     void showHeatmapTab();
     void showTimelineTab();
+    void showDetailsTableTab();
     void setAvailableThemes(const QMap<QString, QString> &themes, const QString &selectedThemeId);
     void setRecentRoots(const QStringList &roots);
     void setBusy(bool busy);
@@ -65,11 +78,13 @@ public:
     void setTimelineMode(bool active);
 
 signals:
-    void scanRequested();
-    void createSnapshotRequested();
+    void scanRequested();    void createSnapshotRequested();
     void compareSnapshotRequested();
     void snapshotManagementRequested();
     void everythingLocationRequested();
+    void exportDetailsCsvRequested();
+    void useEverythingToggled(bool enabled);
+    void testEverythingRequested();
     void snapshotSettingsRequested();
     void othersThresholdRequested();
     void rescanCurrentRootRequested();
@@ -88,7 +103,11 @@ signals:
     void graphTabActivated();
     void tabModeChanged(bool timelineCompareMode);
     void graphNodeActivated(const QString &path);
+    void graphPanelCreated(GraphPanel *graph);
     void navigateToEntryRequested(const TreeEntry &entry, const QString &targetTab);
+
+protected:
+    void closeEvent(QCloseEvent *event) override;
 
 private:
     void ensureGraphPanel();
@@ -102,6 +121,8 @@ private:
     GraphPanel *m_graphPanel;
     HeatmapPanel *m_heatmapPanel;
     TimelinePanel *m_timelinePanel;
+    DetailsTablePanel *m_detailsTablePanel;
+    DuplicatesPanel *m_duplicatesPanel = nullptr;
     QAction *m_scanAction;
     QAction *m_createSnapshotAction;
     QAction *m_compareSnapshotAction;
@@ -118,6 +139,8 @@ private:
     QAction *m_showExtensionsTabAction;
     QAction *m_showHeatmapTabAction;
     QAction *m_showTimelineTabAction;
+    QAction *m_showDetailsTabAction;
+    QAction *m_showDuplicatesTabAction;
     QAction *m_expandAllAction;
     QAction *m_collapseAllAction;
     QAction *m_treemapDepth1Action;
@@ -130,12 +153,15 @@ private:
     QAction *m_setOthersThresholdAction;
     QAction *m_exitAction;
     QAction *m_locateEverythingAction;
+    QAction *m_useEverythingAction;
+    QAction *m_testEverythingAction;
     QAction *m_snapshotSettingsAction;
     QAction *m_reloadThemesAction;
     QLabel *m_statusLabel;
     QProgressBar *m_progressBar;
     QTabWidget *m_tabs;
     QToolBar *m_mainToolBar;
+    DriveSelector *m_driveSelector;
     QWidget *m_graphPlaceholder;
     QWidget *m_centralContainer;
     QSplitter *m_mainSplitter;

@@ -2,6 +2,8 @@
 
 #include <QAction>
 #include <QActionGroup>
+#include <QApplication>
+#include <QCloseEvent>
 #include <QHBoxLayout>
 #include <QIcon>
 #include <QLabel>
@@ -11,6 +13,8 @@
 #include <QMessageBox>
 #include <QProgressBar>
 #include <QInputDialog>
+#include <QSignalBlocker>
+#include <QSettings>
 #include <QSplitter>
 #include <QStatusBar>
 #include <QTabWidget>
@@ -21,6 +25,9 @@
 
 #include "ui/DetailsPanel.h"
 #include "ui/ChartPanel.h"
+#include "ui/DetailsTablePanel.h"
+#include "ui/DriveSelector.h"
+#include "ui/DuplicatesPanel.h"
 #include "ui/ExtensionsPanel.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
@@ -38,6 +45,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_graphPanel(nullptr)
     , m_heatmapPanel(nullptr)
     , m_timelinePanel(nullptr)
+    , m_detailsTablePanel(nullptr)
     , m_scanAction(nullptr)
     , m_createSnapshotAction(nullptr)
     , m_compareSnapshotAction(nullptr)
@@ -72,6 +80,7 @@ MainWindow::MainWindow(QWidget *parent)
     , m_progressBar(nullptr)
     , m_tabs(nullptr)
     , m_mainToolBar(nullptr)
+    , m_driveSelector(nullptr)
     , m_graphPlaceholder(nullptr)
     , m_centralContainer(nullptr)
     , m_mainSplitter(nullptr)
@@ -95,6 +104,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_showExtensionsTabAction = new QAction("Extensions", this);
     m_showHeatmapTabAction = new QAction("Heatmap", this);
     m_showTimelineTabAction = new QAction("Timeline", this);
+    m_showDetailsTabAction = new QAction("Details", this);
+    m_showDuplicatesTabAction = new QAction("Duplicates", this);
     m_expandAllAction = new QAction("Expand All", this);
     m_collapseAllAction = new QAction("Collapse All", this);
     m_treemapDepth1Action = new QAction("Depth 1", this);
@@ -106,7 +117,11 @@ MainWindow::MainWindow(QWidget *parent)
     m_sizeUnitsAdaptiveAction = new QAction("Adaptive Size Units", this);
     m_setOthersThresholdAction = new QAction("Set Others Threshold...", this);
     m_exitAction = new QAction("Exit", this);
-    m_locateEverythingAction = new QAction("Locate Everything SDK", this);
+    m_locateEverythingAction = new QAction("Locate Everything Executable...", this);
+    m_useEverythingAction = new QAction("Use Everything when available", this);
+    m_useEverythingAction->setCheckable(true);
+    m_useEverythingAction->setChecked(true);
+    m_testEverythingAction = new QAction("Test Everything Connection", this);
     m_snapshotSettingsAction = new QAction("Snapshot Settings", this);
     m_reloadThemesAction = new QAction("Reload Themes", this);
     m_statusLabel = new QLabel(this);
@@ -136,11 +151,20 @@ MainWindow::MainWindow(QWidget *parent)
     Logger::info("main-window-debug ctor: new TimelinePanel start");
     m_timelinePanel = new TimelinePanel(this);
     Logger::info("main-window-debug ctor: new TimelinePanel done");
+    m_detailsTablePanel = new DetailsTablePanel(this);
+    Logger::info("main-window-debug ctor: new DetailsTablePanel done");
 
     setWindowTitle("OpenTree");
     setWindowIcon(QIcon(QStringLiteral(":/icons/appicon.ico")));
     resize(1400, 900);
     setMinimumSize(1100, 720);
+    {
+        QSettings settings;
+        const QByteArray geometry = settings.value(QStringLiteral("Window/Geometry")).toByteArray();
+        if (!geometry.isEmpty()) {
+            restoreGeometry(geometry);
+        }
+    }
 
     Logger::info("main-window-debug ctor: window basics configured");
 
@@ -149,6 +173,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_recentRootsMenu = fileMenu->addMenu("Recent Roots");
     fileMenu->addAction(m_rescanCurrentRootAction);
     fileMenu->addAction(m_clearAllRootsAction);
+    fileMenu->addSeparator();
+    fileMenu->addAction("Export Details as CSV...", this, [this]() { emit exportDetailsCsvRequested(); });
     fileMenu->addSeparator();
     fileMenu->addAction(m_exitAction);
 
@@ -160,7 +186,9 @@ MainWindow::MainWindow(QWidget *parent)
     snapshotMenu->addAction(m_snapshotSettingsAction);
 
     auto *toolsMenu = menuBar()->addMenu("Tools");
+    toolsMenu->addAction(m_useEverythingAction);
     toolsMenu->addAction(m_locateEverythingAction);
+    toolsMenu->addAction(m_testEverythingAction);
     toolsMenu->addSeparator();
     toolsMenu->addAction(m_openCurrentInExplorerAction);
     toolsMenu->addAction(m_openTerminalHereAction);
@@ -180,6 +208,8 @@ MainWindow::MainWindow(QWidget *parent)
     tabsMenu->addAction(m_showExtensionsTabAction);
     tabsMenu->addAction(m_showHeatmapTabAction);
     tabsMenu->addAction(m_showTimelineTabAction);
+    tabsMenu->addAction(m_showDetailsTabAction);
+    tabsMenu->addAction(m_showDuplicatesTabAction);
     m_treemapMenu = viewMenu->addMenu("Treemap Depth");
     m_treemapMenu->addAction(m_treemapDepth1Action);
     m_treemapMenu->addAction(m_treemapDepth2Action);
@@ -196,7 +226,12 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *helpMenu = menuBar()->addMenu("Help");
     helpMenu->addAction("About OpenTree", this, [this]() {
-        QMessageBox::information(this, "About OpenTree", "OpenTree\nDisk explorer and snapshot viewer.");
+        QMessageBox::about(this, "About OpenTree",
+            QStringLiteral("<b>OpenTree</b> %1<br>Disk usage explorer with snapshots and analysis views."
+                           "<br><br>Qt %2<br>Built %3")
+                .arg(QApplication::applicationVersion().isEmpty() ? QStringLiteral("dev") : QApplication::applicationVersion(),
+                     QString::fromLatin1(qVersion()),
+                     QStringLiteral(__DATE__)));
     });
 
     Logger::info("main-window-debug ctor: menus wired");
@@ -215,6 +250,8 @@ MainWindow::MainWindow(QWidget *parent)
     });
     connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
     connect(m_locateEverythingAction, &QAction::triggered, this, &MainWindow::everythingLocationRequested);
+    connect(m_useEverythingAction, &QAction::toggled, this, &MainWindow::useEverythingToggled);
+    connect(m_testEverythingAction, &QAction::triggered, this, &MainWindow::testEverythingRequested);
     connect(m_snapshotSettingsAction, &QAction::triggered, this, &MainWindow::snapshotSettingsRequested);
     connect(m_setOthersThresholdAction, &QAction::triggered, this, &MainWindow::othersThresholdRequested);
     connect(m_openCurrentInExplorerAction, &QAction::triggered, this, &MainWindow::openCurrentInExplorerRequested);
@@ -232,6 +269,12 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_showChartTabAction, &QAction::triggered, this, [this]() { showChartTab(); });
     connect(m_showExtensionsTabAction, &QAction::triggered, this, [this]() { showExtensionsTab(); });
     connect(m_showHeatmapTabAction, &QAction::triggered, this, [this]() { showHeatmapTab(); });
+    connect(m_showDetailsTabAction, &QAction::triggered, this, [this]() { showDetailsTableTab(); });
+    connect(m_showDuplicatesTabAction, &QAction::triggered, this, [this]() {
+        if (m_duplicatesPanel) {
+            m_tabs->setCurrentWidget(m_duplicatesPanel);
+        }
+    });
     connect(m_showTimelineTabAction, &QAction::triggered, this, [this]() { showTimelineTab(); });
 
     auto *viewMetricGroup = new QActionGroup(this);
@@ -264,9 +307,14 @@ MainWindow::MainWindow(QWidget *parent)
     m_showExtensionsTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+3")));
     m_showHeatmapTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+4")));
     m_showTimelineTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+5")));
+    m_showDetailsTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+6")));
+    m_showDuplicatesTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+7")));
 
     addToolBar(Qt::TopToolBarArea, m_mainToolBar);
     m_mainToolBar->setMovable(false);
+    m_driveSelector = new DriveSelector(this);
+    m_mainToolBar->addWidget(m_driveSelector);
+    m_mainToolBar->addSeparator();
     m_mainToolBar->addAction(m_scanAction);
     m_mainToolBar->addAction(m_rescanCurrentRootAction);
     m_mainToolBar->addSeparator();
@@ -275,6 +323,9 @@ MainWindow::MainWindow(QWidget *parent)
     m_mainToolBar->addSeparator();
     m_mainToolBar->addAction(m_openCurrentInExplorerAction);
     m_mainToolBar->addAction(m_copyCurrentPathAction);
+    m_mainToolBar->addSeparator();
+    m_mainToolBar->addAction(m_useEverythingAction);
+    m_mainToolBar->addAction(m_locateEverythingAction);
 
     Logger::info("main-window-debug ctor: toolbar configured");
 
@@ -284,6 +335,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_tabs->addTab(m_extensionsPanel, "Extensions");
     m_tabs->addTab(m_heatmapPanel, "Heatmap");
     m_tabs->addTab(m_timelinePanel, "Timeline");
+    // Keep Details last: several places rely on Timeline staying at index 4.
+    m_tabs->addTab(m_detailsTablePanel, "Details");
 
     Logger::info("main-window-debug ctor: tabs added");
 
@@ -320,10 +373,13 @@ MainWindow::MainWindow(QWidget *parent)
     m_detailsPanel->setContentsMargins(0, 22, 0, 0);
 
     connect(m_tabs, &QTabWidget::currentChanged, this, [this](int index) {
-        const bool timelineMode = index == 4;
+        QWidget *current = m_tabs->widget(index);
+        // Track the tab by widget, not index: the graph panel is swapped in at index 0
+        // lazily, which shifts indices and used to desync Timeline mode tracking.
+        const bool timelineMode = (current == m_timelinePanel);
         setTimelineMode(timelineMode);
         emit tabModeChanged(timelineMode);
-        if (index == 0) {
+        if (current == m_graphPlaceholder || current == m_graphPanel) {
             ensureGraphPanel();
             QTimer::singleShot(0, this, [this]() {
                 emit graphTabActivated();
@@ -334,9 +390,11 @@ MainWindow::MainWindow(QWidget *parent)
     Logger::info("main-window-debug ctor: tab signal connected");
 
     m_progressBar->setRange(0, 100);
-    m_progressBar->setMinimumWidth(240);
+    m_progressBar->setMinimumWidth(200);
+    m_progressBar->setMaximumWidth(320);
     m_progressBar->setTextVisible(true);
-    m_progressBar->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_progressBar->setAlignment(Qt::AlignCenter);
+    m_progressBar->setFormat(QStringLiteral("%p%"));
     m_progressBar->setVisible(false);
     statusBar()->addWidget(m_statusLabel, 1);
     statusBar()->addPermanentWidget(m_progressBar);
@@ -366,6 +424,7 @@ void MainWindow::ensureGraphPanel()
     }
 
     Logger::info("main-window-debug ensureGraphPanel done");
+    emit graphPanelCreated(m_graphPanel);
 }
 
 TreePanel *MainWindow::treePanel() const
@@ -413,6 +472,20 @@ QAction *MainWindow::treemapDepth3Action() const
     return m_treemapDepth3Action;
 }
 
+QAction *MainWindow::useEverythingAction() const
+{
+    return m_useEverythingAction;
+}
+
+void MainWindow::setUseEverythingChecked(bool checked)
+{
+    if (!m_useEverythingAction) {
+        return;
+    }
+    const QSignalBlocker blocker(m_useEverythingAction);
+    m_useEverythingAction->setChecked(checked);
+}
+
 
 DetailsPanel *MainWindow::detailsPanel() const
 {
@@ -450,9 +523,58 @@ TimelinePanel *MainWindow::timelinePanel() const
     return m_timelinePanel;
 }
 
+DetailsTablePanel *MainWindow::detailsTablePanel() const
+{
+    return m_detailsTablePanel;
+}
+
+void MainWindow::showDetailsTableTab()
+{
+    m_tabs->setCurrentWidget(m_detailsTablePanel);
+}
+
+void MainWindow::closeEvent(QCloseEvent *event)
+{
+    QSettings settings;
+    settings.setValue(QStringLiteral("Window/Geometry"), saveGeometry());
+    QMainWindow::closeEvent(event);
+}
+
+DriveSelector *MainWindow::driveSelector() const
+{
+    return m_driveSelector;
+}
+
+DuplicatesPanel *MainWindow::duplicatesPanel() const
+{
+    return m_duplicatesPanel;
+}
+
+void MainWindow::setDuplicatesPanel(DuplicatesPanel *panel)
+{
+    if (!panel || m_duplicatesPanel) {
+        return;
+    }
+    m_duplicatesPanel = panel;
+    m_tabs->addTab(panel, "Duplicates");
+    m_showDuplicatesTabAction->setEnabled(true);
+}
+
 int MainWindow::currentTabIndex() const
 {
     return m_tabs ? m_tabs->currentIndex() : -1;
+}
+
+bool MainWindow::isTimelineTabVisible() const
+{
+    return m_tabs && m_tabs->currentWidget() == m_timelinePanel;
+}
+
+void MainWindow::setCurrentTabIndex(int index)
+{
+    if (m_tabs && index >= 0 && index < m_tabs->count()) {
+        m_tabs->setCurrentIndex(index);
+    }
 }
 
 void MainWindow::showGraphTab()
@@ -474,6 +596,7 @@ void MainWindow::showExtensionsTab()
 void MainWindow::showHeatmapTab()
 {
     m_tabs->setCurrentWidget(m_heatmapPanel);
+
 }
 
 void MainWindow::showTimelineTab()
@@ -571,13 +694,15 @@ void MainWindow::setTimelineMode(bool active)
         if (m_savedRightSplitterSizes.isEmpty()) {
             m_savedRightSplitterSizes = m_rightSplitter->sizes();
         }
-        m_detailsPanel->setMinimumWidth(0);
-        m_detailsPanel->setMaximumWidth(0);
-        m_rightSplitter->setSizes({1, 0});
+        // Really take the pane out of the splitter. Squeezing it to zero width was
+        // undone by later layout/resize passes, which left the global details pane
+        // visible in Timeline mode. The Timeline tab owns its own compare pane.
+        m_detailsPanel->hide();
+        m_rightSplitter->setSizes({m_rightSplitter->width(), 0});
         return;
     }
 
-    m_detailsPanel->setMaximumWidth(QWIDGETSIZE_MAX);
+    m_detailsPanel->show();
     m_detailsPanel->setMinimumWidth(260);
     if (!m_savedRightSplitterSizes.isEmpty()) {
         m_rightSplitter->setSizes(m_savedRightSplitterSizes);

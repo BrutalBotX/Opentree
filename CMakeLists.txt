@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.3.1 LANGUAGES CXX)
+project(OpenTree VERSION 0.5.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -34,10 +34,16 @@ qt_add_executable(OpenTree
     src/ui/GraphPanel.cpp
     src/ui/HeatmapPanel.h
     src/ui/HeatmapPanel.cpp
+    src/ui/DetailsTablePanel.h
+    src/ui/DetailsTablePanel.cpp
+    src/ui/DriveSelector.h
+    src/ui/DriveSelector.cpp
     src/ui/ThemeManager.h
     src/ui/ThemeManager.cpp
     src/ui/SnapshotSettingsDialog.h
     src/ui/SnapshotSettingsDialog.cpp
+    src/ui/SnapshotManagerDialog.h
+    src/ui/SnapshotManagerDialog.cpp
     src/ui/SnapshotTimelineWidget.h
     src/ui/SnapshotTimelineWidget.cpp
     src/ui/SnapshotTrendWidget.h
@@ -53,6 +59,10 @@ qt_add_executable(OpenTree
     src/services/SnapshotService.cpp
     src/services/ScanService.h
     src/services/ScanService.cpp
+    src/services/DedupService.h
+    src/services/DedupService.cpp
+    src/ui/DuplicatesPanel.h
+    src/ui/DuplicatesPanel.cpp
     src/data/DatabaseManager.h
     src/data/DatabaseManager.cpp
     src/data/FolderRepository.h
@@ -73,6 +83,11 @@ qt_add_executable(OpenTree
     src/utils/TaskSchedulerUtils.cpp
     resources/resources.qrc
 )
+
+# The app is QWidget-only. WebEngine pulls Qt6::Qml in as a dependency, which makes
+# Qt run its QML import scanner on this target; the scanner fails on a target with no
+# QML sources, so skip it explicitly.
+set_target_properties(OpenTree PROPERTIES QT_QML_MODULE_NO_IMPORT_SCAN TRUE)
 
 target_include_directories(OpenTree PRIVATE
     src

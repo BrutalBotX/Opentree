@@ -87,13 +87,10 @@ FileMetadataDetails readMetadata(const QString &path)
         nullptr);
 
     if (handle != INVALID_HANDLE_VALUE) {
-        LARGE_INTEGER allocationSize {};
-        if (GetFileInformationByHandleEx(handle, FileStandardInfo, &allocationSize, sizeof(FILE_STANDARD_INFO))) {
-            FILE_STANDARD_INFO info {};
-            if (GetFileInformationByHandleEx(handle, FileStandardInfo, &info, sizeof(info))) {
-                details.allocatedBytes = info.AllocationSize.QuadPart;
-                details.allocatedBytesKnown = true;
-            }
+        FILE_STANDARD_INFO info {};
+        if (GetFileInformationByHandleEx(handle, FileStandardInfo, &info, sizeof(info))) {
+            details.allocatedBytes = info.AllocationSize.QuadPart;
+            details.allocatedBytesKnown = true;
         }
         CloseHandle(handle);
     }

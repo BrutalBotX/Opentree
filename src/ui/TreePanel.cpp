@@ -17,6 +17,7 @@
 #include <QVBoxLayout>
 
 #include "models/FolderTreeModel.h"
+#include "utils/Logger.h"
 
 namespace opentree {
 
@@ -103,19 +104,35 @@ TreePanel::TreePanel(QWidget *parent)
             return;
         }
 
-        if (m_treeView->model()->hasChildren(index) && !m_treeView->isExpanded(index)) {
-            m_treeView->expand(index);
-        }
-
         const QModelIndex sourceIndex = m_proxyModel->mapToSource(index);
-        emit entryActivated(m_model->treeEntry(sourceIndex));
+        const TreeEntry entry = m_model->treeEntry(sourceIndex);
+        Logger::info(QStringLiteral("graph-debug tree clicked path=%1 expanded=%2 hasChildren=%3")
+                         .arg(entry.path)
+                         .arg(m_treeView->isExpanded(index))
+                         .arg(m_treeView->model()->hasChildren(index)));
+        emit entryActivated(entry);
     });
     connect(m_treeView, &QTreeView::doubleClicked, this, [this](const QModelIndex &index) {
-        if (!m_model || !m_treeView->model()->hasChildren(index) || !m_treeView->isExpanded(index)) {
+        if (!m_model) {
             return;
         }
 
-        m_treeView->collapse(index);
+        const QModelIndex sourceIndex = m_proxyModel->mapToSource(index);
+        const TreeEntry entry = m_model->treeEntry(sourceIndex);
+        if (!m_treeView->model()->hasChildren(index)) {
+            emit entryOpened(entry);
+            return;
+        }
+
+        if (m_treeView->isExpanded(index)) {
+            Logger::info(QStringLiteral("graph-debug tree doubleClicked collapse path=%1")
+                             .arg(entry.path));
+            m_treeView->collapse(index);
+        } else {
+            Logger::info(QStringLiteral("graph-debug tree doubleClicked open path=%1")
+                             .arg(entry.path));
+            emit entryOpened(entry);
+        }
     });
 
     m_proxyModel->setRecursiveFilteringEnabled(true);
@@ -135,9 +152,13 @@ TreePanel::TreePanel(QWidget *parent)
         showContextMenu(position);
     });
     connect(m_treeView, &QTreeView::expanded, this, [this]() {
+        Logger::info(QStringLiteral("graph-debug tree expanded visibleCount=%1")
+                         .arg(visibleFolderPaths().size()));
         emit visiblePathsChanged(visibleFolderPaths());
     });
     connect(m_treeView, &QTreeView::collapsed, this, [this]() {
+        Logger::info(QStringLiteral("graph-debug tree collapsed visibleCount=%1")
+                         .arg(visibleFolderPaths().size()));
         emit visiblePathsChanged(visibleFolderPaths());
     });
 }
@@ -219,6 +240,10 @@ void TreePanel::selectEntryPath(const QString &path)
     m_treeView->setCurrentIndex(proxyIndex);
     m_treeView->expand(proxyIndex);
     m_treeView->scrollTo(proxyIndex, QAbstractItemView::PositionAtCenter);
+    Logger::info(QStringLiteral("graph-debug tree selectEntryPath path=%1 visibleCount=%2")
+                     .arg(path)
+                     .arg(visibleFolderPaths().size()));
+    emit visiblePathsChanged(visibleFolderPaths());
 }
 
 void TreePanel::expandAll()

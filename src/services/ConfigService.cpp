@@ -1,7 +1,10 @@
 #include "services/ConfigService.h"
 
 #include <QDir>
+#include <QFileInfo>
 #include <QStandardPaths>
+
+#include <algorithm>
 
 namespace {
 
@@ -55,6 +58,23 @@ qint64 ConfigService::dedupMinimumBytes() const
     return m_settings.value("Deduplication/MinFileSize", 50LL * 1024 * 1024).toLongLong();
 }
 
+void ConfigService::setDedupMinimumBytes(qint64 bytes)
+{
+    m_settings.setValue("Deduplication/MinFileSize", std::max<qint64>(0, bytes));
+    m_settings.sync();
+}
+
+bool ConfigService::dedupSkipSystemFolders() const
+{
+    return m_settings.value("Deduplication/SkipSystemFolders", true).toBool();
+}
+
+void ConfigService::setDedupSkipSystemFolders(bool skip)
+{
+    m_settings.setValue("Deduplication/SkipSystemFolders", skip);
+    m_settings.sync();
+}
+
 QStringList ConfigService::excludedPatterns() const
 {
     return m_settings.value("Scanning/ExclusionPatterns").toString().split(';', Qt::SkipEmptyParts);
@@ -63,6 +83,17 @@ QStringList ConfigService::excludedPatterns() const
 int ConfigService::graphMaxNodes() const
 {
     return m_settings.value("Graph/MaxNodes", 500).toInt();
+}
+
+bool ConfigService::graphFollowTreeExpansion() const
+{
+    return m_settings.value("Graph/FollowTreeExpansion", true).toBool();
+}
+
+void ConfigService::setGraphFollowTreeExpansion(bool follow)
+{
+    m_settings.setValue("Graph/FollowTreeExpansion", follow);
+    m_settings.sync();
 }
 
 qint64 ConfigService::graphMinimumFolderBytes() const
@@ -80,6 +111,20 @@ ViewMetric ConfigService::viewMetric() const
         return ViewMetric::Files;
     }
     return ViewMetric::Size;
+}
+
+SizeDisplayMode ConfigService::sizeDisplayMode() const
+{
+    const QString value = m_settings.value("General/SizeDisplayMode", "adaptive").toString().toLower();
+    Q_UNUSED(value);
+    return SizeDisplayMode::Adaptive;
+}
+
+void ConfigService::setSizeDisplayMode(SizeDisplayMode mode)
+{
+    Q_UNUSED(mode);
+    m_settings.setValue("General/SizeDisplayMode", "adaptive");
+    m_settings.sync();
 }
 
 void ConfigService::setViewMetric(ViewMetric metric)
@@ -121,6 +166,17 @@ QString ConfigService::themesDirectory() const
     return QDir(QFileInfo(m_configPath).absolutePath()).filePath("themes");
 }
 
+QStringList ConfigService::recentRoots() const
+{
+    return m_settings.value("General/RecentRoots").toStringList();
+}
+
+void ConfigService::setRecentRoots(const QStringList &paths)
+{
+    m_settings.setValue("General/RecentRoots", paths);
+    m_settings.sync();
+}
+
 QString ConfigService::everythingExecutablePath() const
 {
     return m_settings.value("Scanning/EverythingExecutablePath").toString();
@@ -130,6 +186,42 @@ void ConfigService::setEverythingExecutablePath(const QString &path)
 {
     m_settings.setValue("Scanning/EverythingExecutablePath", path);
     m_settings.sync();
+}
+
+bool ConfigService::useEverything() const
+{
+    return m_settings.value("Scanning/UseEverything", true).toBool();
+}
+
+void ConfigService::setUseEverything(bool enabled)
+{
+    m_settings.setValue("Scanning/UseEverything", enabled);
+    m_settings.sync();
+}
+
+QString ConfigService::resolvedEverythingExecutablePath() const
+{
+    const QString configured = everythingExecutablePath();
+    if (!configured.isEmpty()) {
+        return configured;
+    }
+
+    QStringList candidates;
+    candidates << QStringLiteral("C:/Program Files/Everything/Everything.exe")
+               << QStringLiteral("C:/Program Files (x86)/Everything/Everything.exe");
+
+    const QString localAppData = QDir::fromNativeSeparators(qEnvironmentVariable("LOCALAPPDATA"));
+    if (!localAppData.isEmpty()) {
+        candidates << localAppData + QStringLiteral("/Programs/Everything/Everything.exe");
+    }
+
+    for (const QString &candidate : candidates) {
+        if (QFileInfo::exists(candidate)) {
+            return QDir::toNativeSeparators(candidate);
+        }
+    }
+
+    return {};
 }
 
 bool ConfigService::snapshotScheduleEnabled() const
@@ -194,9 +286,11 @@ void ConfigService::ensureDefaults()
     if (!m_settings.contains("General/Theme")) {
         m_settings.setValue("General/Theme", "dark");
         m_settings.setValue("General/ViewMetric", "size");
+        m_settings.setValue("General/SizeDisplayMode", "adaptive");
         m_settings.setValue("General/OthersThresholdPercent", 1.0);
         m_settings.setValue("Scanning/ExclusionPatterns", "$Recycle.Bin;System Volume Information");
         m_settings.setValue("Scanning/EverythingExecutablePath", QString());
+        m_settings.setValue("Scanning/UseEverything", true);
         m_settings.setValue("Snapshots/Threshold", 50LL * 1024 * 1024);
         m_settings.setValue("Snapshots/RetentionDays", 30);
         m_settings.setValue("Snapshots/ScheduleEnabled", false);
@@ -204,7 +298,9 @@ void ConfigService::ensureDefaults()
         m_settings.setValue("Snapshots/ScheduleTime", QTime(22, 0));
         m_settings.setValue("Snapshots/Whitelist", QStringList());
         m_settings.setValue("Deduplication/MinFileSize", 50LL * 1024 * 1024);
+        m_settings.setValue("Deduplication/SkipSystemFolders", true);
         m_settings.setValue("Graph/MaxNodes", 500);
+        m_settings.setValue("Graph/FollowTreeExpansion", true);
         m_settings.setValue("Graph/MinFolderSize", 100LL * 1024 * 1024);
         m_settings.sync();
     }

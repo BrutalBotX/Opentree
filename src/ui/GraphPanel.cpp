@@ -1,7 +1,9 @@
 #include "ui/GraphPanel.h"
 
 #include <QHash>
+#include <QCheckBox>
 #include <QDir>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
@@ -14,10 +16,13 @@
 #include <algorithm>
 #include <cmath>
 
+#include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
+#include "utils/Logger.h"
 
 #if defined(OPENTREE_HAVE_WEBENGINE)
 #include <QWebChannel>
+#include <QWebEnginePage>
 #include <QWebEngineView>
 #endif
 
@@ -27,56 +32,12 @@ namespace {
 
 bool isSameOrDescendant(const QString &path, const QString &rootPath)
 {
-    if (rootPath.isEmpty()) {
-        return true;
-    }
-
-    if (path.compare(rootPath, Qt::CaseInsensitive) == 0) {
-        return true;
-    }
-
-    if (!path.startsWith(rootPath, Qt::CaseInsensitive)) {
-        return false;
-    }
-
-    if (path.length() <= rootPath.length()) {
-        return false;
-    }
-
-    // rootPath (e.g. C:/) already ends with separator → path is automatically a descendant
-    if (rootPath.endsWith(QLatin1Char('/')) || rootPath.endsWith(QLatin1Char('\\'))) {
-        return true;
-    }
-
-    // Otherwise the next character after rootPath must be a separator
-    const QChar next = path.at(rootPath.length());
-    return next == QLatin1Char('/') || next == QLatin1Char('\\');
+    return PathUtils::isSameOrDescendant(path, rootPath);
 }
 
 bool pathIsAncestorOf(const QString &ancestorPath, const QString &path)
 {
-    if (ancestorPath.isEmpty() || path.isEmpty()) {
-        return false;
-    }
-
-    if (ancestorPath.compare(path, Qt::CaseInsensitive) == 0) {
-        return true;
-    }
-
-    if (!path.startsWith(ancestorPath, Qt::CaseInsensitive)) {
-        return false;
-    }
-
-    if (path.length() <= ancestorPath.length()) {
-        return false;
-    }
-
-    if (ancestorPath.endsWith(QLatin1Char('/')) || ancestorPath.endsWith(QLatin1Char('\\'))) {
-        return true;
-    }
-
-    const QChar next = path.at(ancestorPath.length());
-    return next == QLatin1Char('/') || next == QLatin1Char('\\');
+    return PathUtils::isAncestorOf(ancestorPath, path);
 }
 
 QString escapeJsString(QString value)
@@ -85,6 +46,11 @@ QString escapeJsString(QString value)
     value.replace("'", "\\'");
     value.replace("\r", "");
     value.replace("\n", "\\n");
+    // Never let a path/name terminate the surrounding <script> block, and escape
+    // the JS line separators that are invalid inside string literals.
+    value.replace("</", "<\\/");
+    value.replace(QChar(0x2028), "\\u2028");
+    value.replace(QChar(0x2029), "\\u2029");
     return value;
 }
 
@@ -117,6 +83,7 @@ double normalizedNodeSize(double value, double minValue, double maxValue)
 GraphPanel::GraphPanel(QWidget *parent)
     : QWidget(parent)
     , m_addressBar(new QLineEdit(this))
+    , m_followTreeCheck(new QCheckBox(QStringLiteral("Follow tree expansion"), this))
     , m_summaryLabel(new QLabel(this))
 #if defined(OPENTREE_HAVE_WEBENGINE)
     , m_bridge(new GraphBridge(this))
@@ -132,6 +99,14 @@ GraphPanel::GraphPanel(QWidget *parent)
     m_addressBar->setPlaceholderText("Enter folder path...");
     connect(m_addressBar, &QLineEdit::returnPressed, this, &GraphPanel::handleAddressSubmitted);
     m_summaryLabel->setWordWrap(true);
+    m_followTreeCheck->setChecked(m_followTreeExpansion);
+    m_followTreeCheck->setToolTip(QStringLiteral("On (default): the graph matches the folders expanded in the tree.\nOff: the graph shows the whole subtree of the current graph folder."));
+
+    auto *addressRow = new QHBoxLayout;
+    addressRow->setContentsMargins(0, 0, 0, 0);
+    addressRow->addWidget(m_addressBar, 1);
+    addressRow->addWidget(m_followTreeCheck, 0);
+    layout->addLayout(addressRow);
 #if !defined(OPENTREE_HAVE_WEBENGINE)
     m_view->setReadOnly(true);
 #else
@@ -141,9 +116,18 @@ GraphPanel::GraphPanel(QWidget *parent)
     m_channel->registerObject(QStringLiteral("graphBridge"), m_bridge);
     m_view->page()->setWebChannel(m_channel);
 #endif
-    layout->addWidget(m_addressBar);
     layout->addWidget(m_summaryLabel);
     layout->addWidget(m_view, 1);
+
+    connect(m_followTreeCheck, &QCheckBox::toggled, this, [this](bool checked) {
+        m_followTreeExpansion = checked;
+        emit followTreeExpansionChanged(checked);
+        markGraphDirty();
+        if (m_batchDepth > 0) {
+            return;
+        }
+        renderGraph();
+    });
 
     setGraphData(QString(), {}, {});
 }
@@ -159,6 +143,10 @@ void GraphPanel::setGraphData(const QString &rootPath, const QVector<TreeEntry> 
     if (!isSameOrDescendant(m_selectedPath, rootPath)) {
         m_selectedPath.clear();
     }
+    if (m_batchDepth > 0) {
+        markGraphDirty();
+        return;
+    }
     renderGraph();
 }
 
@@ -169,6 +157,10 @@ void GraphPanel::setNodeSizeMode(NodeSizeMode mode)
     }
 
     m_nodeSizeMode = mode;
+    markGraphDirty();
+    if (m_batchDepth > 0) {
+        return;
+    }
     renderGraph();
 }
 
@@ -184,6 +176,10 @@ void GraphPanel::setGraphRootPath(const QString &path)
 
     m_graphRootPath = path;
     m_addressBar->setText(path);
+    markGraphDirty();
+    if (m_batchDepth > 0) {
+        return;
+    }
     renderGraph();
 }
 
@@ -198,40 +194,117 @@ void GraphPanel::setSelectedPath(const QString &path)
     }
 
     m_selectedPath = path;
-    if (!m_suspendRender) {
-        renderGraph();
+    markGraphDirty();
+    if (m_batchDepth > 0 || m_suspendRender) {
+        return;
     }
+    refreshSelectionVisuals();
 }
 
 void GraphPanel::setVisiblePaths(const QStringList &paths)
 {
     m_visiblePaths = paths;
+    markGraphDirty();
+    if (m_batchDepth > 0) {
+        return;
+    }
     renderGraph();
 }
 
 void GraphPanel::setOtherThresholdPercent(double percent)
-{
-    const double clamped = std::max(0.0, percent);
+{    const double clamped = std::max(0.0, percent);
     if (std::abs(m_otherThresholdPercent - clamped) < 0.0001) {
         return;
     }
 
     m_otherThresholdPercent = clamped;
+    markGraphDirty();
+    if (m_batchDepth > 0) {
+        return;
+    }
     renderGraph();
+}
+
+void GraphPanel::setFollowTreeExpansion(bool follow)
+{
+    if (m_followTreeExpansion == follow) {
+        return;
+    }
+
+    m_followTreeExpansion = follow;
+    if (m_followTreeCheck) {
+        const QSignalBlocker blocker(m_followTreeCheck);
+        m_followTreeCheck->setChecked(follow);
+    }
+    markGraphDirty();
+    if (m_batchDepth > 0) {
+        return;
+    }
+    renderGraph();
+}
+
+bool GraphPanel::followTreeExpansion() const
+{
+    return m_followTreeExpansion;
+}
+
+void GraphPanel::setMaxNodes(int maxNodes)
+{
+    const int clamped = std::clamp(maxNodes, 20, 600);
+    if (m_maxNodes == clamped) {
+        return;
+    }
+    m_maxNodes = clamped;
+    markGraphDirty();
+    if (m_batchDepth > 0) {
+        return;
+    }
+    renderGraph();
+}
+
+void GraphPanel::beginBatchUpdate()
+{
+    ++m_batchDepth;
+}
+
+void GraphPanel::endBatchUpdate()
+{
+    if (m_batchDepth > 0) {
+        --m_batchDepth;
+    }
+    if (m_batchDepth == 0 && m_renderDirty) {
+        m_renderDirty = false;
+        renderGraph();
+    }
+}
+
+void GraphPanel::markGraphDirty()
+{
+    m_renderDirty = true;
 }
 
 void GraphPanel::activateNode(const QString &path)
 {
     const TreeEntry *entry = findEntryByPath(path);
     if (!entry) {
+        Logger::warning(QStringLiteral("graph-debug activateNode missing path=%1")
+                            .arg(path));
         return;
     }
 
+    Logger::info(QStringLiteral("graph-debug activateNode kind=%1 path=%2 graphRoot=%3 selected=%4")
+                     .arg(entry->kind == TreeEntryKind::Folder ? QStringLiteral("folder") : QStringLiteral("file"))
+                     .arg(entry->path)
+                     .arg(m_graphRootPath)
+                     .arg(m_selectedPath));
+
     m_suspendRender = true;
     m_selectedPath = entry->path;
+    emit nodeActivated(entry->path);
     emit entryActivated(*entry);
     m_suspendRender = false;
-    renderGraph();
+    markGraphDirty();
+    refreshSelectionVisuals();
 }
 
 void GraphPanel::openNode(const QString &path)
@@ -240,10 +313,14 @@ void GraphPanel::openNode(const QString &path)
         const TreeEntry *entry = findEntryByPath(m_graphRootPath);
         const TreeEntry *parentEntry = entry ? findEntryByPath(entry->parentPath) : nullptr;
         if (parentEntry) {
+            Logger::info(QStringLiteral("graph-debug openNode up from=%1 to=%2")
+                             .arg(m_graphRootPath)
+                             .arg(parentEntry->path));
             m_suspendRender = true;
             m_selectedPath = parentEntry->path;
             emit entryOpened(*parentEntry);
             m_suspendRender = false;
+            markGraphDirty();
             renderGraph();
         }
         return;
@@ -251,8 +328,16 @@ void GraphPanel::openNode(const QString &path)
 
     const TreeEntry *entry = findEntryByPath(path);
     if (!entry) {
+        Logger::warning(QStringLiteral("graph-debug openNode missing path=%1")
+                            .arg(path));
         return;
     }
+
+    Logger::info(QStringLiteral("graph-debug openNode kind=%1 path=%2 graphRoot=%3 selected=%4")
+                     .arg(entry->kind == TreeEntryKind::Folder ? QStringLiteral("folder") : QStringLiteral("file"))
+                     .arg(entry->path)
+                     .arg(m_graphRootPath)
+                     .arg(m_selectedPath));
 
     m_suspendRender = true;
     m_selectedPath = entry->path;
@@ -262,7 +347,32 @@ void GraphPanel::openNode(const QString &path)
         emit entryActivated(*entry);
     }
     m_suspendRender = false;
+    markGraphDirty();
     renderGraph();
+}
+
+namespace {
+
+int sizePlanetStyle(const QVector<double> &sortedSizes, double metric)
+{
+    if (sortedSizes.isEmpty()) {
+        return 2;
+    }
+
+    int count = 0;
+    for (double s : sortedSizes) {
+        if (s <= metric) {
+            ++count;
+        }
+    }
+    const double pct = double(count) / double(sortedSizes.size());
+    if (pct >= 0.80) return 4;
+    if (pct >= 0.60) return 3;
+    if (pct >= 0.40) return 2;
+    if (pct >= 0.20) return 1;
+    return 0;
+}
+
 }
 
 void GraphPanel::showNodeContextMenu(const QString &nodeId, int screenX, int screenY)
@@ -324,6 +434,13 @@ void GraphPanel::handleAddressSubmitted()
 
 void GraphPanel::renderGraph()
 {
+    m_renderDirty = false;
+    Logger::info(QStringLiteral("graph-debug renderGraph root=%1 selected=%2 entries=%3 visibleCount=%4 compareRows=%5")
+                     .arg(m_graphRootPath)
+                     .arg(m_selectedPath)
+                     .arg(m_currentEntries.size())
+                     .arg(m_visiblePaths.size())
+                     .arg(m_currentCompareRows.size()));
     if (m_addressBar->text().compare(m_graphRootPath, Qt::CaseInsensitive) != 0) {
         m_addressBar->setText(m_graphRootPath);
     }
@@ -343,17 +460,23 @@ void GraphPanel::renderGraph()
     html.replace("__GRAPH_DATA__", buildGraphPayload(m_graphRootPath, m_currentEntries, m_currentCompareRows));
     m_view->setHtml(html, QUrl("https://local.opentree/"));
 #else
+    QVector<TreeEntry> listed;
+    for (const TreeEntry &entry : m_currentEntries) {
+        if (isSameOrDescendant(entry.path, m_graphRootPath)) {
+            listed.push_back(entry);
+        }
+    }
+    std::sort(listed.begin(), listed.end(), [](const TreeEntry &left, const TreeEntry &right) {
+        return left.size > right.size;
+    });
+    if (listed.size() > 40) {
+        listed.resize(40);
+    }
+
     QStringList lines;
     lines << QStringLiteral("Top items for %1").arg(m_graphRootPath);
-    int shown = 0;
-    for (const TreeEntry &entry : m_currentEntries) {
-        if (!isSameOrDescendant(entry.path, m_graphRootPath)) {
-            continue;
-        }
+    for (const TreeEntry &entry : listed) {
         lines << QStringLiteral("- %1 (%2)").arg(entry.path, SizeFormatter::formatBytes(entry.size));
-        if (++shown >= 40) {
-            break;
-        }
     }
     m_view->setText(lines.join('\n'));
 #endif
@@ -366,16 +489,51 @@ void GraphPanel::renderGraph()
     }
 
     const bool isDrilledIn = m_graphRootPath.compare(m_currentRootPath, Qt::CaseInsensitive) != 0;
-    m_summaryLabel->setText(QStringLiteral("Graph: %1 folders shown for %2%3%4")
+    m_summaryLabel->setText(QStringLiteral("Graph: %1 folders shown for %2 | other cutoff %3% | %4%5%6")
                                 .arg(folderCount)
                                 .arg(m_graphRootPath)
+                                .arg(QString::number(m_otherThresholdPercent, 'f', 1))
+                                .arg(m_followTreeExpansion ? QStringLiteral("following tree") : QStringLiteral("whole subtree"))
                                 .arg(m_currentCompareRows.isEmpty() ? QString() : QStringLiteral(" | delta colors active"))
                                 .arg(isDrilledIn ? QStringLiteral(" | drilled in") : QString()));
+
+    m_renderedRoot = m_graphRootPath;
+    m_renderedEntryCount = m_currentEntries.size();
+}
+
+void GraphPanel::refreshSelectionVisuals()
+{
+    // Selecting a node only changes colours, so update them inside the page instead of
+    // rebuilding the whole graph (which used to reset the camera and re-run the layout).
+    if (m_renderedRoot != m_graphRootPath || m_renderedEntryCount != m_currentEntries.size()) {
+        renderGraph();
+        return;
+    }
+
+#if defined(OPENTREE_HAVE_WEBENGINE)
+    updateSelectionInView();
+#endif
+}
+
+void GraphPanel::updateSelectionInView()
+{
+#if defined(OPENTREE_HAVE_WEBENGINE)
+    if (!m_view || !m_view->page()) {
+        return;
+    }
+
+    const QString argument = m_selectedPath.isEmpty()
+        ? QStringLiteral("null")
+        : QStringLiteral("'%1'").arg(escapeJsString(m_selectedPath));
+    m_view->page()->runJavaScript(
+        QStringLiteral("if (typeof applySelectionState === 'function') { applySelectionState(%1); }").arg(argument));
+#endif
 }
 
 QString GraphPanel::buildEmptyHtml() const
 {
-    return QStringLiteral(R"HTML(
+        return QStringLiteral(
+        R"HTML(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -404,11 +562,18 @@ QString GraphPanel::buildEmptyHtml() const
 <div class="empty">Scan a folder, then open Graph.</div>
 </body>
 </html>
-)HTML");
+)HTML"
+    );
 }
 
 QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<TreeEntry> &entries, const QVector<SnapshotCompareRow> &compareRows) const
 {
+    Logger::info(QStringLiteral("graph-debug buildGraphPayload root=%1 entries=%2 visibleCount=%3 selected=%4 compareRows=%5")
+                     .arg(rootPath)
+                     .arg(entries.size())
+                     .arg(m_visiblePaths.size())
+                     .arg(m_selectedPath)
+                     .arg(compareRows.size()));
     QHash<QString, qint64> deltaByPath;
     for (const SnapshotCompareRow &row : compareRows) {
         deltaByPath.insert(row.path, row.deltaBytes);
@@ -417,6 +582,16 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
     QVector<TreeEntry> folders;
     QVector<TreeEntry> directFolders;
     QVector<TreeEntry> directFiles;
+
+    // Build the tree-visibility lookup once (lowercased keys for case-insensitive membership).
+    const bool filterByTree = m_followTreeExpansion && !m_visiblePaths.isEmpty();
+    QSet<QString> visiblePathSet;
+    if (filterByTree) {
+        visiblePathSet.reserve(m_visiblePaths.size());
+        for (const QString &path : m_visiblePaths) {
+            visiblePathSet.insert(path.toLower());
+        }
+    }
     TreeEntry rootEntry;
     bool hasRootEntry = false;
     bool hasUpNode = false;
@@ -427,11 +602,19 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
             continue;
         }
 
-        if (entry.kind == TreeEntryKind::Folder && !m_visiblePaths.isEmpty() && !m_visiblePaths.contains(entry.path, Qt::CaseInsensitive)) {
+        const bool isRootFolder = entry.kind == TreeEntryKind::Folder
+            && entry.path.compare(rootPath, Qt::CaseInsensitive) == 0;
+        // Case-insensitive set lookup: a QStringList::contains() here was O(n) per entry
+        // and made expanding a large tree quadratic.
+        const bool hiddenByTreePruning = filterByTree
+            && entry.kind == TreeEntryKind::Folder
+            && !isRootFolder
+            && !visiblePathSet.contains(entry.path.toLower());
+        if (hiddenByTreePruning) {
             continue;
         }
 
-        if (entry.kind == TreeEntryKind::Folder && entry.path.compare(rootPath, Qt::CaseInsensitive) == 0) {
+        if (isRootFolder) {
             rootEntry = entry;
             hasRootEntry = true;
             if (!entry.parentPath.isEmpty()) {
@@ -465,8 +648,9 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
     std::sort(directFiles.begin(), directFiles.end(), [](const TreeEntry &left, const TreeEntry &right) {
         return left.size > right.size;
     });
-    if (folders.size() > (hasRootEntry ? 119 : 120)) {
-        folders.resize(hasRootEntry ? 119 : 120);
+    const int folderCap = std::max(4, m_maxNodes - 1);
+    if (folders.size() > (hasRootEntry ? folderCap - 1 : folderCap)) {
+        folders.resize(hasRootEntry ? folderCap - 1 : folderCap);
     }
     if (hasRootEntry) {
         folders.prepend(rootEntry);
@@ -502,6 +686,18 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         }
     }
 
+    QVector<TreeEntry> keptDirectFiles;
+    qint64 otherFileBytes = 0;
+    for (const TreeEntry &entry : directFiles) {
+        const double percent = rootEntry.size <= 0 ? 0.0 : (100.0 * double(entry.size) / double(rootEntry.size));
+        const bool selectedFile = !m_selectedPath.isEmpty() && entry.path.compare(m_selectedPath, Qt::CaseInsensitive) == 0;
+        if ((keptDirectFiles.size() < 8 && percent >= m_otherThresholdPercent) || selectedFile) {
+            keptDirectFiles.push_back(entry);
+        } else {
+            otherFileBytes += entry.size;
+        }
+    }
+
     allowedPaths.insert(rootPath);
     for (const TreeEntry &entry : folders) {
         bool keep = entry.path.compare(rootPath, Qt::CaseInsensitive) == 0;
@@ -511,7 +707,8 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
                 break;
             }
         }
-        if (keep || (!m_selectedPath.isEmpty() && pathIsAncestorOf(entry.path, m_selectedPath))) {
+        const bool selectedAncestor = !m_selectedPath.isEmpty() && pathIsAncestorOf(entry.path, m_selectedPath);
+        if (keep || selectedAncestor) {
             allowedPaths.insert(entry.path);
         }
     }
@@ -541,9 +738,9 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         QPointF sp(c - 6, c - 8);
         QString s = QStringLiteral(
             "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 %1 %1'>"
-            "<defs><radialGradient id='g' cx='35%%' cy='30%%' r='60%%'>"
-            "<stop offset='0%%' stop-color='%2'/>"
-            "<stop offset='100%%' stop-color='%3'/>"
+            "<defs><radialGradient id='g' cx='35%' cy='30%' r='60%'>"
+            "<stop offset='0%' stop-color='%2'/>"
+            "<stop offset='100%' stop-color='%3'/>"
             "</radialGradient></defs>"
             "<circle cx='%4' cy='%4' r='20' fill='url(#g)'/>"
             "<ellipse cx='%5' cy='%6' rx='7' ry='4' fill='rgba(255,255,255,0.22)' transform='rotate(-25 %5 %6)'/>"
@@ -587,7 +784,7 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
             "</svg>"
         );
         const QString moonImg = escapeJsString(QStringLiteral("data:image/svg+xml;base64,") + QString::fromLatin1(moonSvg.toUtf8().toBase64()));
-        nodeJson << QStringLiteral("{id:'__up__',label:%1,title:%2,size:20,shape:'circularImage',image:'%3',borderWidth:1,color:{background:'#1E2740',border:'#5A7AD6'},font:{color:'#D0E0FF'}}")
+        nodeJson << QStringLiteral("{id:'__up__',label:%1,name:%1,title:%2,size:20,shape:'circularImage',image:'%3',borderWidth:1,color:{background:'#1E2740',border:'#5A7AD6'},font:{color:'#D0E0FF'}}")
                         .arg(QStringLiteral("'%1'").arg(escapeJsString(upLabel)))
                         .arg(QStringLiteral("'%1'").arg(upTitle))
                         .arg(moonImg);
@@ -597,21 +794,48 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
     QVector<double> sizeMetrics;
     for (const TreeEntry &entry : folders) {
         if (allowedPaths.contains(entry.path))
-            sizeMetrics.append(nodeMetric(entry, m_nodeSizeMode));
+            sizeMetrics.append(nodeMetric(entry, NodeSizeMode::Size));
     }
     std::sort(sizeMetrics.begin(), sizeMetrics.end());
-    auto planetStyleForSize = [&](double m) -> int {
-        if (sizeMetrics.isEmpty()) return 2;
-        int n = 0; for (double s : sizeMetrics) { if (s <= m) ++n; }
-        double p = double(n) / double(sizeMetrics.size());
-        if (p >= 0.80) return 4; if (p >= 0.60) return 3;
-        if (p >= 0.40) return 2; if (p >= 0.20) return 1;
-        return 0;
-    };
+
+    double minFileMetric = 0.0;
+    double maxFileMetric = 0.0;
+    bool firstFileMetric = true;
+    for (const TreeEntry &entry : keptDirectFiles) {
+        const double metric = entry.size / (1024.0 * 1024.0);
+        if (firstFileMetric) {
+            minFileMetric = metric;
+            maxFileMetric = metric;
+            firstFileMetric = false;
+        } else {
+            minFileMetric = std::min(minFileMetric, metric);
+            maxFileMetric = std::max(maxFileMetric, metric);
+        }
+    }
 
     static const QString styleLight[] = { QStringLiteral("#8890A0"), QStringLiteral("#E07060"), QStringLiteral("#59A14F"), QStringLiteral("#00D4FF"), QStringLiteral("#FFD700") };
     static const QString styleDark[]  = { QStringLiteral("#505868"), QStringLiteral("#802030"), QStringLiteral("#207030"), QStringLiteral("#0066AA"), QStringLiteral("#E87D00") };
     static const bool styleRing[]     = { false, false, false, false, true };
+
+    // Only the largest folders keep a permanent label; the rest reveal their name on
+    // hover so dense graphs stay readable.
+    QVector<TreeEntry> labelCandidates;
+    for (const TreeEntry &entry : folders) {
+        if (allowedPaths.contains(entry.path)) {
+            labelCandidates.push_back(entry);
+        }
+    }
+    std::sort(labelCandidates.begin(), labelCandidates.end(), [](const TreeEntry &left, const TreeEntry &right) {
+        return left.size > right.size;
+    });
+    QSet<QString> labeledPaths;
+    const int labelBudget = 24;
+    for (int i = 0; i < labelCandidates.size() && i < labelBudget; ++i) {
+        labeledPaths.insert(labelCandidates[i].path);
+    }
+    if (!m_selectedPath.isEmpty()) {
+        labeledPaths.insert(m_selectedPath);
+    }
 
     for (const TreeEntry &entry : folders) {
         if (!allowedPaths.contains(entry.path)) {
@@ -621,8 +845,8 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         bool sel = !m_selectedPath.isEmpty() && entry.path.compare(m_selectedPath, Qt::CaseInsensitive) == 0;
         bool anc = !sel && !m_selectedPath.isEmpty() && pathIsAncestorOf(entry.path, m_selectedPath);
 
-        double metric = nodeMetric(entry, m_nodeSizeMode);
-        int pStyle = planetStyleForSize(metric);
+        const double sizeMetric = nodeMetric(entry, NodeSizeMode::Size);
+        const int pStyle = sizePlanetStyle(sizeMetrics, sizeMetric);
         QString planetImg = makePlanet(styleLight[pStyle], styleDark[pStyle], styleRing[pStyle], pStyle);
 
         QString color, borderColor;
@@ -644,9 +868,10 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         const QString escapedTitle = escapeJsString(QStringLiteral("%1\nSize: %2\nDelta: %3")
                                                         .arg(entry.path, SizeFormatter::formatBytes(entry.size), QString::number(delta)));
         const QString escapedImg = escapeJsString(planetImg);
-        nodeJson << QStringLiteral("{id:%1,label:%2,title:%3,size:%4,borderWidth:%5,shape:'circularImage',image:'%6',color:{background:%7,border:%8}}")
+        const QString shownLabel = labeledPaths.contains(entry.path) ? escapedName : QString();
+        nodeJson << QStringLiteral("{id:%1,label:'%2',name:'%3',title:%4,size:%5,borderWidth:%6,shape:'circularImage',image:'%7',color:{background:%8,border:%9}}")
                         .arg(QStringLiteral("'%1'").arg(escapedPath))
-                        .arg(QStringLiteral("'%1'").arg(escapedName))
+                        .arg(shownLabel, escapedName)
                         .arg(QStringLiteral("'%1'").arg(escapedTitle))
                         .arg(size)
                         .arg(sel ? QStringLiteral("3") : QStringLiteral("1.5"))
@@ -661,6 +886,38 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         }
     }
 
+    for (const TreeEntry &entry : keptDirectFiles) {
+        const qint64 delta = deltaByPath.value(entry.path, 0);
+        const bool sel = !m_selectedPath.isEmpty() && entry.path.compare(m_selectedPath, Qt::CaseInsensitive) == 0;
+        const double size = normalizedNodeSize(entry.size / (1024.0 * 1024.0), minFileMetric, maxFileMetric);
+
+        QString color = QStringLiteral("#4DD0E1");
+        QString borderColor = QStringLiteral("#80DEEA");
+        if (sel) {
+            color = QStringLiteral("#FFD700"); borderColor = QStringLiteral("#FFE066");
+        } else if (delta > 0) {
+            color = QStringLiteral("#FF4081"); borderColor = QStringLiteral("#FF80AB");
+        } else if (delta < 0) {
+            color = QStringLiteral("#39FF14"); borderColor = QStringLiteral("#80FF60");
+        }
+
+        const QString escapedPath = escapeJsString(entry.path);
+        const QString escapedName = escapeJsString(entry.name);
+        const QString escapedTitle = escapeJsString(QStringLiteral("%1\nSize: %2\nDelta: %3")
+                                                        .arg(entry.path, SizeFormatter::formatBytes(entry.size), QString::number(delta)));
+        nodeJson << QStringLiteral("{id:%1,label:'%2',name:'%3',title:%4,size:%5,shape:'diamond',borderWidth:%6,color:{background:'%7',border:'%8'}}")
+                        .arg(QStringLiteral("'%1'").arg(escapedPath))
+                        .arg(escapedName, escapedName)
+                        .arg(QStringLiteral("'%1'").arg(escapedTitle))
+                        .arg(size)
+                        .arg(sel ? QStringLiteral("3") : QStringLiteral("1.5"))
+                        .arg(color, borderColor);
+
+        edgeJson << QStringLiteral("{from:%1,to:%2}")
+                        .arg(QStringLiteral("'%1'").arg(escapeJsString(rootPath)))
+                        .arg(QStringLiteral("'%1'").arg(escapedPath));
+    }
+
     if (otherFolderBytes > 0) {
         QString asteroidSvg = QStringLiteral(
             "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'>"
@@ -671,12 +928,31 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
             "</svg>"
         );
         const QString asteroidImg = escapeJsString(QStringLiteral("data:image/svg+xml;base64,") + QString::fromLatin1(asteroidSvg.toUtf8().toBase64()));
-        nodeJson << QStringLiteral("{id:'__other_folders__',label:'Other folders',title:%1,size:20,shape:'circularImage',image:'%2',borderWidth:1.5,color:{background:'#3A4A5A',border:'#6A8AAA'}}")
+        nodeJson << QStringLiteral("{id:'__other_folders__',label:'Other folders',name:'Other folders',title:%1,size:20,shape:'circularImage',image:'%2',borderWidth:1.5,color:{background:'#3A4A5A',border:'#6A8AAA'}}")
                         .arg(QStringLiteral("'%1'").arg(escapeJsString(QStringLiteral("Other direct folders under %1\nSize: %2").arg(rootPath, SizeFormatter::formatBytes(otherFolderBytes)))))
                         .arg(asteroidImg);
         edgeJson << QStringLiteral("{from:%1,to:'__other_folders__',dashes:true}")
                         .arg(QStringLiteral("'%1'").arg(escapeJsString(rootPath)));
     }
+
+    if (otherFileBytes > 0) {
+        nodeJson << QStringLiteral("{id:'__other_files__',label:'Other files',name:'Other files',title:%1,size:18,shape:'diamond',borderWidth:1.5,color:{background:'#455A64',border:'#90A4AE'}}")
+                        .arg(QStringLiteral("'%1'").arg(escapeJsString(QStringLiteral("Other direct files under %1\nSize: %2").arg(rootPath, SizeFormatter::formatBytes(otherFileBytes)))));
+        edgeJson << QStringLiteral("{from:%1,to:'__other_files__',dashes:true}")
+                        .arg(QStringLiteral("'%1'").arg(escapeJsString(rootPath)));
+    }
+
+    Logger::info(QStringLiteral("graph-debug payloadSummary root=%1 directFolders=%2 keptDirectFolders=%3 directFiles=%4 keptDirectFiles=%5 allowedPaths=%6 otherFolderBytes=%7 otherFileBytes=%8 nodes=%9 edges=%10")
+                     .arg(rootPath)
+                     .arg(directFolders.size())
+                     .arg(keptDirectFolders.size())
+                     .arg(directFiles.size())
+                     .arg(keptDirectFiles.size())
+                     .arg(allowedPaths.size())
+                     .arg(otherFolderBytes)
+                     .arg(otherFileBytes)
+                     .arg(nodeJson.size())
+                     .arg(edgeJson.size()));
 
     return QStringLiteral("const GRAPH_DATA={nodes:[%1],edges:[%2],root:%3,selected:%4};")
         .arg(nodeJson.join(','),
@@ -687,7 +963,8 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
 
 QString GraphPanel::buildHtml() const
 {
-    return QStringLiteral(R"HTML(
+    return QStringLiteral(
+        R"HTML(
 <!DOCTYPE html>
 <html lang="en">
 <head>
@@ -704,6 +981,26 @@ QString GraphPanel::buildHtml() const
   }
   #bgCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
   #graph { position: relative; width: 100vw; height: 100vh; z-index: 1; }
+  #toolbar {
+    position: fixed; top: 12px; right: 12px; z-index: 30;
+    display: flex; gap: 6px; align-items: center;
+    padding: 6px 8px;
+    border: 1px solid rgba(70, 90, 130, 0.5);
+    border-radius: 12px;
+    background: rgba(8, 12, 22, 0.78);
+    backdrop-filter: blur(6px);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+  }
+  #toolbar button {
+    border: 1px solid rgba(80, 110, 160, 0.5);
+    background: rgba(20, 28, 46, 0.85);
+    color: #b8c8e8;
+    font-size: 12px; font-family: inherit;
+    padding: 4px 9px; border-radius: 8px; cursor: pointer;
+  }
+  #toolbar button:hover { background: rgba(40, 56, 88, 0.95); color: #e0eaff; }
+  #toolbar button.active { background: #2f5db0; color: #ffffff; border-color: #5b8ae0; }
+  #toolbar .hint { color: #6a7a98; font-size: 11px; margin-right: 2px; }
   #legend {
     position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
     z-index: 20;
@@ -723,7 +1020,19 @@ QString GraphPanel::buildHtml() const
 <body>
 <canvas id="bgCanvas"></canvas>
 <div id="graph"></div>
-  <div id="legend"><b>Graph</b><span class="sep">·</span>click: select<span class="sep">·</span>double-click: enter folder<span class="sep">·</span>right-click: view in other tabs<span class="sep">·</span><span style="color:#6a7a98;">planets: folders</span></div>
+  <div id="toolbar">
+    <span class="hint">layout</span>
+    <button data-layout="force">Force</button>
+    <button data-layout="tree">Tree</button>
+    <span class="hint">|</span>
+    <button id="btnHoverFocus" class="active" title="Zoom to the node you rest the pointer on. Press Escape to zoom back out.">Hover focus</button>
+    <span class="hint">|</span>
+    <button id="btnFit">Fit</button>
+    <button id="btnZoomOut">−</button>
+    <button id="btnZoomIn">+</button>
+    <button id="btnRelayout">Re-layout</button>
+  </div>
+  <div id="legend"><b>Graph</b><span class="sep">·</span>click: select<span class="sep">·</span>double-click: enter folder<span class="sep">·</span>right-click: more<span class="sep">·</span><span style="color:#6a7a98;">planet = folder</span><span class="sep">·</span><span style="color:#6a7a98;">◆ = file</span></div>
 <script>
 __GRAPH_DATA__
 
@@ -731,71 +1040,82 @@ __GRAPH_DATA__
 (function() {
   const c = document.getElementById('bgCanvas');
   const ctx = c.getContext('2d');
-  let W, H, cx, cy;
+  let W = 1, H = 1, dpr = 1;
+
+  const particles = [];
+  const colors = ['80,180,255','160,200,255','180,160,255','200,220,255','120,200,255'];
+
+  function seedParticles() {
+    particles.length = 0;
+    // 90% static specks
+    for (let i = 0; i < 270; ++i) {
+      particles.push({
+        x: Math.random() * W, y: Math.random() * H,
+        size: 1 + Math.random() * 1.5,
+        alpha: 0.08 + Math.random() * 0.2,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        isStatic: true,
+      });
+    }
+    // 10% drifting specks
+    for (let i = 0; i < 30; ++i) {
+      const angle = Math.random() * Math.PI * 2;
+      particles.push({
+        x: Math.random() * W, y: Math.random() * H,
+        vx: Math.cos(angle) * (0.2 + Math.random() * 0.5),
+        vy: Math.sin(angle) * (0.2 + Math.random() * 0.5),
+        size: 1.5 + Math.random() * 2,
+        alpha: 0.1 + Math.random() * 0.3,
+        color: colors[Math.floor(Math.random() * colors.length)],
+        isStatic: false,
+      });
+    }
+    // bigger star particles that pulse
+    for (let i = 0; i < 12; ++i) {
+      const angle = Math.random() * Math.PI * 2;
+      particles.push({
+        x: Math.random() * W, y: Math.random() * H,
+        vx: Math.cos(angle) * (0.05 + Math.random() * 0.1),
+        vy: Math.sin(angle) * (0.05 + Math.random() * 0.1),
+        size: 4 + Math.random() * 3,
+        alpha: 0.25 + Math.random() * 0.25,
+        color: '200,220,255',
+        isStatic: false,
+        pulse: 0.015 + Math.random() * 0.025,
+        pulsePhase: Math.random() * Math.PI * 2,
+      });
+    }
+  }
+
   function resize() {
-    W = c.width = window.innerWidth;
-    H = c.height = window.innerHeight;
-    cx = W / 2; cy = H / 2;
+    W = Math.max(1, window.innerWidth);
+    H = Math.max(1, window.innerHeight);
+    dpr = window.devicePixelRatio || 1;
+    c.width = Math.max(1, Math.floor(W * dpr));
+    c.height = Math.max(1, Math.floor(H * dpr));
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    seedParticles();
   }
   resize();
   window.addEventListener('resize', resize);
 
-  const particles = [];
-  const colors = ['80,180,255','160,200,255','180,160,255','200,220,255','120,200,255'];
-  // 90% static specks
-  for (let i = 0; i < 270; ++i) {
-    particles.push({
-      x: Math.random() * W, y: Math.random() * H,
-      size: 1 + Math.random() * 1.5,
-      alpha: 0.08 + Math.random() * 0.2,
-      color: colors[Math.floor(Math.random() * colors.length)],
-      isStatic: true,
-    });
-  }
-  // 10% drifting specks
-  for (let i = 0; i < 30; ++i) {
-    const angle = Math.random() * Math.PI * 2;
-    particles.push({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: Math.cos(angle) * (0.2 + Math.random() * 0.5),
-      vy: Math.sin(angle) * (0.2 + Math.random() * 0.5),
-      size: 1.5 + Math.random() * 2,
-      alpha: 0.1 + Math.random() * 0.3,
-      color: colors[Math.floor(Math.random() * colors.length)],
-      isStatic: false,
-    });
-  }
-  // bigger star particles that pulse
-  for (let i = 0; i < 12; ++i) {
-    const angle = Math.random() * Math.PI * 2;
-    particles.push({
-      x: Math.random() * W, y: Math.random() * H,
-      vx: Math.cos(angle) * (0.05 + Math.random() * 0.1),
-      vy: Math.sin(angle) * (0.05 + Math.random() * 0.1),
-      size: 4 + Math.random() * 3,
-      alpha: 0.25 + Math.random() * 0.25,
-      color: '200,220,255',
-      isStatic: false,
-      pulse: 0.015 + Math.random() * 0.025,
-      pulsePhase: Math.random() * Math.PI * 2,
-    });
-  }
-
   function frame() {
-    ctx.fillStyle = 'rgba(5,7,14,0.04)';
-    ctx.fillRect(0, 0, W, H);
+    // Full clear every frame: a low-alpha fade left permanent motion-blur streaks
+    // behind the drifting specks, which cluttered the graph.
+    ctx.clearRect(0, 0, W, H);
     for (const p of particles) {
       if (!p.isStatic) {
         p.x += p.vx;
         p.y += p.vy;
-        if (p.x < -30) p.x = W + 30; if (p.x > W + 30) p.x = -30;
-        if (p.y < -30) p.y = H + 30; if (p.y > H + 30) p.y = -30;
+        if (p.x < -20) p.x = W + 20; if (p.x > W + 20) p.x = -20;
+        if (p.y < -20) p.y = H + 20; if (p.y > H + 20) p.y = -20;
       }
       let a = p.alpha;
       if (p.pulse) a = p.alpha * (0.5 + 0.5 * Math.sin(p.pulsePhase + Date.now() * p.pulse));
+      if (!isFinite(a) || a <= 0) continue;
       ctx.beginPath();
       ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(' + p.color + ',' + a + ')';
+      ctx.fillStyle = 'rgba(' + p.color + ',' + a.toFixed(3) + ')';
       ctx.fill();
     }
     requestAnimationFrame(frame);
@@ -810,91 +1130,324 @@ new QWebChannel(qt.webChannelTransport, function(channel) {
 const container = document.getElementById('graph');
 const nodes = new vis.DataSet(GRAPH_DATA.nodes);
 const edges = new vis.DataSet(GRAPH_DATA.edges);
-const network = new vis.Network(container, { nodes, edges }, {
-  physics: {
-    enabled: true,
-    solver: 'forceAtlas2Based',
-    forceAtlas2Based: {
-      gravitationalConstant: -22,
-      centralGravity: 0.003,
-      springLength: 220,
-      springConstant: 0.025,
-      damping: 0.7,
-      avoidOverlap: 0.3,
-    },
-    stabilization: { iterations: 150, fit: true },
+
+const nodeMeta = {};
+GRAPH_DATA.nodes.forEach(n => {
+  nodeMeta[n.id] = {
+    shown: n.label || '',
+    name: n.name || n.label || '',
+    baseColor: (n.color && n.color.background) ? n.color.background : '#59A14F',
+    baseBorder: (n.color && n.color.border) ? n.color.border : '#207030',
+    baseWidth: typeof n.borderWidth === 'number' ? n.borderWidth : 1.5,
+  };
+});
+
+function isAncestorPath(ancestor, path) {
+  if (!ancestor || !path) return false;
+  if (ancestor.toLowerCase() === path.toLowerCase()) return true;
+  const lowerPath = path.toLowerCase();
+  const lowerAncestor = ancestor.toLowerCase();
+  if (!lowerPath.startsWith(lowerAncestor)) return false;
+  if (lowerAncestor.endsWith('/') || lowerAncestor.endsWith('\\')) return true;
+  const next = lowerPath.charAt(lowerAncestor.length);
+  return next === '/' || next === '\\';
+}
+
+// Recolours the selection/ancestor chain in place, so selecting a node never needs a
+// full page reload (which used to reset the camera and re-run the layout on every click).
+function applySelectionState(selectedPath) {
+  const updates = [];
+  for (const id in nodeMeta) {
+    const meta = nodeMeta[id];
+    let background = meta.baseColor;
+    let border = meta.baseBorder;
+    let width = meta.baseWidth;
+    if (selectedPath && id === selectedPath) {
+      background = '#FFD700';
+      border = '#FFE066';
+      width = 3;
+    } else if (selectedPath && isAncestorPath(id, selectedPath)) {
+      background = '#B388FF';
+      border = '#CCAAFF';
+      width = 2;
+    }
+    updates.push({ id, color: { background, border }, borderWidth: width });
+  }
+  if (updates.length) nodes.update(updates);
+  if (selectedPath && nodes.get(selectedPath)) {
+    network.selectNodes([selectedPath]);
+  } else {
+    network.unselectAll();
+  }
+}
+window.applySelectionState = applySelectionState;
+
+const forcePhysics = {
+  enabled: true,
+  solver: 'forceAtlas2Based',
+  forceAtlas2Based: {
+    gravitationalConstant: -60,
+    centralGravity: 0.02,
+    springLength: 160,
+    springConstant: 0.05,
+    damping: 0.65,
+    avoidOverlap: 0.7,
   },
-  interaction: { hover: true, tooltipDelay: 60, navigationButtons: false },
+  stabilization: { iterations: 260, fit: true },
+  minVelocity: 0.75,
+};
+const treeLayout = {
+  hierarchical: {
+    enabled: true,
+    direction: 'UD',
+    sortMethod: 'directed',
+    levelSeparation: 170,
+    nodeSpacing: 190,
+    treeSpacing: 240,
+    blockShifting: true,
+    edgeMinimization: true,
+    parentCentralization: true,
+  },
+};
+const forceEdges = {
+  smooth: { type: 'dynamic', roundness: 0.5 },
+  arrows: { to: { enabled: false } },
+};
+const treeEdges = {
+  smooth: { type: 'cubicBezier', forceDirection: 'vertical', roundness: 0.4 },
+  arrows: { to: { enabled: true, scaleFactor: 0.4 } },
+};
+
+let currentLayout = GRAPH_DATA.nodes.length > 10 ? 'tree' : 'force';
+const isTree = () => currentLayout === 'tree';
+
+// In force mode the root is pinned at the origin so children radiate outwards around it
+// instead of drifting into a hairball. The hierarchical layout owns positions in tree mode.
+function applyRootPin() {
+  const rootId = GRAPH_DATA.root;
+  if (!rootId || !nodes.get(rootId)) return;
+  if (isTree()) {
+    nodes.update({ id: rootId, fixed: false });
+  } else {
+    nodes.update({ id: rootId, fixed: { x: 0, y: 0 } });
+  }
+}
+
+const network = new vis.Network(container, { nodes, edges }, {
+  interaction: { hover: true, tooltipDelay: 60, hoverConnectedEdges: true, navigationButtons: false },
   nodes: {
     borderWidth: 1.8,
     font: { color: '#d0d8ee', size: 13, face: 'Segoe UI', strokeWidth: 0 },
     shadow: { enabled: true, color: 'rgba(80,200,255,0.25)', size: 28, x: 0, y: 0 },
   },
-  edges: {
-    color: { inherit: false, color: 'rgba(60,160,240,0.25)', highlight: 'rgba(80,220,255,0.5)', hover: 'rgba(80,220,255,0.35)' },
-    width: 0.8,
-    smooth: { type: 'dynamic', roundness: 0.5 },
-    selectionWidth: 2.0,
-  },
+  edges: Object.assign({
+    color: { inherit: false, color: 'rgba(60,160,240,0.25)', highlight: 'rgba(80,220,255,0.6)', hover: 'rgba(80,220,255,0.4)' },
+    width: 0.9,
+    selectionWidth: 2.2,
+  }, isTree() ? treeEdges : forceEdges),
+  layout: isTree() ? treeLayout : { hierarchical: { enabled: false } },
+  physics: isTree() ? { enabled: false } : forcePhysics,
 });
-network.once('stabilizationIterationsDone', () => {
-  network.setOptions({
-    physics: {
-      enabled: true,
-      solver: 'forceAtlas2Based',
-      forceAtlas2Based: {
-        gravitationalConstant: -1.5,
-        centralGravity: 0.002,
-        springLength: 100,
-        springConstant: 0.004,
-        damping: 0.93,
-        avoidOverlap: 0.05,
-      },
-      stabilization: false,
-    },
+
+function setActiveLayoutButton() {
+  document.querySelectorAll('#toolbar button[data-layout]').forEach(b => {
+    b.classList.toggle('active', b.dataset.layout === currentLayout);
   });
+}
+
+function settleView() {
+  network.fit({ animation: { duration: 250 } });
+  // Fitting hundreds of nodes makes them unreadable; clamp how far out we zoom and
+  // re-center on the selected node (or the graph root) when that happens.
+  window.setTimeout(() => {
+    if (network.getScale() < 0.5) {
+      const target = (GRAPH_DATA.selected && nodes.get(GRAPH_DATA.selected)) ? GRAPH_DATA.selected : GRAPH_DATA.root;
+      if (target && nodes.get(target)) {
+        network.focus(target, { scale: 0.5, animation: { duration: 300 } });
+      }
+    }
+  }, 320);
   if (GRAPH_DATA.selected && nodes.get(GRAPH_DATA.selected)) {
     network.selectNodes([GRAPH_DATA.selected]);
-    network.focus(GRAPH_DATA.selected, { scale: 1.0, animation: false });
+  }
+}
+
+function applyLayout(mode) {
+  currentLayout = mode;
+  setActiveLayoutButton();
+  applyRootPin();
+  if (mode === 'tree') {
+    network.setOptions({ layout: treeLayout, physics: { enabled: false }, edges: treeEdges });
+    window.setTimeout(settleView, 60);
+  } else {
+    network.setOptions({ layout: { hierarchical: { enabled: false } }, physics: Object.assign({}, forcePhysics), edges: forceEdges });
+    network.stabilize(260);
+  }
+}
+
+document.getElementById('btnFit').addEventListener('click', settleView);
+document.getElementById('btnZoomIn').addEventListener('click', () => network.moveTo({ scale: network.getScale() * 1.25, animation: { duration: 160 } }));
+document.getElementById('btnZoomOut').addEventListener('click', () => network.moveTo({ scale: network.getScale() * 0.8, animation: { duration: 160 } }));
+document.getElementById('btnRelayout').addEventListener('click', () => applyLayout(currentLayout));
+document.querySelectorAll('#toolbar button[data-layout]').forEach(button => {
+  button.addEventListener('click', () => applyLayout(button.dataset.layout));
+});
+)HTML"
+        R"HTML(
+setActiveLayoutButton();
+applyRootPin();
+if (isTree()) {
+  window.setTimeout(settleView, 80);
+}
+// Freeze once settled so nodes stay clickable instead of drifting forever.
+network.on('stabilizationIterationsDone', () => {
+  if (!isTree()) {
+    network.setOptions({ physics: { enabled: false } });
+  }
+  settleView();
+});
+
+// Hidden labels reveal themselves on hover, and hovering a node zooms/focuses it.
+let hoverFocus = true;
+let hoverHome = null;
+let hoverIntentTimer = null;
+let lastMouse = { x: -1000, y: -1000 };
+let lastFocusMouse = { x: -1000, y: -1000 };
+
+function cancelHoverIntent() {
+  if (hoverIntentTimer) {
+    clearTimeout(hoverIntentTimer);
+    hoverIntentTimer = null;
+  }
+}
+
+function restoreHoverHome() {
+  if (hoverHome) {
+    network.moveTo({
+      position: hoverHome.position,
+      scale: hoverHome.scale,
+      animation: { duration: 550, easingFunction: 'easeInOutCubic' },
+    });
+    hoverHome = null;
+  }
+}
+
+container.addEventListener('mousemove', e => { lastMouse = { x: e.clientX, y: e.clientY }; }, true);
+
+// Escape undoes the hover zoom (and fits the graph when there was nothing to undo).
+window.addEventListener('keydown', e => {
+  if (e.key !== 'Escape') return;
+  cancelHoverIntent();
+  if (hoverHome) {
+    restoreHoverHome();
+  } else {
+    network.fit({ animation: { duration: 300, easingFunction: 'easeInOutCubic' } });
   }
 });
-let clickTimer = null;
-network.on('click', params => {
-  if (!params.nodes.length) { return; }
-  if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; return; }
-  clickTimer = setTimeout(() => {
-    clickTimer = null;
-    const node = nodes.get(params.nodes[0]);
-    if (graphBridge && node) {
-      graphBridge.activateNode(node.id);
+
+const hoverFocusButton = document.getElementById('btnHoverFocus');
+if (hoverFocusButton) {
+  hoverFocusButton.addEventListener('click', function() {
+    hoverFocus = !hoverFocus;
+    this.classList.toggle('active', hoverFocus);
+    cancelHoverIntent();
+    if (!hoverFocus) {
+      restoreHoverHome();
     }
-  }, 250);
+  });
+}
+
+network.on('hoverNode', p => {
+  const meta = nodeMeta[p.node];
+  if (meta && !meta.shown && meta.name) nodes.update({ id: p.node, label: meta.name });
+
+  if (!hoverFocus) return;
+
+  // If the pointer has not actually moved since the last camera move, this hover was
+  // caused by the camera sliding a node under a stationary cursor. Ignoring those is what
+  // stops the zoom-in/zoom-out feedback loop.
+  if (Math.abs(lastMouse.x - lastFocusMouse.x) < 12 && Math.abs(lastMouse.y - lastFocusMouse.y) < 12) {
+    return;
+  }
+
+  cancelHoverIntent();
+  hoverIntentTimer = window.setTimeout(() => {
+    hoverIntentTimer = null;
+    if (!hoverHome) hoverHome = { position: network.getViewPosition(), scale: network.getScale() };
+    lastFocusMouse = { x: lastMouse.x, y: lastMouse.y };
+    const targetScale = Math.min(Math.max(network.getScale(), 0.9), 1.25);
+    network.focus(p.node, {
+      scale: targetScale,
+      animation: { duration: 550, easingFunction: 'easeInOutCubic' },
+    });
+  }, 300);
 });
+
+network.on('blurNode', p => {
+  const meta = nodeMeta[p.node];
+  if (meta && !meta.shown) nodes.update({ id: p.node, label: '' });
+
+  cancelHoverIntent();
+  // No automatic zoom-out: it fought the user because the cursor stays put while the
+  // camera moves. Use Escape or Fit to go back.
+});
+
+// Any press cancels a pending hover move so clicks always land where the user aimed.
+container.addEventListener('mousedown', () => { cancelHoverIntent(); }, true);
+
+let lastDragTimestamp = 0;
+network.on('dragStart', () => { lastDragTimestamp = performance.now(); cancelHoverIntent(); });
+network.on('dragEnd', () => { lastDragTimestamp = performance.now(); });
+
+network.on('click', params => {
+  // Ignore the click that ends a pan/drag.
+  if (performance.now() - lastDragTimestamp < 200) return;
+
+  if (!params.nodes.length) {
+    applySelectionState(null);
+    return;
+  }
+
+  // Act immediately on a single click. The native click detail tells us a second click of
+  // a double-click is coming, so no artificial delay is needed.
+  const source = params.event && params.event.srcEvent ? params.event.srcEvent : null;
+  const detail = source && typeof source.detail === 'number' ? source.detail : 1;
+  if (detail >= 2) return;
+
+  const node = nodes.get(params.nodes[0]);
+  if (graphBridge && node) {
+    graphBridge.activateNode(node.id);
+  }
+});
+
 network.on('doubleClick', params => {
-  if (clickTimer) { clearTimeout(clickTimer); clickTimer = null; }
   if (!params.nodes.length) { return; }
   const node = nodes.get(params.nodes[0]);
   if (!node) { return; }
   network.focus(node.id, {
-    scale: 1.3,
+    scale: Math.max(network.getScale(), 1.1),
     animation: { duration: 300, easingFunction: 'easeInOutQuad' }
   });
   if (graphBridge) {
     window.setTimeout(() => graphBridge.openNode(node.id), 200);
   }
 });
+
 container.addEventListener('contextmenu', function(e) {
+  // Always swallow the browser menu; only nodes open ours.
+  e.preventDefault();
+  if (!graphBridge) return;
   const rect = container.getBoundingClientRect();
   const nodeId = network.getNodeAt({ x: e.clientX - rect.left, y: e.clientY - rect.top });
-  if (nodeId && graphBridge) {
-    e.preventDefault();
+  if (nodeId) {
     graphBridge.contextMenuNode(nodeId, e.screenX, e.screenY);
   }
 });
 </script>
 </body>
 </html>
-)HTML");
+)HTML"
+    );
 }
 
 }

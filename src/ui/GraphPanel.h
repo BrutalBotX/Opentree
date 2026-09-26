@@ -8,6 +8,7 @@
 #include <QVector>
 
 QT_FORWARD_DECLARE_CLASS(QCompleter)
+QT_FORWARD_DECLARE_CLASS(QCheckBox)
 QT_FORWARD_DECLARE_CLASS(QFileSystemModel)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QLineEdit)
@@ -74,12 +75,19 @@ public:
     void setSelectedPath(const QString &path);
     void setVisiblePaths(const QStringList &paths);
     void setOtherThresholdPercent(double percent);
+    void setFollowTreeExpansion(bool follow);
+    bool followTreeExpansion() const;
+    void setMaxNodes(int maxNodes);
+    void beginBatchUpdate();
+    void endBatchUpdate();
 
 signals:
     void entryActivated(const TreeEntry &entry);
     void entryOpened(const TreeEntry &entry);
     void pathEntered(const QString &path);
     void viewInTabRequested(const TreeEntry &entry, const QString &tabName);
+    void nodeActivated(const QString &path);
+    void followTreeExpansionChanged(bool follow);
 
 public slots:
     Q_INVOKABLE
@@ -96,9 +104,13 @@ private:
     QString buildEmptyHtml() const;
     QString buildHtml() const;
     QString buildGraphPayload(const QString &rootPath, const QVector<TreeEntry> &entries, const QVector<SnapshotCompareRow> &compareRows) const;
+    void markGraphDirty();
     void renderGraph();
+    void refreshSelectionVisuals();
+    void updateSelectionInView();
 
     QLineEdit *m_addressBar;
+    QCheckBox *m_followTreeCheck;
     QLabel *m_summaryLabel;
 
 #if defined(OPENTREE_HAVE_WEBENGINE)
@@ -116,6 +128,12 @@ private:
     QString m_selectedPath;
     QStringList m_visiblePaths;
     bool m_suspendRender = false;
+    int m_batchDepth = 0;
+    bool m_renderDirty = false;
+    bool m_followTreeExpansion = true;
+    int m_maxNodes = 120;
+    QString m_renderedRoot;
+    int m_renderedEntryCount = -1;
     NodeSizeMode m_nodeSizeMode = NodeSizeMode::Size;
     double m_otherThresholdPercent = 1.0;
 };
