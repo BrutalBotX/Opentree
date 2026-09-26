@@ -92,6 +92,7 @@ AppController::AppController(QObject *parent)
         Logger::error("Database initialization failed: " + m_databaseManager->lastError());
     } else {
         m_snapshotService = new SnapshotService(m_databaseManager->database());
+        m_snapshotService->ensureDefaultResolutionRules();
         m_folderRepository = new FolderRepository(m_databaseManager->database());
         m_fileRepository = new FileRepository(m_databaseManager->database());
     }
@@ -478,6 +479,8 @@ void AppController::refreshTimeline()
     } else if (!backgroundError.isEmpty()) {
         m_window->setStatusText(QStringLiteral("Background run status error: %1").arg(backgroundError));
     }
+
+    updateTimelineFolderHistory();
 }
 
 void AppController::handleCreateSnapshotRequest()
@@ -635,6 +638,7 @@ void AppController::handleEntryActivated(const TreeEntry &entry)
         graph->setSelectedPath(entry.path);
     });
     updateTrashSelection();
+    updateTimelineFolderHistory();
 }
 
 void AppController::handleGraphEntryActivated(const TreeEntry &entry)
@@ -907,6 +911,23 @@ void AppController::handleOpenConfigFolderRequest()
 void AppController::handleOpenLogFileRequest()
 {
     QDesktopServices::openUrl(QUrl::fromLocalFile(QDir::current().absoluteFilePath("opentree.log")));
+}
+
+void AppController::updateTimelineFolderHistory()
+{
+    if (!m_window || !m_snapshotService) {
+        return;
+    }
+
+    const QString folderPath = m_activeFolderPath.isEmpty() ? m_currentResult.rootPath : m_activeFolderPath;
+    if (folderPath.isEmpty() || m_currentResult.rootPath.isEmpty()) {
+        m_window->timelinePanel()->setFolderHistory(QString(), {});
+        return;
+    }
+
+    QString error;
+    const QVector<FolderHistoryPoint> points = m_snapshotService->folderHistory(m_currentResult.rootPath, folderPath, 40, &error);
+    m_window->timelinePanel()->setFolderHistory(folderPath, points);
 }
 
 void AppController::updateTrashSelection()

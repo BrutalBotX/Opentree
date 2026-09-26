@@ -1,5 +1,6 @@
 #pragma once
 
+#include <QDateTime>
 #include <QSqlDatabase>
 #include <QString>
 #include <QVector>
@@ -64,6 +65,20 @@ struct SnapshotFileEvent {
     qint64 newSize = 0;
 };
 
+struct FolderHistoryPoint {
+    QDateTime recordedAt;
+    qint64 size = 0;
+    int fileCount = 0;
+    int folderCount = 0;
+};
+
+// Scan resolution tiers from the project plan.
+enum class ResolutionTier {
+    Blacklist = 0, // skipped entirely
+    Macro = 1,     // folder sizes only, no file events
+    HighResolution = 2,
+};
+
 class SnapshotService {
 public:
     explicit SnapshotService(const QSqlDatabase &database);
@@ -78,9 +93,29 @@ public:
     bool recordBackgroundRun(const BackgroundRunSummary &summary, QString *errorMessage = nullptr);
     BackgroundRunSummary latestBackgroundRun(QString *errorMessage = nullptr) const;
 
+    // ---- Merkle-style structural ledger ----
+
+    // Seeds the default three-tier resolution rules when the table is empty.
+    bool ensureDefaultResolutionRules(QString *errorMessage = nullptr);
+    QVector<QPair<QString, ResolutionTier>> resolutionRules(QString *errorMessage = nullptr) const;
+    bool setResolutionRule(const QString &path, ResolutionTier tier, QString *errorMessage = nullptr);
+    ResolutionTier tierForPath(const QString &path) const;
+
+    // Recorded ledger history for one folder (one point per snapshot that recorded a change).
+    QVector<FolderHistoryPoint> folderHistory(const QString &rootPath, const QString &folderPath,
+                                              int maxPoints = 60, QString *errorMessage = nullptr) const;
+
+    // Total ledger rows, handy for diagnostics.
+    int ledgerRowCount(QString *errorMessage = nullptr) const;
+
 private:
     QHash<QString, qint64> loadFolderState(const QString &rootPath, int upToSnapshotId, QString *errorMessage = nullptr) const;
+    int registerFolder(const QString &path, QString *errorMessage) const;
+    void writeLedgerRows(int snapshotId, const ScanResult &result, const QStringList &tiersByPath,
+                         QString *errorMessage) const;
     QSqlDatabase m_database;
+    mutable QVector<QPair<QString, ResolutionTier>> m_ruleCache;
+    mutable bool m_rulesLoaded = false;
 };
 
 }

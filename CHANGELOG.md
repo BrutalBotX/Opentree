@@ -8,6 +8,20 @@ The format is loosely based on Keep a Changelog.
 
 ### Added
 
+- Merkle-style structural ledger: folder paths are registered once in `master_folders` and
+  each snapshot stores one small row only for the folders whose recorded values changed, so
+  unchanged trees cost nothing. Snapshots now also write an accurate content-addressed
+  ancestry that stays valid after the file-level changelog is compacted away.
+- Per-folder timeline: the Timeline tab has a "Folder history" pane showing the selected
+  folder's recorded sizes per snapshot (values are carried forward, changes are shown).
+- Three-tier resolution routing (`resolution_rules`): high resolution keeps the file
+  changelog, macro resolution tracks folder sizes only, blacklist skips a path entirely.
+  Sensible Windows defaults are seeded automatically (Documents/Desktop/Downloads/Pictures
+  and secondary drives = high-res; Windows/Program Files/ProgramData/AppData/Roaming =
+  macro; Recycle Bin, System Volume Information, packaged app caches, Chrome cache =
+  blacklist).
+- Headless ledger check: `OpenTree.exe --test-ledger <folder>` (verifies tiers, ledger
+  dedup, history and event routing).
 - Unified Settings dialog (Tools > Settings...) covering General (theme, view metric, others
   cutoff, close-to-tray), Scanning (Everything, exclusions), Snapshots (schedule, threshold,
   retention, tracked folders), Graph (node budget, follow-tree) and Deduplication (minimum

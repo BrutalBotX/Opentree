@@ -30,6 +30,9 @@ TimelinePanel::TimelinePanel(QWidget *parent)
     , m_bodySplitter(new QSplitter(Qt::Horizontal, this))
     , m_trendWidget(new SnapshotTrendWidget(this))
     , m_compareCard(new QGroupBox(QStringLiteral("Snapshot Compare"), this))
+    , m_folderHistoryCard(new QGroupBox(QStringLiteral("Folder history"), this))
+    , m_folderHistoryLabel(new QLabel(this))
+    , m_folderHistoryTable(new QTableWidget(this))
     , m_scopeLabel(new QLabel(this))
     , m_emptyStateLabel(new QLabel(this))
     , m_diagnosticsLabel(new QLabel(this))
@@ -95,7 +98,35 @@ TimelinePanel::TimelinePanel(QWidget *parent)
     m_compareTable->horizontalHeader()->setStretchLastSection(true);
     m_compareTable->setMinimumHeight(120);
     compareLayout->addWidget(m_compareTable);
-    m_bodySplitter->addWidget(m_compareCard);
+
+    // Per-folder history from the Merkle ledger, shown above the compare pane.
+    auto *folderHistoryLayout = new QVBoxLayout(m_folderHistoryCard);
+    folderHistoryLayout->setContentsMargins(12, 12, 12, 12);
+    folderHistoryLayout->setSpacing(6);
+    m_folderHistoryLabel->setWordWrap(true);
+    m_folderHistoryLabel->setText(QStringLiteral("Select a folder in the tree to see its recorded sizes."));
+    folderHistoryLayout->addWidget(m_folderHistoryLabel);
+
+    m_folderHistoryTable->setColumnCount(3);
+    m_folderHistoryTable->setHorizontalHeaderLabels({QStringLiteral("Recorded"), QStringLiteral("Size"), QStringLiteral("Change")});
+    m_folderHistoryTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
+    m_folderHistoryTable->setSelectionBehavior(QAbstractItemView::SelectRows);
+    m_folderHistoryTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_folderHistoryTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
+    m_folderHistoryTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
+    m_folderHistoryTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
+    m_folderHistoryTable->setColumnWidth(0, 150);
+    m_folderHistoryTable->setColumnWidth(1, 110);
+    m_folderHistoryTable->setMinimumHeight(110);
+    folderHistoryLayout->addWidget(m_folderHistoryTable);
+
+    auto *rightStack = new QWidget(this);
+    auto *rightLayout = new QVBoxLayout(rightStack);
+    rightLayout->setContentsMargins(0, 0, 0, 0);
+    rightLayout->setSpacing(10);
+    rightLayout->addWidget(m_folderHistoryCard, 1);
+    rightLayout->addWidget(m_compareCard, 2);
+    m_bodySplitter->addWidget(rightStack);
     m_bodySplitter->setStretchFactor(0, 3);
     m_bodySplitter->setStretchFactor(1, 2);
     layout->addWidget(m_bodySplitter, 1);
@@ -226,8 +257,38 @@ void TimelinePanel::setCompareEnabled(bool enabled)
     m_compareButton->setEnabled(enabled && !m_visibleSnapshots.isEmpty());
 }
 
-void TimelinePanel::resetCompareState()
+void TimelinePanel::setFolderHistory(const QString &folderPath, const QVector<FolderHistoryPoint> &points)
 {
+    if (folderPath.isEmpty()) {
+        m_folderHistoryLabel->setText(QStringLiteral("Select a folder in the tree to see its recorded sizes."));
+        m_folderHistoryTable->setRowCount(0);
+        return;
+    }
+
+    m_folderHistoryLabel->setText(points.isEmpty()
+        ? QStringLiteral("No ledger entries for %1 yet. Snapshots record a folder when its size changes.").arg(folderPath)
+        : QStringLiteral("Recorded sizes for %1 (%2 entries)").arg(folderPath).arg(points.size()));
+
+    m_folderHistoryTable->setRowCount(points.size());
+    qint64 previous = 0;
+    for (int row = 0; row < points.size(); ++row) {
+        const FolderHistoryPoint &point = points[row];
+        m_folderHistoryTable->setItem(row, 0, new QTableWidgetItem(point.recordedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm"))));
+        m_folderHistoryTable->setItem(row, 1, new QTableWidgetItem(SizeFormatter::formatBytes(point.size)));
+
+        QString change = QStringLiteral("-");
+        if (row > 0) {
+            const qint64 delta = point.size - previous;
+            change = QStringLiteral("%1%2")
+                         .arg(delta >= 0 ? QStringLiteral("+") : QStringLiteral("-"),
+                              SizeFormatter::formatBytes(std::abs(delta)));
+        }
+        m_folderHistoryTable->setItem(row, 2, new QTableWidgetItem(change));
+        previous = point.size;
+    }
+}
+
+void TimelinePanel::resetCompareState(){
     m_compareSummaryLabel->setText(QStringLiteral("Select a snapshot to compare with the current scan."));
     m_compareTable->clearContents();
     m_compareTable->setRowCount(0);

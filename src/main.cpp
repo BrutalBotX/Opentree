@@ -437,6 +437,114 @@ int runExportDetailsPreviewMode(const QString &outputPath)
     return panel.exportCsv(outputPath, &error) ? 0 : 1;
 }
 
+// Exercises the Merkle-style ledger and the three-tier routing on a scratch folder.
+// Usage: OpenTree.exe --test-ledger <folder>
+int runLedgerTestMode(const QString &path)
+{
+    QCoreApplication app(__argc, __argv);
+    opentree::Logger::initialize();
+
+    opentree::DatabaseManager databaseManager;
+    if (!databaseManager.initialize()) {
+        return 1;
+    }
+
+    opentree::SnapshotService snapshots(databaseManager.database());
+    snapshots.ensureDefaultResolutionRules();
+
+    const QString root = opentree::PathUtils::normalizePath(path);
+    QString error;
+    QStringList report;
+    report << QStringLiteral("Ledger test for %1").arg(root);
+
+    // Route the fixture folders through the three tiers.
+    snapshots.setResolutionRule(root + QStringLiteral("/macro"), opentree::ResolutionTier::Macro, &error);
+    snapshots.setResolutionRule(root + QStringLiteral("/blocked"), opentree::ResolutionTier::Blacklist, &error);
+    report << QStringLiteral("tier(normal) = %1").arg(int(snapshots.tierForPath(root + QStringLiteral("/normal"))));
+    report << QStringLiteral("tier(macro) = %1").arg(int(snapshots.tierForPath(root + QStringLiteral("/macro"))));
+    report << QStringLiteral("tier(blocked) = %1").arg(int(snapshots.tierForPath(root + QStringLiteral("/blocked"))));
+
+    auto writeProbe = [](const QString &filePath, int size) {
+        QFile file(filePath);
+        if (file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+            file.write(QByteArray(size, 'L'));
+        }
+    };
+
+    const opentree::ScanResult first = opentree::ScanService::performFilesystemScan(root, {});
+    const opentree::SnapshotCreateResult firstResult = snapshots.createSnapshot(first, 0, &error);
+    report << QStringLiteral("snapshot 1 created=%1 (%2)").arg(firstResult.created ? QStringLiteral("yes") : QStringLiteral("no"), firstResult.message);
+    const int rowsAfterFirst = snapshots.ledgerRowCount(&error);
+
+    // Change every tier so the second snapshot has something to record.
+    writeProbe(root + QStringLiteral("/normal/probe.bin"), 256 * 1024);
+    writeProbe(root + QStringLiteral("/macro/probe.bin"), 256 * 1024);
+    writeProbe(root + QStringLiteral("/blocked/probe.bin"), 256 * 1024);
+
+    const opentree::ScanResult second = opentree::ScanService::performFilesystemScan(root, {});
+    const opentree::SnapshotCreateResult secondResult = snapshots.createSnapshot(second, 0, &error);
+    report << QStringLiteral("snapshot 2 created=%1 (%2)").arg(secondResult.created ? QStringLiteral("yes") : QStringLiteral("no"), secondResult.message);
+    report << QStringLiteral("ledger rows after first=%1, after second=%2").arg(rowsAfterFirst).arg(snapshots.ledgerRowCount(&error));
+
+    const QVector<opentree::FolderHistoryPoint> history = snapshots.folderHistory(root, root, 20, &error);
+    report << QStringLiteral("root history points: %1").arg(history.size());
+    for (const opentree::FolderHistoryPoint &point : history) {
+        report << QStringLiteral("  - %1 : %2")
+                      .arg(point.recordedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm:ss")),
+                           opentree::SizeFormatter::formatBytes(point.size));
+    }
+
+    const QVector<opentree::FolderHistoryPoint> blockedHistory = snapshots.folderHistory(root, root + QStringLiteral("/blocked"), 20, &error);
+    report << QStringLiteral("blocked folder history points (expected 0): %1").arg(blockedHistory.size());
+
+    // Inspect the events of the newest snapshot: macro paths must not appear.
+    const QVector<opentree::SnapshotSummary> summaries = snapshots.listSnapshots(&error);
+    if (!summaries.isEmpty()) {
+        const opentree::SnapshotSummary &newest = summaries.first();
+        const QVector<opentree::SnapshotFileEvent> events = snapshots.snapshotFileEvents(newest.id, &error);
+        int normalEvents = 0;
+        int macroEvents = 0;
+        int blockedEvents = 0;
+        for (const opentree::SnapshotFileEvent &event : events) {
+            if (event.path.contains(QStringLiteral("/macro/"))) {
+                ++macroEvents;
+            } else if (event.path.contains(QStringLiteral("/blocked/"))) {
+                ++blockedEvents;
+            } else {
+                ++normalEvents;
+            }
+        }
+        report << QStringLiteral("events in newest snapshot: normal=%1 macro=%2 blocked=%3")
+                      .arg(normalEvents)
+                      .arg(macroEvents)
+                      .arg(blockedEvents);
+    }
+
+    // Remove the probe snapshots again so repeated runs stay clean (unless asked to keep
+    // them for a UI check).
+    if (!qEnvironmentVariableIsSet("OPENTREE_KEEP_LEDGER_TEST")) {
+        for (const opentree::SnapshotSummary &summary : summaries) {
+            if (summary.rootPath.compare(root, Qt::CaseInsensitive) == 0) {
+                snapshots.deleteSnapshot(summary.id, &error);
+            }
+        }
+        report << QStringLiteral("test snapshots removed");
+    } else {
+        report << QStringLiteral("test snapshots kept (OPENTREE_KEEP_LEDGER_TEST)");
+    }
+
+    const QString reportPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(QStringLiteral("opentree-ledger-test.txt"));
+    QFile reportFile(reportPath);
+    if (reportFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&reportFile);
+        for (const QString &line : report) {
+            stream << line << '\n';
+        }
+    }
+    return 0;
+}
+
 // Scans a folder and reports the disk forecast, stale files and junk candidates.
 // Usage: OpenTree.exe --insights <path> [staleDays]
 int runInsightsMode(const QString &path, int staleDays)
@@ -746,6 +854,7 @@ int main(int argc, char *argv[])
     QString reportOutputPath;
     QString insightsPath;
     int insightsStaleDays = 365;
+    QString ledgerTestPath;
 
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
@@ -772,6 +881,10 @@ int main(int argc, char *argv[])
             if (index + 1 < argc && !QString::fromLocal8Bit(argv[index + 1]).startsWith('-')) {
                 detailsPreviewMode = QString::fromLocal8Bit(argv[++index]);
             }
+            continue;
+        }
+        if (argument == "--test-ledger" && index + 1 < argc) {
+            ledgerTestPath = QString::fromLocal8Bit(argv[++index]);
             continue;
         }
         if (argument == "--insights" && index + 1 < argc) {
@@ -818,6 +931,10 @@ int main(int argc, char *argv[])
         if (argument == "--open-path" && index + 1 < argc) {
             startupPath = QString::fromLocal8Bit(argv[++index]);
         }
+    }
+
+    if (!ledgerTestPath.isEmpty()) {
+        return runLedgerTestMode(ledgerTestPath);
     }
 
     if (!insightsPath.isEmpty()) {

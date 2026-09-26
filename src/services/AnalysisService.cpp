@@ -67,7 +67,7 @@ DiskForecast AnalysisService::forecastForRoot(const QString &rootPath, QString *
     DiskForecast forecast;
 
     QSqlQuery query(m_database);
-    query.prepare("SELECT created_at, total_size FROM snapshots WHERE root_path = ? ORDER BY created_at ASC");
+    query.prepare("SELECT created_at, total_size FROM snapshots WHERE root_path = ? ORDER BY id ASC");
     query.addBindValue(rootPath);
     if (!query.exec()) {
         if (errorMessage) {

@@ -1,10 +1,12 @@
 #include "services/SnapshotService.h"
 
 #include <QDateTime>
+#include <QDir>
 #include <QFileInfo>
 #include <QHash>
 #include <QSqlError>
 #include <QSqlQuery>
+#include <QStorageInfo>
 
 #include <algorithm>
 
@@ -179,6 +181,10 @@ SnapshotCreateResult SnapshotService::createSnapshot(const ScanResult &result, q
 
     const int snapshotId = snapshotQuery.lastInsertId().toInt();
 
+    // Merkle-style structural ledger: register the folder paths once and store one small row
+    // per folder whose recorded values changed, so unchanged trees cost nothing extra.
+    writeLedgerRows(snapshotId, result, {}, errorMessage);
+
     QSqlQuery itemQuery(m_database);
     itemQuery.prepare(
         "INSERT INTO snapshot_items(snapshot_id, kind, path, parent_path, name, size, parent_size, file_count, folder_count) "
@@ -272,6 +278,12 @@ SnapshotCreateResult SnapshotService::createSnapshot(const ScanResult &result, q
         }
 
         if (eventType.isEmpty()) {
+            continue;
+        }
+
+        // Three-tier routing: only high-resolution paths keep a file changelog. Macro paths
+        // are tracked in the ledger by folder size, blacklisted paths are skipped entirely.
+        if (tierForPath(path) != ResolutionTier::HighResolution) {
             continue;
         }
 
@@ -599,6 +611,335 @@ QVector<SnapshotCompareRow> SnapshotService::compareSnapshotRows(int snapshotId,
     });
 
     return rows;
+}
+
+// ---------------------------------------------------------------------------
+// Merkle-style structural ledger
+// ---------------------------------------------------------------------------
+
+bool SnapshotService::ensureDefaultResolutionRules(QString *errorMessage)
+{
+    QSqlQuery countQuery(m_database);
+    if (!countQuery.exec(QStringLiteral("SELECT COUNT(*) FROM resolution_rules")) || !countQuery.next()) {
+        if (errorMessage) {
+            *errorMessage = countQuery.lastError().text();
+        }
+        return false;
+    }
+    if (countQuery.value(0).toInt() > 0) {
+        return true;
+    }
+
+    const QString home = QDir::fromNativeSeparators(QDir::homePath());
+    struct Seed {
+        QString path;
+        ResolutionTier tier;
+    };
+
+    QVector<Seed> seeds;
+    // High resolution: the folders a user actually works in.
+    for (const QString &name : {QStringLiteral("Documents"), QStringLiteral("Desktop"),
+                                QStringLiteral("Downloads"), QStringLiteral("Pictures")}) {
+        seeds.push_back({home + QLatin1Char('/') + name, ResolutionTier::HighResolution});
+    }
+    // Secondary drives get file-level tracking too.
+    for (const QStorageInfo &storage : QStorageInfo::mountedVolumes()) {
+        const QString root = PathUtils::normalizePath(storage.rootPath());
+        if (!storage.isValid() || !storage.isReady() || root.isEmpty()) {
+            continue;
+        }
+        if (!root.startsWith(QStringLiteral("C:"), Qt::CaseInsensitive)) {
+            seeds.push_back({root, ResolutionTier::HighResolution});
+        }
+    }
+    // Macro resolution: system trees tracked by folder size only.
+    for (const QString &path : {QStringLiteral("C:/Windows"), QStringLiteral("C:/Program Files"),
+                                QStringLiteral("C:/Program Files (x86)"), QStringLiteral("C:/ProgramData"),
+                                home + QStringLiteral("/AppData/Roaming")}) {
+        seeds.push_back({path, ResolutionTier::Macro});
+    }
+    // Blacklist: volatile or protected locations.
+    for (const QString &path : {QStringLiteral("C:/$Recycle.Bin"),
+                                QStringLiteral("C:/System Volume Information"),
+                                home + QStringLiteral("/AppData/Local/Packages"),
+                                home + QStringLiteral("/AppData/Local/CrashDumps"),
+                                home + QStringLiteral("/AppData/Local/Google/Chrome/User Data/Default/Cache")}) {
+        seeds.push_back({path, ResolutionTier::Blacklist});
+    }
+
+    for (const Seed &seed : seeds) {
+        if (!setResolutionRule(seed.path, seed.tier, errorMessage)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+QVector<QPair<QString, ResolutionTier>> SnapshotService::resolutionRules(QString *errorMessage) const
+{
+    QVector<QPair<QString, ResolutionTier>> rules;
+    QSqlQuery query(m_database);
+    if (!query.exec(QStringLiteral("SELECT path, tier FROM resolution_rules ORDER BY path ASC"))) {
+        if (errorMessage) {
+            *errorMessage = query.lastError().text();
+        }
+        return rules;
+    }
+    while (query.next()) {
+        rules.push_back({query.value(0).toString(), ResolutionTier(query.value(1).toInt())});
+    }
+    return rules;
+}
+
+bool SnapshotService::setResolutionRule(const QString &path, ResolutionTier tier, QString *errorMessage)
+{
+    const QString normalized = PathUtils::normalizePath(path);
+    if (normalized.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("Cannot store a resolution rule for an empty path.");
+        }
+        return false;
+    }
+
+    QSqlQuery query(m_database);
+    query.prepare(QStringLiteral("INSERT INTO resolution_rules(path, tier) VALUES(?, ?) "
+                                 "ON CONFLICT(path) DO UPDATE SET tier = excluded.tier"));
+    query.addBindValue(normalized);
+    query.addBindValue(int(tier));
+    if (!query.exec()) {
+        if (errorMessage) {
+            *errorMessage = query.lastError().text();
+        }
+        return false;
+    }
+
+    m_rulesLoaded = false;
+    return true;
+}
+
+ResolutionTier SnapshotService::tierForPath(const QString &path) const
+{
+    if (!m_rulesLoaded) {
+        m_ruleCache = resolutionRules(nullptr);
+        m_rulesLoaded = true;
+    }
+
+    const QString normalized = PathUtils::normalizePath(path).toLower();
+    ResolutionTier best = ResolutionTier::HighResolution;
+    int bestLength = -1;
+    for (const QPair<QString, ResolutionTier> &rule : m_ruleCache) {
+        QString prefix = PathUtils::normalizePath(rule.first).toLower();
+        if (prefix.isEmpty()) {
+            continue;
+        }
+        if (!normalized.startsWith(prefix)) {
+            continue;
+        }
+        const bool boundary = normalized.length() == prefix.length()
+            || prefix.endsWith(QLatin1Char('/'))
+            || normalized.at(prefix.length()) == QLatin1Char('/');
+        if (!boundary) {
+            continue;
+        }
+        if (prefix.length() > bestLength) {
+            bestLength = prefix.length();
+            best = rule.second;
+        }
+    }
+    return best;
+}
+
+int SnapshotService::registerFolder(const QString &path, QString *errorMessage) const
+{
+    QSqlQuery selectQuery(m_database);
+    selectQuery.prepare(QStringLiteral("SELECT id FROM master_folders WHERE path = ?"));
+    selectQuery.addBindValue(path);
+    if (selectQuery.exec() && selectQuery.next()) {
+        return selectQuery.value(0).toInt();
+    }
+
+    QSqlQuery insertQuery(m_database);
+    insertQuery.prepare(QStringLiteral("INSERT INTO master_folders(path) VALUES(?)"));
+    insertQuery.addBindValue(path);
+    if (!insertQuery.exec()) {
+        if (errorMessage) {
+            *errorMessage = insertQuery.lastError().text();
+        }
+        return 0;
+    }
+    return insertQuery.lastInsertId().toInt();
+}
+
+void SnapshotService::writeLedgerRows(int snapshotId, const ScanResult &result,
+                                      const QStringList &tiersByPath, QString *errorMessage) const
+{
+    Q_UNUSED(tiersByPath);
+
+    // Baseline = the most recent *recorded* value per folder for this root, so a snapshot
+    // that changed nothing does not force the next one to re-record the whole tree.
+    QHash<int, QPair<qint64, QPair<int, int>>> previous;
+    QSqlQuery previousQuery(m_database);
+    previousQuery.prepare(QStringLiteral(
+        "SELECT l.folder_id, l.total_size, l.file_count, l.folder_count "
+        "FROM snapshot_ledger l "
+        "JOIN snapshots s ON s.id = l.snapshot_id "
+        "WHERE s.root_path = ? AND l.snapshot_id = ("
+        "    SELECT MAX(l2.snapshot_id) FROM snapshot_ledger l2 "
+        "    JOIN snapshots s2 ON s2.id = l2.snapshot_id "
+        "    WHERE l2.folder_id = l.folder_id AND s2.root_path = ? AND s2.id < ?)"));
+    previousQuery.addBindValue(result.rootPath);
+    previousQuery.addBindValue(result.rootPath);
+    previousQuery.addBindValue(snapshotId);
+    if (previousQuery.exec()) {
+        while (previousQuery.next()) {
+            const int folderId = previousQuery.value(0).toInt();
+            previous.insert(folderId, {previousQuery.value(1).toLongLong(),
+                                       {previousQuery.value(2).toInt(), previousQuery.value(3).toInt()}});
+        }
+    }
+
+    QSqlQuery insertQuery(m_database);
+    insertQuery.prepare(QStringLiteral(
+        "INSERT OR REPLACE INTO snapshot_ledger(snapshot_id, folder_id, total_size, file_count, folder_count) "
+        "VALUES(?, ?, ?, ?, ?)"));
+
+    int written = 0;
+    constexpr int kLedgerRowBudget = 50000;
+
+    auto record = [&](const QString &path, qint64 size, int fileCount, int folderCount) {
+        if (written >= kLedgerRowBudget) {
+            return;
+        }
+        if (tierForPath(path) == ResolutionTier::Blacklist) {
+            return;
+        }
+        const int folderId = registerFolder(path, errorMessage);
+        if (folderId <= 0) {
+            return;
+        }
+        const auto previousIt = previous.constFind(folderId);
+        if (previousIt != previous.constEnd()
+            && previousIt.value().first == size
+            && previousIt.value().second.first == fileCount
+            && previousIt.value().second.second == folderCount) {
+            return; // unchanged: the ledger already describes it
+        }
+
+        insertQuery.addBindValue(snapshotId);
+        insertQuery.addBindValue(folderId);
+        insertQuery.addBindValue(size);
+        insertQuery.addBindValue(fileCount);
+        insertQuery.addBindValue(folderCount);
+        if (insertQuery.exec()) {
+            ++written;
+        }
+    };
+
+    for (const FolderEntry &folder : result.folders) {
+        record(folder.path, folder.totalSize, folder.fileCount, folder.folderCount);
+    }
+    if (result.rootPath.isEmpty()) {
+        return;
+    }
+
+    // Make sure the root itself is always present.
+    bool rootSeen = false;
+    for (const FolderEntry &folder : result.folders) {
+        if (folder.path.compare(result.rootPath, Qt::CaseInsensitive) == 0) {
+            rootSeen = true;
+            break;
+        }
+    }
+    if (!rootSeen) {
+        qint64 totalSize = 0;
+        int fileCount = 0;
+        for (const FileEntry &file : result.files) {
+            totalSize += file.size;
+            ++fileCount;
+        }
+        record(result.rootPath, totalSize, fileCount, 0);
+    }
+}
+
+QVector<FolderHistoryPoint> SnapshotService::folderHistory(const QString &rootPath, const QString &folderPath,
+                                                           int maxPoints, QString *errorMessage) const
+{
+    QVector<FolderHistoryPoint> points;
+    const QString normalizedRoot = PathUtils::normalizePath(rootPath);
+    const QString normalizedFolder = PathUtils::normalizePath(folderPath);
+
+    // All snapshots of the root, oldest first.
+    QVector<QPair<int, QDateTime>> snapshots;
+    QSqlQuery snapshotQuery(m_database);
+    snapshotQuery.prepare(QStringLiteral("SELECT id, created_at FROM snapshots WHERE root_path = ? ORDER BY id ASC"));
+    snapshotQuery.addBindValue(normalizedRoot);
+    if (!snapshotQuery.exec()) {
+        if (errorMessage) {
+            *errorMessage = snapshotQuery.lastError().text();
+        }
+        return points;
+    }
+    while (snapshotQuery.next()) {
+        snapshots.push_back({snapshotQuery.value(0).toInt(),
+                             QDateTime::fromString(snapshotQuery.value(1).toString(), Qt::ISODate)});
+    }
+
+    // Recorded ledger values for this folder, keyed by snapshot id.
+    QHash<int, FolderHistoryPoint> recorded;
+    QSqlQuery ledgerQuery(m_database);
+    ledgerQuery.prepare(QStringLiteral(
+        "SELECT l.snapshot_id, l.total_size, l.file_count, l.folder_count "
+        "FROM snapshot_ledger l "
+        "JOIN master_folders f ON f.id = l.folder_id "
+        "WHERE f.path = ?"));
+    ledgerQuery.addBindValue(normalizedFolder);
+    if (!ledgerQuery.exec()) {
+        if (errorMessage) {
+            *errorMessage = ledgerQuery.lastError().text();
+        }
+        return points;
+    }
+    while (ledgerQuery.next()) {
+        FolderHistoryPoint point;
+        point.size = ledgerQuery.value(1).toLongLong();
+        point.fileCount = ledgerQuery.value(2).toInt();
+        point.folderCount = ledgerQuery.value(3).toInt();
+        recorded.insert(ledgerQuery.value(0).toInt(), point);
+    }
+
+    // Carry the last recorded value forward so every snapshot gets a point (the ledger only
+    // stores changes, which is what keeps it small).
+    bool haveValue = false;
+    for (const QPair<int, QDateTime> &snapshot : snapshots) {
+        const auto it = recorded.constFind(snapshot.first);
+        if (it != recorded.constEnd()) {
+            haveValue = true;
+            FolderHistoryPoint point = it.value();
+            point.recordedAt = snapshot.second;
+            points.push_back(point);
+        } else if (haveValue) {
+            FolderHistoryPoint point = points.last();
+            point.recordedAt = snapshot.second;
+            points.push_back(point);
+        }
+    }
+
+    if (points.size() > maxPoints) {
+        points = points.mid(points.size() - maxPoints);
+    }
+    return points;
+}
+
+int SnapshotService::ledgerRowCount(QString *errorMessage) const
+{
+    QSqlQuery query(m_database);
+    if (!query.exec(QStringLiteral("SELECT COUNT(*) FROM snapshot_ledger")) || !query.next()) {
+        if (errorMessage) {
+            *errorMessage = query.lastError().text();
+        }
+        return 0;
+    }
+    return query.value(0).toInt();
 }
 
 }

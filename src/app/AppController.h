@@ -87,6 +87,7 @@ private:
     void handleSnapshotManagementRequest();
     void handleCompareSnapshotRequest(int snapshotId);
     void refreshTimeline();
+    void updateTimelineFolderHistory();
     void refreshRecentRoots();
     void updateTrashSelection();
     bool loadCachedRootResult(const QString &rootPath, ScanResult *result, QString *errorMessage = nullptr) const;

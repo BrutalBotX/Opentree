@@ -39,6 +39,8 @@ public:
     void selectSnapshotId(int snapshotId);
     void setCompareEnabled(bool enabled);
     void resetCompareState();
+    // Per-folder ledger history for the currently selected folder.
+    void setFolderHistory(const QString &folderPath, const QVector<FolderHistoryPoint> &points);
 
 signals:
     void compareSnapshotRequested(int snapshotId);
@@ -60,6 +62,9 @@ private:
     QPushButton *m_compareButton;
     QLabel *m_compareSummaryLabel;
     QTableWidget *m_compareTable;
+    QGroupBox *m_folderHistoryCard;
+    QLabel *m_folderHistoryLabel;
+    QTableWidget *m_folderHistoryTable;
 };
 
 }
