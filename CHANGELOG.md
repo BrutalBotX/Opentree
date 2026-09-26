@@ -8,6 +8,11 @@ The format is loosely based on Keep a Changelog.
 
 ### Added
 
+- Insights tab: disk-full forecast from saved snapshots (linear size trend plus free space),
+  stale-file detection over the largest files of a scan, and pattern-based junk detection
+  (temporary files, logs, crash dumps, caches, backup copies, shell clutter) with a
+  "Stage junk in Trash" action that only stages, never deletes. `Ctrl+9`.
+- Headless analysis check: `OpenTree.exe --insights <path> [staleDays]`.
 - Report export: File > "Export Report as HTML..." and "Export Report as PDF...". The
   report contains the root summary, largest folders, largest files and a file-type
   breakdown. HTML always works; PDF is compiled in when Qt PrintSupport is present.

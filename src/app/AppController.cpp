@@ -25,6 +25,7 @@
 #include "services/ScanService.h"
 #include "services/SnapshotService.h"
 #include "services/ReportService.h"
+#include "services/AnalysisService.h"
 #include "services/VirtualTrashService.h"
 #include "ui/DetailsPanel.h"
 #include "ui/ChartPanel.h"
@@ -32,6 +33,7 @@
 #include "ui/DriveSelector.h"
 #include "ui/DuplicatesPanel.h"
 #include "ui/ExtensionsPanel.h"
+#include "ui/InsightsPanel.h"
 #include "ui/TrashPanel.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
@@ -232,6 +234,12 @@ void AppController::attachWindow(MainWindow *window)
     }
     m_trashPanel = new TrashPanel(m_trashService, m_window);
     m_window->setTrashPanel(m_trashPanel);
+
+    if (m_databaseManager && m_databaseManager->database().isValid()) {
+        m_analysisService = new AnalysisService(m_databaseManager->database());
+    }
+    m_insightsPanel = new InsightsPanel(m_analysisService, m_trashService, m_window);
+    m_window->setInsightsPanel(m_insightsPanel);
     connect(m_window->driveSelector(), &DriveSelector::driveActivated, this, &AppController::handleRecentRootRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenRequested, this, &AppController::handleChartOpenRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryShowInExplorerRequested, this, &AppController::handleChartShowInExplorerRequested);
@@ -1162,6 +1170,9 @@ void AppController::syncActiveResultUi(const ScanResult &result, const QString &
     });
     m_window->heatmapPanel()->setActiveFolderPath(activeFolderPath);
     m_window->heatmapPanel()->setHeatmapData(result.treeEntries, compareRows);
+    if (m_insightsPanel) {
+        m_insightsPanel->setScanResult(result);
+    }
     updateTrashSelection();
     m_window->timelinePanel()->setCurrentRootPath(result.rootPath);
     if (resetCompare) {

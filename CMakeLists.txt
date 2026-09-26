@@ -66,6 +66,10 @@ qt_add_executable(OpenTree
     src/services/VirtualTrashService.cpp
     src/services/ReportService.h
     src/services/ReportService.cpp
+    src/services/AnalysisService.h
+    src/services/AnalysisService.cpp
+    src/ui/InsightsPanel.h
+    src/ui/InsightsPanel.cpp
     src/ui/DuplicatesPanel.h
     src/ui/DuplicatesPanel.cpp
     src/ui/TrashPanel.h

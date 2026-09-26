@@ -13,8 +13,10 @@ namespace opentree {
 class ConfigService;
 class DatabaseManager;
 class DuplicatesPanel;
+class InsightsPanel;
 class TrashPanel;
 class VirtualTrashService;
+class AnalysisService;
 class EverythingClient;
 class FileRepository;
 class FolderRepository;
@@ -104,6 +106,8 @@ private:
     DuplicatesPanel *m_duplicatesPanel = nullptr;
     TrashPanel *m_trashPanel = nullptr;
     VirtualTrashService *m_trashService = nullptr;
+    InsightsPanel *m_insightsPanel = nullptr;
+    AnalysisService *m_analysisService = nullptr;
     EverythingClient *m_everythingClient;
     ScanService *m_scanService;
     SnapshotService *m_snapshotService = nullptr;

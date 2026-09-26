@@ -29,6 +29,7 @@
 #include "ui/DriveSelector.h"
 #include "ui/DuplicatesPanel.h"
 #include "ui/ExtensionsPanel.h"
+#include "ui/InsightsPanel.h"
 #include "ui/TrashPanel.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
@@ -108,6 +109,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_showDetailsTabAction = new QAction("Details", this);
     m_showDuplicatesTabAction = new QAction("Duplicates", this);
     m_showTrashTabAction = new QAction("Trash", this);
+    m_showInsightsTabAction = new QAction("Insights", this);
     m_expandAllAction = new QAction("Expand All", this);
     m_collapseAllAction = new QAction("Collapse All", this);
     m_treemapDepth1Action = new QAction("Depth 1", this);
@@ -221,6 +223,7 @@ MainWindow::MainWindow(QWidget *parent)
     tabsMenu->addAction(m_showDetailsTabAction);
     tabsMenu->addAction(m_showDuplicatesTabAction);
     tabsMenu->addAction(m_showTrashTabAction);
+    tabsMenu->addAction(m_showInsightsTabAction);
     m_treemapMenu = viewMenu->addMenu("Treemap Depth");
     m_treemapMenu->addAction(m_treemapDepth1Action);
     m_treemapMenu->addAction(m_treemapDepth2Action);
@@ -293,6 +296,11 @@ MainWindow::MainWindow(QWidget *parent)
             m_tabs->setCurrentWidget(m_trashPanel);
         }
     });
+    connect(m_showInsightsTabAction, &QAction::triggered, this, [this]() {
+        if (m_insightsPanel) {
+            m_tabs->setCurrentWidget(m_insightsPanel);
+        }
+    });
     connect(m_showTimelineTabAction, &QAction::triggered, this, [this]() { showTimelineTab(); });
 
     auto *viewMetricGroup = new QActionGroup(this);
@@ -328,6 +336,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_showDetailsTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+6")));
     m_showDuplicatesTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+7")));
     m_showTrashTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+8")));
+    m_showInsightsTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+9")));
 
     addToolBar(Qt::TopToolBarArea, m_mainToolBar);
     m_mainToolBar->setMovable(false);
@@ -592,6 +601,21 @@ void MainWindow::setTrashPanel(TrashPanel *panel)
     m_trashPanel = panel;
     m_tabs->addTab(panel, "Trash");
     m_showTrashTabAction->setEnabled(true);
+}
+
+InsightsPanel *MainWindow::insightsPanel() const
+{
+    return m_insightsPanel;
+}
+
+void MainWindow::setInsightsPanel(InsightsPanel *panel)
+{
+    if (!panel || m_insightsPanel) {
+        return;
+    }
+    m_insightsPanel = panel;
+    m_tabs->addTab(panel, "Insights");
+    m_showInsightsTabAction->setEnabled(true);
 }
 
 int MainWindow::currentTabIndex() const

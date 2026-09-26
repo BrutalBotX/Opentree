@@ -27,6 +27,7 @@
 #include "services/ConfigService.h"
 #include "services/DedupService.h"
 #include "services/ScanService.h"
+#include "services/AnalysisService.h"
 #include "services/ReportService.h"
 #include "services/SnapshotService.h"
 #include "services/VirtualTrashService.h"
@@ -435,6 +436,77 @@ int runExportDetailsPreviewMode(const QString &outputPath)
     return panel.exportCsv(outputPath, &error) ? 0 : 1;
 }
 
+// Scans a folder and reports the disk forecast, stale files and junk candidates.
+// Usage: OpenTree.exe --insights <path> [staleDays]
+int runInsightsMode(const QString &path, int staleDays)
+{
+    QCoreApplication app(__argc, __argv);
+    opentree::Logger::initialize();
+
+    opentree::ConfigService configService;
+    const QString normalized = opentree::PathUtils::normalizePath(path);
+    const opentree::ScanResult scan = opentree::ScanService::performFilesystemScan(normalized, configService.excludedPatterns());
+
+    QStringList report;
+    report << QStringLiteral("Insights for %1").arg(normalized);
+    report << QStringLiteral("Files: %1  Folders: %2").arg(scan.files.size()).arg(scan.folders.size());
+
+    opentree::DatabaseManager databaseManager;
+    if (!databaseManager.initialize()) {
+        report << QStringLiteral("Database unavailable, forecast skipped.");
+    } else {
+        opentree::AnalysisService analysis(databaseManager.database());
+
+        const opentree::DiskForecast forecast = analysis.forecastForRoot(normalized, nullptr);
+        report << QStringLiteral("Forecast available: %1").arg(forecast.available ? QStringLiteral("yes") : QStringLiteral("no"));
+        report << QStringLiteral("  basis: %1").arg(forecast.basis);
+        if (forecast.available) {
+            report << QStringLiteral("  free %1 of %2 | growth %3 bytes/day | days until full: %4")
+                          .arg(opentree::SizeFormatter::formatBytes(forecast.volumeFree),
+                               opentree::SizeFormatter::formatBytes(forecast.volumeTotal))
+                          .arg(qint64(forecast.growthBytesPerDay))
+                          .arg(forecast.daysUntilFull);
+        }
+
+        const QVector<opentree::StaleFile> stale = analysis.staleFiles(scan, staleDays, 20, nullptr);
+        qint64 staleBytes = 0;
+        for (const opentree::StaleFile &file : stale) {
+            staleBytes += file.size;
+        }
+        report << QStringLiteral("Stale files older than %1 days: %2 (%3)")
+                      .arg(staleDays)
+                      .arg(stale.size())
+                      .arg(opentree::SizeFormatter::formatBytes(staleBytes));
+        for (const opentree::StaleFile &file : stale) {
+            report << QStringLiteral("  - %1 (%2, %3 days)").arg(file.path, opentree::SizeFormatter::formatBytes(file.size)).arg(file.daysOld);
+        }
+
+        const QVector<opentree::JunkGroup> junk = analysis.junkFiles(scan);
+        qint64 junkBytes = 0;
+        for (const opentree::JunkGroup &group : junk) {
+            junkBytes += group.size;
+        }
+        report << QStringLiteral("Junk groups: %1 (%2)").arg(junk.size()).arg(opentree::SizeFormatter::formatBytes(junkBytes));
+        for (const opentree::JunkGroup &group : junk) {
+            report << QStringLiteral("  - %1: %2 files, %3")
+                          .arg(group.category)
+                          .arg(group.count)
+                          .arg(opentree::SizeFormatter::formatBytes(group.size));
+        }
+    }
+
+    const QString reportPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(QStringLiteral("opentree-insights-test.txt"));
+    QFile reportFile(reportPath);
+    if (reportFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&reportFile);
+        for (const QString &line : report) {
+            stream << line << '\n';
+        }
+    }
+    return 0;
+}
+
 // Scans a folder and writes an HTML or PDF report. Usage:
 //   OpenTree.exe --export-report <scanPath> <outFile.html|outFile.pdf>
 int runExportReportMode(const QString &path, const QString &outputPath)
@@ -663,6 +735,8 @@ int main(int argc, char *argv[])
     QString trashTestPath;
     QString reportScanPath;
     QString reportOutputPath;
+    QString insightsPath;
+    int insightsStaleDays = 365;
 
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
@@ -688,6 +762,13 @@ int main(int argc, char *argv[])
             detailsPreviewPath = QString::fromLocal8Bit(argv[++index]);
             if (index + 1 < argc && !QString::fromLocal8Bit(argv[index + 1]).startsWith('-')) {
                 detailsPreviewMode = QString::fromLocal8Bit(argv[++index]);
+            }
+            continue;
+        }
+        if (argument == "--insights" && index + 1 < argc) {
+            insightsPath = QString::fromLocal8Bit(argv[++index]);
+            if (index + 1 < argc && !QString::fromLocal8Bit(argv[index + 1]).startsWith('-')) {
+                insightsStaleDays = QString::fromLocal8Bit(argv[++index]).toInt();
             }
             continue;
         }
@@ -728,6 +809,10 @@ int main(int argc, char *argv[])
         if (argument == "--open-path" && index + 1 < argc) {
             startupPath = QString::fromLocal8Bit(argv[++index]);
         }
+    }
+
+    if (!insightsPath.isEmpty()) {
+        return runInsightsMode(insightsPath, insightsStaleDays);
     }
 
     if (!reportOutputPath.isEmpty()) {
