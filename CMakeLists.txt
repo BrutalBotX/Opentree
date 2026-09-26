@@ -12,6 +12,7 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Sql Concurrent)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebChannel)
+find_package(Qt6 QUIET COMPONENTS PrintSupport)
 
 qt_standard_project_setup()
 
@@ -63,6 +64,8 @@ qt_add_executable(OpenTree
     src/services/DedupService.cpp
     src/services/VirtualTrashService.h
     src/services/VirtualTrashService.cpp
+    src/services/ReportService.h
+    src/services/ReportService.cpp
     src/ui/DuplicatesPanel.h
     src/ui/DuplicatesPanel.cpp
     src/ui/TrashPanel.h
@@ -107,6 +110,14 @@ target_link_libraries(OpenTree PRIVATE
 if (Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND)
     target_link_libraries(OpenTree PRIVATE Qt6::WebEngineWidgets Qt6::WebChannel)
     target_compile_definitions(OpenTree PRIVATE OPENTREE_HAVE_WEBENGINE=1)
+endif()
+
+if (TARGET Qt6::PrintSupport)
+    target_link_libraries(OpenTree PRIVATE Qt6::PrintSupport)
+    target_compile_definitions(OpenTree PRIVATE OPENTREE_HAVE_PRINTSUPPORT=1)
+    message(STATUS "OpenTree: PDF report export enabled (Qt6::PrintSupport found)")
+else()
+    message(STATUS "OpenTree: PDF report export disabled (Qt6::PrintSupport not found)")
 endif()
 
 if (WIN32)

@@ -124,6 +124,12 @@ MainWindow::MainWindow(QWidget *parent)
     m_useEverythingAction->setCheckable(true);
     m_useEverythingAction->setChecked(true);
     m_testEverythingAction = new QAction("Test Everything Connection", this);
+    m_exportReportHtmlAction = new QAction("Export Report as HTML...", this);
+    m_exportReportPdfAction = new QAction("Export Report as PDF...", this);
+#if !defined(OPENTREE_HAVE_PRINTSUPPORT)
+    m_exportReportPdfAction->setEnabled(false);
+    m_exportReportPdfAction->setToolTip("This build has no PDF support (Qt PrintSupport missing).");
+#endif
     m_snapshotSettingsAction = new QAction("Snapshot Settings", this);
     m_reloadThemesAction = new QAction("Reload Themes", this);
     m_statusLabel = new QLabel(this);
@@ -177,6 +183,8 @@ MainWindow::MainWindow(QWidget *parent)
     fileMenu->addAction(m_clearAllRootsAction);
     fileMenu->addSeparator();
     fileMenu->addAction("Export Details as CSV...", this, [this]() { emit exportDetailsCsvRequested(); });
+    fileMenu->addAction(m_exportReportHtmlAction);
+    fileMenu->addAction(m_exportReportPdfAction);
     fileMenu->addSeparator();
     fileMenu->addAction(m_exitAction);
 
@@ -255,6 +263,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_locateEverythingAction, &QAction::triggered, this, &MainWindow::everythingLocationRequested);
     connect(m_useEverythingAction, &QAction::toggled, this, &MainWindow::useEverythingToggled);
     connect(m_testEverythingAction, &QAction::triggered, this, &MainWindow::testEverythingRequested);
+    connect(m_exportReportHtmlAction, &QAction::triggered, this, [this]() { emit exportReportRequested(QStringLiteral("html")); });
+    connect(m_exportReportPdfAction, &QAction::triggered, this, [this]() { emit exportReportRequested(QStringLiteral("pdf")); });
     connect(m_snapshotSettingsAction, &QAction::triggered, this, &MainWindow::snapshotSettingsRequested);
     connect(m_setOthersThresholdAction, &QAction::triggered, this, &MainWindow::othersThresholdRequested);
     connect(m_openCurrentInExplorerAction, &QAction::triggered, this, &MainWindow::openCurrentInExplorerRequested);

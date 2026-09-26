@@ -78,6 +78,7 @@ private:
     const TreeEntry *findTreeEntry(const QString &path) const;
     void handleLocateEverythingRequest();
     void handleExportDetailsCsvRequest();
+    void handleExportReportRequest(const QString &format);
     void handleTestEverythingRequest();
     void handleSnapshotSettingsRequest();
     void handleSnapshotManagementRequest();

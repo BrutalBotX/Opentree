@@ -24,6 +24,7 @@
 #include "services/ConfigService.h"
 #include "services/ScanService.h"
 #include "services/SnapshotService.h"
+#include "services/ReportService.h"
 #include "services/VirtualTrashService.h"
 #include "ui/DetailsPanel.h"
 #include "ui/ChartPanel.h"
@@ -165,6 +166,9 @@ void AppController::attachWindow(MainWindow *window)
     });
     connect(m_window, &MainWindow::exportDetailsCsvRequested, this, [this]() {
         handleExportDetailsCsvRequest();
+    });
+    connect(m_window, &MainWindow::exportReportRequested, this, [this](const QString &format) {
+        handleExportReportRequest(format);
     });
     connect(m_window->detailsTablePanel(), &DetailsTablePanel::exportRequested, this, [this]() {
         handleExportDetailsCsvRequest();
@@ -1308,6 +1312,44 @@ void AppController::handleExportDetailsCsvRequest()
         m_window->setStatusText(QStringLiteral("Exported details table to %1").arg(filePath));
     } else {
         QMessageBox::warning(m_window, "Export CSV", error.isEmpty() ? QStringLiteral("Export failed.") : error);
+    }
+}
+
+void AppController::handleExportReportRequest(const QString &format)
+{
+    if (!m_window) {
+        return;
+    }
+
+    if (m_currentResult.rootPath.isEmpty()) {
+        QMessageBox::information(m_window, QStringLiteral("Export report"), QStringLiteral("Scan a folder first."));
+        return;
+    }
+
+    const bool pdf = format.compare(QStringLiteral("pdf"), Qt::CaseInsensitive) == 0;
+    const QString extension = pdf ? QStringLiteral("pdf") : QStringLiteral("html");
+    const QString suggested = QDir(m_currentResult.rootPath)
+                                  .filePath(QStringLiteral("opentree-report.") + extension);
+    const QString filter = pdf ? QStringLiteral("PDF files (*.pdf)") : QStringLiteral("HTML files (*.html)");
+
+    QString filePath = QFileDialog::getSaveFileName(m_window, QStringLiteral("Export report"), suggested, filter);
+    if (filePath.isEmpty()) {
+        return;
+    }
+    if (!filePath.endsWith(QLatin1Char('.') + extension, Qt::CaseInsensitive)) {
+        filePath += QLatin1Char('.') + extension;
+    }
+
+    QString error;
+    const bool ok = pdf
+        ? ReportService::writePdfReport(filePath, m_currentResult, {}, &error)
+        : ReportService::writeHtmlReport(filePath, m_currentResult, {}, &error);
+
+    if (ok) {
+        m_window->setStatusText(QStringLiteral("Report exported to %1").arg(filePath));
+    } else {
+        QMessageBox::warning(m_window, QStringLiteral("Export report"),
+                             error.isEmpty() ? QStringLiteral("Export failed.") : error);
     }
 }
 

@@ -27,6 +27,7 @@
 #include "services/ConfigService.h"
 #include "services/DedupService.h"
 #include "services/ScanService.h"
+#include "services/ReportService.h"
 #include "services/SnapshotService.h"
 #include "services/VirtualTrashService.h"
 #include "integrations/EverythingClient.h"
@@ -434,6 +435,45 @@ int runExportDetailsPreviewMode(const QString &outputPath)
     return panel.exportCsv(outputPath, &error) ? 0 : 1;
 }
 
+// Scans a folder and writes an HTML or PDF report. Usage:
+//   OpenTree.exe --export-report <scanPath> <outFile.html|outFile.pdf>
+int runExportReportMode(const QString &path, const QString &outputPath)
+{
+    // QPrinter/QTextDocument need a GUI application instance for font handling.
+    QApplication app(__argc, __argv);
+    opentree::Logger::initialize();
+
+    opentree::ConfigService configService;
+    const QString normalized = opentree::PathUtils::normalizePath(path);
+    const opentree::ScanResult scan = opentree::ScanService::performFilesystemScan(normalized, configService.excludedPatterns());
+
+    QString error;
+    const bool pdf = outputPath.endsWith(QStringLiteral(".pdf"), Qt::CaseInsensitive);
+    const bool ok = pdf
+        ? opentree::ReportService::writePdfReport(outputPath, scan, {}, &error)
+        : opentree::ReportService::writeHtmlReport(outputPath, scan, {}, &error);
+
+    QStringList report;
+    report << QStringLiteral("Report %1: %2").arg(ok ? QStringLiteral("written") : QStringLiteral("FAILED"), outputPath);
+    report << QStringLiteral("Root: %1").arg(normalized);
+    report << QStringLiteral("Files: %1  Folders: %2").arg(scan.files.size()).arg(scan.folders.size());
+    report << QStringLiteral("PDF support: %1").arg(opentree::ReportService::printSupportAvailable() ? QStringLiteral("yes") : QStringLiteral("no"));
+    if (!ok) {
+        report << QStringLiteral("Error: %1").arg(error);
+    }
+
+    const QString reportPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(QStringLiteral("opentree-report-test.txt"));
+    QFile reportFile(reportPath);
+    if (reportFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&reportFile);
+        for (const QString &line : report) {
+            stream << line << '\n';
+        }
+    }
+    return ok ? 0 : 1;
+}
+
 // Exercises the virtual trash staging bookkeeping without touching the file system.
 // Usage: OpenTree.exe --test-trash <path>
 int runTrashTestMode(const QString &path)
@@ -621,6 +661,8 @@ int main(int argc, char *argv[])
     int findDuplicatesMinMB = 0;
     bool findDuplicatesIncludeSystem = false;
     QString trashTestPath;
+    QString reportScanPath;
+    QString reportOutputPath;
 
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
@@ -647,6 +689,11 @@ int main(int argc, char *argv[])
             if (index + 1 < argc && !QString::fromLocal8Bit(argv[index + 1]).startsWith('-')) {
                 detailsPreviewMode = QString::fromLocal8Bit(argv[++index]);
             }
+            continue;
+        }
+        if (argument == "--export-report" && index + 2 < argc) {
+            reportScanPath = QString::fromLocal8Bit(argv[++index]);
+            reportOutputPath = QString::fromLocal8Bit(argv[++index]);
             continue;
         }
         if (argument == "--test-trash" && index + 1 < argc) {
@@ -681,6 +728,10 @@ int main(int argc, char *argv[])
         if (argument == "--open-path" && index + 1 < argc) {
             startupPath = QString::fromLocal8Bit(argv[++index]);
         }
+    }
+
+    if (!reportOutputPath.isEmpty()) {
+        return runExportReportMode(reportScanPath, reportOutputPath);
     }
 
     if (!trashTestPath.isEmpty()) {

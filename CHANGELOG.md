@@ -8,6 +8,10 @@ The format is loosely based on Keep a Changelog.
 
 ### Added
 
+- Report export: File > "Export Report as HTML..." and "Export Report as PDF...". The
+  report contains the root summary, largest folders, largest files and a file-type
+  breakdown. HTML always works; PDF is compiled in when Qt PrintSupport is present.
+- Headless report check: `OpenTree.exe --export-report <scanPath> <out.html|out.pdf>`.
 - Virtual trash: a Trash tab that stages deletion intents (database only, nothing on disk
   is touched), shows the projected reclaim, and can send the staged items to the Windows
   Recycle Bin behind an explicit confirmation. Drive roots and protected system locations

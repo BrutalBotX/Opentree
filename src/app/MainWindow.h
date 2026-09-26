@@ -86,6 +86,7 @@ signals:
     void snapshotManagementRequested();
     void everythingLocationRequested();
     void exportDetailsCsvRequested();
+    void exportReportRequested(const QString &format);
     void useEverythingToggled(bool enabled);
     void testEverythingRequested();
     void snapshotSettingsRequested();
@@ -160,6 +161,8 @@ private:
     QAction *m_locateEverythingAction;
     QAction *m_useEverythingAction;
     QAction *m_testEverythingAction;
+    QAction *m_exportReportHtmlAction;
+    QAction *m_exportReportPdfAction;
     QAction *m_snapshotSettingsAction;
     QAction *m_reloadThemesAction;
     QLabel *m_statusLabel;
