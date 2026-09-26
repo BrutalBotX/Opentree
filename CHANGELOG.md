@@ -8,6 +8,10 @@ The format is loosely based on Keep a Changelog.
 
 ### Added
 
+- Automated core test suite (`OpenTreeTests`, registered as ctest test `core`): path helpers
+  (drive roots, trailing separators, prefix traps), size formatting, duplicate detection
+  with staged hashing, junk/forecast analysis, HTML/CSV report generation, and the snapshot
+  ledger with three-tier routing. 32 assertions across six suites.
 - Merkle-style structural ledger: folder paths are registered once in `master_folders` and
   each snapshot stores one small row only for the folders whose recorded values changed, so
   unchanged trees cost nothing. Snapshots now also write an accurate content-addressed

@@ -126,6 +126,37 @@ else()
     message(STATUS "OpenTree: PDF report export disabled (Qt6::PrintSupport not found)")
 endif()
 
+# ---------------------------------------------------------------------------
+# Core logic tests (path helpers, size formatting, dedup, analysis, reports, ledger)
+# ---------------------------------------------------------------------------
+find_package(Qt6 QUIET COMPONENTS Test)
+if (TARGET Qt6::Test)
+    enable_testing()
+    qt_add_executable(OpenTreeTests
+        tests/tst_core.cpp
+        resources/resources.qrc
+        src/utils/PathUtils.cpp
+        src/utils/SizeFormatter.cpp
+        src/services/DedupService.cpp
+        src/services/AnalysisService.cpp
+        src/services/ReportService.cpp
+        src/services/SnapshotService.cpp
+    )
+    target_include_directories(OpenTreeTests PRIVATE src third_party/include)
+    target_link_libraries(OpenTreeTests PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+    # Console subsystem so the test log is visible when run from a terminal.
+    set_target_properties(OpenTreeTests PROPERTIES WIN32_EXECUTABLE FALSE)
+    if (MINGW)
+        target_link_options(OpenTreeTests PRIVATE -Wl,--subsystem,console)
+    elseif (MSVC)
+        target_link_options(OpenTreeTests PRIVATE /SUBSYSTEM:CONSOLE)
+    endif()
+    add_test(NAME core COMMAND OpenTreeTests)
+    message(STATUS "OpenTree: core tests enabled (OpenTreeTests)")
+else()
+    message(STATUS "OpenTree: core tests disabled (Qt6::Test not found)")
+endif()
+
 if (WIN32)
     target_link_libraries(OpenTree PRIVATE shell32)
     if (MINGW)
