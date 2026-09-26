@@ -53,6 +53,13 @@ The format is loosely based on Keep a Changelog.
 ### Changed
 
 - Version bumped to 0.6.0.
+- Repository: the project root is now the git working tree. The release docs, CI workflow,
+  assets and installer live alongside the sources, and the old `github/` export folder is
+  ignored. `third_party/` keeps only the Everything SDK `dll/include/lib` files that the
+  build uses.
+- CI: the Windows workflow no longer copies docs into `github/` and now runs the core test
+  suite after building.
+- Installer version bumped to 0.6.0.
 
 ## [0.5.0] - 2026-09-27
 
