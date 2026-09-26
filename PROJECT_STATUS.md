@@ -2,9 +2,49 @@
 
 ## Current Phase
 
-Phase: vis.js graph visualization + MSVC Qt WebEngine build enabled
+Phase: 0.6.0 — storage intelligence (ledger, insights, trash, reports, settings)
 
 This file tracks what is done, what is intentionally deferred, and what the next phase should focus on.
+
+### 0.6.0 additions (this phase)
+
+- Merkle-style structural ledger: `master_folders` registers each folder path once and
+  `snapshot_ledger` stores one small row per folder whose recorded values changed, so
+  unchanged trees cost nothing and history stays exact after the file changelog is
+  compacted away. A per-folder carry-forward timeline is available for any folder.
+- Three-tier resolution routing (`resolution_rules`, with Windows defaults seeded on
+  startup): high resolution keeps the file changelog, macro tracks folder sizes only,
+  blacklist skips a path entirely.
+- Insights tab (`Ctrl+9`): disk-full forecast from a least-squares fit over the saved
+  snapshot trend, stale-file detection over the largest files of a scan, and pattern-based
+  junk detection (temporary files, logs, crash dumps, caches, backup copies, shell clutter)
+  with one-click staging into the virtual trash.
+- Report export: HTML and PDF (root summary, largest folders, largest files, file-type
+  breakdown), with CSV export already available from the Details tab.
+- Virtual trash (`Ctrl+8`): stages deletion intents in the database only, shows the
+  projected reclaim, and moves staged items to the Windows Recycle Bin only after an
+  explicit confirmation that defaults to Cancel. Drive roots, missing paths and protected
+  system locations are refused.
+- Duplicates tab (`Ctrl+7`): size grouping, 64 KB partial hash, then full hash, with a
+  default-on system-folder guard.
+- Unified Settings dialog covering General, Scanning, Snapshots, Graph and Deduplication,
+  applied live and re-syncing the scheduled task.
+- Tray residency: Show/Hide, Scan Folder, Create Snapshot, Exit, scan-completion
+  notifications and optional close-to-tray.
+- Core test suite (`OpenTreeTests`, ctest `core`): 32 assertions across path helpers, size
+  formatting, staged-hash duplicate detection, analysis, reports and the snapshot ledger.
+- The repository root is now the git working tree (release docs, CI workflow, assets and the
+  installer live alongside the sources); the old `github/` export folder is ignored.
+
+### Next phase focus
+
+- Address bar autocomplete using scanned paths
+- Scheduled automatic duplicate/junk sweeps built on the virtual trash staging flow
+- Database maintenance action (VACUUM + retention pruning) — the local database can grow to
+  several hundred MB on heavily snapshotted roots
+- Cached-root fast reload polish for very large roots
+- Installer/release pipeline: versioned artifacts, clean-machine validation, titlebar icon
+- Multi-root workflow polish across the right-hand panels
 
 ## Done In This Phase
 
@@ -34,7 +74,8 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 ### Scan workflow
 
-- Scans currently use filesystem scanning only
+- Scans use the Everything index when available and fall back to a filesystem walk otherwise
+  (the filesystem path was the only engine during the early phases)
 - Scan runs asynchronously
 - Status bar progress bar is visible during scans
 - Scan results populate:

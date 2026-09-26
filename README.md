@@ -23,9 +23,18 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 - Heatmap view
 - Extensions view with grouping by extension or by file family
 - Timeline and snapshot comparison
+- Per-folder timeline: the Timeline tab shows the selected folder's recorded sizes per snapshot, straight from the Merkle-style structural ledger
+- Merkle-style structural ledger with three-tier resolution routing (high resolution, macro, blacklist)
+- Duplicates tab: staged size -> partial hash -> full hash duplicate detection with a skip-system-folders guard
+- Insights tab: disk-full forecast from the saved snapshot trend, stale-file detection, and junk candidates with one-click staging
+- Reports: export the current scan as HTML or PDF (root summary, largest folders, largest files, file-type breakdown)
+- Virtual trash: staged deletion intents with a projected reclaim; nothing is deleted until the user confirms moving items to the Windows Recycle Bin
+- Unified Settings dialog (theme, scanning, snapshots, graph, deduplication) with live apply
+- Tray residency with notifications and optional close-to-tray behaviour
 - Snapshot manager dialog with tabulated snapshot rows and delete support
 - Background snapshot mode
 - Theme support with built-in light/dark themes and reloadable external themes
+- Core test suite (`OpenTreeTests`, `ctest` target `core`)
 - Windows installer scaffold with Inno Setup
 
 ## Tech Stack
@@ -39,27 +48,28 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 ## Project Layout
 
 ```text
-OpenTree/
+OpenTree/                     <- repository root (this folder is the working tree)
 ├── CMakeLists.txt
-├── build_msvc.bat
+├── build_msvc.bat            <- MSVC 2022 + Qt WebEngine build
+├── build_mingw.bat           <- MinGW build (no WebEngine, graph falls back to text)
 ├── src/
 ├── resources/
-├── TIMELINE_PLAN.md
-├── PROJECT_STATUS.md
+├── tests/                    <- core test suite (OpenTreeTests)
+├── assets/
+├── docs/
+├── installer/
 ├── third_party/
 │   ├── include/
 │   ├── dll/
 │   └── lib/
-└── github/
-    ├── README.md
-    ├── CHANGELOG.md
-    ├── CONTRIBUTING.md
-    ├── TIMELINE_PLAN.md
-    └── PROJECT_STATUS.md
+├── CHANGELOG.md
+├── README.md
+├── TIMELINE_PLAN.md
+└── PROJECT_STATUS.md
 ```
 
-The `github/` folder is the export/release bundle for this repo.
-It is meant to contain the source and release docs, not the generated `build-msvc/` output.
+`github/` is the legacy export bundle from before the repository root became the working
+tree. It is ignored by git and kept only for reference.
 
 ## Requirements
 
@@ -82,6 +92,10 @@ Optional but recommended for full Graph view:
 
 - `Qt6 WebEngineWidgets`
 - `Qt6 WebChannel`
+
+Optional for PDF report export:
+
+- `Qt6 PrintSupport` (HTML/CSV export works without it)
 
 ## Build Instructions
 
@@ -125,6 +139,28 @@ Background snapshot mode:
 
 ```bat
 build-msvc\OpenTree.exe --background-snapshot
+```
+
+### Diagnostics and headless modes
+
+These are handy for support, scripting and verification (none of them need a visible window):
+
+```bat
+OpenTree.exe --test-scan <path>                 :: compare Everything output against a filesystem walk
+OpenTree.exe --find-duplicates <path> [minMB] [all]
+OpenTree.exe --test-trash <path>                :: stage a path in the virtual trash (database only, never deletes)
+OpenTree.exe --export-report <scanPath> <out.html|out.pdf>
+OpenTree.exe --insights <path> [staleDays]      :: disk forecast, stale files and junk candidates
+OpenTree.exe --test-ledger <path>               :: verify the Merkle ledger and three-tier routing
+OpenTree.exe --render-chart-preview <out.png> [pie|bars|treemap[N]|pie+freespace]
+OpenTree.exe --render-details-preview <out.png> [flat]
+OpenTree.exe --render-window-preview <out.png> [path] [tabIndex]
+```
+
+### Tests
+
+```bat
+build-msvc\OpenTreeTests.exe      :: or: ctest --test-dir build-msvc -R core
 ```
 
 ## Installer
@@ -184,8 +220,14 @@ themes/
 
 - Graph view depends on Qt WebEngine.
 - The app currently targets Windows-first workflows.
-- The repo includes Everything SDK headers/imports/binaries used by the project, but filesystem scanning remains the active default path.
-- The scan/cache handoff stays centered on `ScanResult` so an Everything-backed scan path can be revisited later without changing the UI contract.
+- The repo includes the Everything SDK headers/imports/binaries. The Everything index is the
+  preferred scan engine and the filesystem walk is the automatic fallback when Everything is
+  not installed or not running (see Tools > Use Everything Index).
+- The scan/cache handoff stays centered on `ScanResult`, so all views work identically with
+  either engine.
+- The virtual trash stages deletion intents in the database. It only touches files when the
+  user explicitly confirms "Move to Recycle Bin", and it refuses drive roots and protected
+  system locations.
 
 ## Known Limitations
 
@@ -207,24 +249,32 @@ themes/
 
 Short-term:
 
-- Tighten cached-root loading so repeat scans feel instant on very large roots
-- Address bar autocomplete using scanned paths (replace removed QFileSystemModel)
-- Graph visual refinement for dense datasets
+- Address bar autocomplete using scanned paths
 - App icon fix for Windows titlebar
-- More packaging polish and release assets
+- More packaging polish and versioned release assets
 
 Medium-term:
 
-- Better report/export capabilities
-- More advanced snapshot analytics
+- Improved multi-root workflow polish across all panels
+- Scheduled/automatic duplicate and junk sweeps built on the virtual trash
 - Improved theme packaging and community theme docs
-- Better multi-root workflow polish across all panels
 
 Long-term:
 
 - Fully production-ready installer/release pipeline
 - Broader Windows integration polish
 - Optional deeper search/index integration paths
+
+Completed in 0.6.0:
+
+- Duplicate detection (`Ctrl+7`)
+- Insights: disk-full forecast, stale files, junk candidates (`Ctrl+9`)
+- HTML/PDF report export
+- Virtual trash with staged deletion (`Ctrl+8`)
+- Unified settings dialog and tray residency
+- Merkle-style structural ledger with per-folder history and three-tier routing
+- Core test suite
+- Git repo rooted at the working tree, with the release docs/CI/installer alongside the sources
 
 ## License
 
