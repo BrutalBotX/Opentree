@@ -4,6 +4,153 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.5.0] - 2026-09-27
+
+### Added
+
+- Duplicates tab with a staged duplicate finder (size grouping, then a partial hash, then a
+  full hash for confirmed candidates), a minimum-size filter, and grouped results showing
+  the reclaimable space. `Ctrl+7`.
+- Duplicates "Skip system folders" toggle (on by default): Windows, Program Files,
+  ProgramData, WinSxS, packaged app caches, the recycle bin, volume metadata and
+  page/hibernation files are left out of the hash scan, since they are slow to read and
+  can hit locked system files.
+- Headless duplicate check: `OpenTree.exe --find-duplicates <path> [minSizeMB] [all]`.
+
+### Fixed
+
+- Expand All no longer locks up or crashes large trees: the warning/confirmation dialog
+  explains the risk and defaults to Cancel, expanding more than 5,000 folders is refused
+  outright (so a whole drive root cannot be expanded by accident), tree-visibility changes
+  are coalesced into a single graph update instead of one per expanded node, and the
+  graph's visible-path filter is now an O(1) set lookup instead of an O(n) list scan per
+  entry.
+- Details table % of parent reserves its own space at the right of the cell, so the bar can
+  never run underneath the number.
+- Check boxes are themed (accent-filled indicator with a check icon) instead of falling back
+  to the default indicator colors.
+- Combo boxes and spin boxes reserve room for their drop-down/arrow controls, so the text
+  no longer runs under the arrow ("By extension", the duplicates size selector), and the
+  Extensions grouping combo has a sensible minimum width.
+- Graph HTML is emitted as concatenated string literals so the MSVC build no longer fails
+  with C2026 (string too big).
+
+### Changed
+
+- Graph: the hierarchical Tree layout is now the default for graphs with more than ten
+  nodes (previously 30), the root node is pinned at the origin in Force mode so children
+  radiate instead of drifting into a hairball, and the force/tree spacing was tuned.
+- Treemap now honours "Include free space" (a free-space tile at drive roots).
+- Version bumped to 0.5.0.
+
+## [0.4.0] - 2026-09-26
+
+### Added
+
+- Everything SDK scan engine is now the preferred scan path, with automatic filesystem
+  fallback and a clear status message about which engine ran.
+- Tools menu entries: "Use Everything when available" (checkable), "Locate Everything
+  Executable...", and "Test Everything Connection".
+- New `Details` tab: sortable per-item table with size, % of parent (inline bar), file and
+  folder counts, and modified time, plus an "Include subfolders" flat mode.
+- New toolbar drive selector showing the current volume's free/used bar with a drop-down
+  of all ready drives.
+- Graph view toolbar: Force/Tree layout toggle, Fit, zoom in/out and Re-layout. Layout
+  defaults to the hierarchical Tree view for larger graphs.
+- Graph label budget: only the largest nodes keep a permanent label, the rest reveal their
+  name on hover.
+- Extensions view can group files by extension or by file family (Video, Audio, Image,
+  Document, Archive, Disk image, Code/Text, Program, Font, Other).
+- Chart panel can include the volume's free space as its own slice when scanning a drive
+  root.
+- Headless diagnostics: `--test-scan <path>`, `--render-chart-preview <out.png>
+  [pie|bars|treemap]`, `--render-details-preview <out.png>`,
+  `--export-details-csv <out.csv>` and
+  `--render-window-preview <out.png> [path] [tabIndex]`.
+- Graph view "Follow tree expansion" checkbox: on by default, so the graph matches the
+  folders expanded in the tree.
+- Treemap depth selector inside the Treemap subtab (Depth 1/2/3).
+- Graph "Hover focus": hovering a node zooms/focuses it and restores the previous view
+  when the pointer leaves; toggleable from the graph toolbar.
+- Details table CSV export (File menu or the panel's Export CSV button).
+- `build_mingw.bat` helper for building without Visual Studio, and `build_msvc.bat` now
+  locates Visual Studio via `vswhere`.
+
+### Fixed
+
+- Everything availability is verified over IPC instead of only checking that the DLL
+  loaded, so a stopped service is reported correctly.
+- Everything queries use `SetMatchPath` with a quoted, non-regex path instead of the
+  invalid `parent:` regex, so scans actually return results.
+- Large Everything results are retrieved in pages instead of being silently truncated.
+- Graph planet SVGs emit valid percentages (the previous `%%` produced invalid SVG
+  gradients because `QString::arg` does not unescape).
+- Single-clicking a graph node no longer switches to the Timeline tab.
+- Graph payload keeps the selected folder's ancestor branch visible again.
+- Direct file diamond nodes and the `Other files` aggregate node are now emitted instead
+  of being collected and discarded.
+- Removed the runtime JS string-patching hack that silently broke when the page JS
+  changed; the starfield is redrawn per frame so it no longer accumulates motion-trail
+  streaks, and it is DPI aware.
+- The graph now fits the whole graph on render instead of zooming onto the selected node.
+- Pie labels no longer overlap the pie or each other, long names elide, and every slice
+  gets a label when there is room; the gutter is sized from the measured label widths so
+  the pie is as large as possible.
+- Bar chart no longer silently clips rows and elides long labels/values.
+- Timeline mode now truly hides the global details pane; tab mode is detected by widget
+  instead of tab index.
+- MSVC deployment no longer warns about the optional Positioning plugin.
+- The graph node budget is now read from the `Graph/MaxNodes` setting.
+
+### Changed
+
+- Filesystem scanning is no longer the only scan path; Everything is attempted first when
+  enabled.
+- Treemap rewritten as a squarified layout; labels are clipped and elided to their tile and
+  the text color adapts to the tile for contrast.
+- Bars are sorted by the active metric instead of pie order.
+- Details table percent column: the value is right aligned and switches to white when the
+  bar runs under it; header alignment is consistent; column auto-sizing is skipped on very
+  large folders.
+- Heatmap now uses a real heat scale across the whole row (blue by share, red/green for
+  snapshot deltas).
+- Graph now defaults to following the tree's expansion ("Follow tree expansion" on) and
+  clamps its fit zoom so nodes stay readable; the summary shows the other-folder cutoff.
+- Details panel no longer reports a bogus "Allocated"/"Compression Rate" for folders (the
+  directory entry allocation was being compared against the whole subtree size).
+- Selecting an item that belongs to a different scanned root now switches the active root
+  first; previously the Extensions/Chart/Heatmap/Details views stayed scoped to the old
+  root and could appear empty.
+- Heatmap now lists only the folders directly inside the selected folder, with % of parent.
+- Details table % of parent uses the item's real immediate parent, so flat mode is correct.
+- Theme now styles `QProgressBar`, `QScrollBar` and `QTableView`; previously the progress
+  bar and scrollbars fell back to the default light widgets in dark mode.
+- Extensions view falls back to file entries in the tree data and clearly reports when a
+  folder has no files in the current scan.
+- Details table % of Parent no longer draws the value twice; the delegate now paints only
+  the background itself instead of letting the base class re-draw the text under the bar.
+- "Include subfolders" (flat mode) no longer empties out for drive roots: descendant
+  matching is now shared via `PathUtils::isSameOrDescendant`, which handles drive roots
+  (`C:/`) and trailing separators. The same fix covers the Extensions view on `C:`.
+- Pie "Include free space" now uses one denominator for every slice, so the free-space
+  slice no longer overlaps the used slices.
+- Graph mouse input: single click selects immediately (the artificial 250 ms click delay is
+  gone), clicks that end a pan are ignored, right-click always suppresses the browser menu,
+  and background clicks clear the selection.
+- Graph selection recolours in place instead of rebuilding the page, so the camera and
+  layout no longer jump on every click.
+- Graph hover focus now waits for hover intent, moves the camera less aggressively, and is
+  cancelled on press/drag.
+- Graph hover zoom no longer fights the user: a hover caused by the camera sliding a node
+  under a stationary pointer is ignored (no zoom-in/zoom-out feedback loop), and leaving a
+  node no longer zooms back out automatically. Press Escape or use Fit to go back.
+- Header sort indicators and combo arrows are now styled with icon images; previously they
+  rendered as a stray blob or were missing.
+- Extensions, Heatmap and Details tables use explicit column widths so the header text is
+  not clipped by the sort-indicator padding.
+- Clear All Roots now asks for confirmation.
+- About dialog shows the version, Qt version and build date.
+
 ## [0.3.1] - 2026-07-10
 
 ### Fixed

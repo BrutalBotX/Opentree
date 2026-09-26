@@ -1,21 +1,19 @@
-# Project Status — v0.3.1
+# Project Status — v0.5.0
 
 This exported GitHub-ready folder was produced from the active local workspace.
 
-Key features implemented as of 0.3.1:
+Key features implemented as of 0.5.0:
 
-- Galaxy particle background + inline SVG planet nodes in Graph view
-- Pie chart surround labels with leader lines (no separate legend)
-- Graph right-click context menu for cross-tab navigation
-- Recursive treemap with per-level Other aggregation
-- Graph-to-tree sync (double-click expands folder in tree panel)
-- Neon palette + flowing physics in graph
-- Startup crash fixed (removed QFileSystemModel)
-- Treemap hit-testing fixed (layout persists into member variables)
-- Snapshot manager dialog with tabulated rows and delete support
-- Root-scoped cache-first reload path for previously scanned roots
-- Cached folder data can render before the fresh scan completes
-- Timeline snapshot ordering now flows oldest to newest
-- Shared theme styling now covers menus, dialogs, inputs, tables, and buttons
+- Everything SDK index scanning with automatic filesystem fallback
+- Duplicates tab with staged hashing (size → partial hash → full hash) and a
+  "Skip system folders" safeguard
+- Details tab: sortable per-item table with inline % bars, flat mode and CSV export
+- Drive selector with free/used capacity bars
+- Graph: Tree/Force layouts, hover focus, follow-tree scope, in-place selection
+- Charts: squarified treemap with depth control, pie with outside labels, free-space slice
+- Heatmap scoped to direct child folders with a real heat scale
+- Extensions grouping by extension or file family
+- Timeline and snapshot comparison, snapshot manager, background snapshots
+- Expand All now warns before expanding very large trees
 
 See CHANGELOG.md for full history.

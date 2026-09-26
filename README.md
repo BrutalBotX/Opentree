@@ -7,17 +7,21 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 ## Current Features
 
 - Multi-root disk tree browsing in one app session
+- Everything SDK index scanning (preferred) with automatic filesystem fallback
 - Cached root reload path: previously scanned roots can show cached folder data first while a fresh scan runs in the background
 - Explorer-style path/address entry for graph and chart workspaces
 - Details pane for files and folders
-- Graph view with neon-styled planetary node icons, flowing physics, and galaxy particle background
+- Details tab: sortable per-item table with inline % -of-parent bars, a flat "include subfolders" mode, and CSV export
+- Toolbar drive selector with free/used capacity bars
+- Graph view with Force/Tree layout toggle, fit/zoom controls, planetary folder nodes, file diamonds and a starfield background
 - Graph right-click context menu for cross-tab navigation (Pie, Bars, Treemap, Extensions, Heatmap)
 - Chart workspace:
-  - Pie with surround labels and color-matched leader lines
-  - Bars
+  - Pie with non-overlapping outside labels
+  - Bars that fit the available rows
   - Treemap with recursive depth control and per-level Other aggregation
+  - Optional free-space slice when scanning a drive root
 - Heatmap view
-- Extensions view
+- Extensions view with grouping by extension or by file family
 - Timeline and snapshot comparison
 - Snapshot manager dialog with tabulated snapshot rows and delete support
 - Background snapshot mode

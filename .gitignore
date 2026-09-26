@@ -1,13 +1,43 @@
+# Build outputs
 build/
 build-msvc/
+build-msvc-debug/
+build-mingw/
 cmake-build-*/
+
+# IDE / editor
 .vs/
+.vscode/
 *.user
-*.db
-*.db-wal
-*.db-shm
+
+# Logs
 *.log
 aqtinstall.log
 opentree.log
 myeasylog.log
+
+# Local databases
+*.db
+*.db-wal
+*.db-shm
+
+# Tooling output
 graphify-out/
+
+# Legacy export bundle (superseded: the repo root is the working tree now)
+github/
+
+# Installer build output
+installer/output/
+
+# Extracted Everything SDK tree. Only dll/include/lib are tracked (as upstream does);
+# the samples, VS projects and SDK sources are local reference material.
+third_party/everything/
+third_party/example/
+third_party/vs/
+third_party/ipc/
+third_party/src/
+
+# Machine-local tool config
+opencode.json
+.opencodeignore

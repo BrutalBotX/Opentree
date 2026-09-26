@@ -43,6 +43,125 @@ This file tracks what is done, what is intentionally deferred, and what the next
   - details panel
 - Drive root normalization bug fixed so full drive roots like `E:\` scan correctly
 
+### Everything integration
+
+- The Everything SDK is now the preferred scan engine, with automatic filesystem fallback
+- Availability detection distinguishes "DLL loaded" from "Everything service reachable"
+  by probing IPC (`EVERYTHING_ERROR_IPC` is no longer reported as success)
+- The query uses `SetMatchPath(TRUE)` + `SetRegex(FALSE)` with a quoted native path instead
+  of the previous invalid regex `parent:` expression
+- Results are retrieved in pages so large roots are not silently truncated
+- Everything scans honor the existing exclusion patterns client-side
+- Scans auto-start the configured Everything client if the service is not reachable
+- Status bar reports which engine ran ("via Everything" / "via filesystem")
+- Tools menu now has "Use Everything when available" (checkable), "Locate Everything
+  Executable...", and "Test Everything Connection"
+- New headless verification path: `OpenTree.exe --test-scan <path>` compares the
+  Everything query against a filesystem scan
+
+### Chart / graph bug fixes
+
+- Pie labels no longer overlap the pie or each other: side gutters are reserved so text
+  and leader lines stay outside the circle, vertical spacing enforces a minimum gap, long
+  names elide, all slices are labelled when space allows, and drawing is clipped
+- Pie gutter is derived from the measured label widths (capped) so the pie grows as large
+  as the space allows instead of always giving 30% of the width to empty gutters
+- Bar chart now only draws the rows that fit, elides long labels/values, resets stale hit
+  rects, and reports "... and N more" instead of silently clipping
+- Graph planet SVGs now emit valid percentages (the old `%%` produced invalid SVG
+  gradients because `QString::arg` does not unescape)
+- Single-clicking a graph node no longer switches to the Timeline tab; it selects the
+  node and pre-selects the matching snapshot without leaving the Graph view
+- Graph payload again keeps the selected folder's ancestor branch visible
+- Direct file diamond nodes and the `Other files` aggregate node are now emitted
+  (previously collected but never used)
+- Removed the runtime JS string-patching hack; particle seeding and resize now live in
+  the page JS and were syntax-validated
+- Graph labels escape `</script>` and Unicode line separators
+- Non-WebEngine graph fallback lists the top 40 items sorted by size
+- Timeline mode now really hides the global details pane (squeezing it to zero width was
+  undone by layout/resize passes, which is the long-standing "details pane still
+  visible" bug), and tab mode is detected by widget instead of tab index so the lazy
+  Graph tab swap cannot desync it
+
+### Graph improvements
+
+- In-view toolbar: layout toggle (Force / Tree), Fit, zoom in/out, Re-layout
+- Layout defaults to the hierarchical Tree view for larger graphs, Force otherwise
+- The view fits the whole graph but clamps how far it zooms out, re-centering on the
+  selected node when a large graph would otherwise shrink to unreadable dots
+- "Follow tree expansion" is on by default, so the graph matches the folders expanded in
+  the tree pane; turn it off to show the whole subtree of the current graph folder
+- Label budget: only the largest nodes keep a permanent label, the rest reveal their name
+  on hover, so dense graphs stay readable
+- Physics freezes once the layout settles so nodes stop drifting and stay clickable
+- Starfield background is redrawn each frame (the low-alpha fade left permanent
+  motion-trail streaks) and is DPI-aware
+- Graph node budget is read from the `Graph/MaxNodes` setting
+- The summary line reports the other-folder cutoff and whether it follows the tree
+- Hover focus: hovering a node zooms and centers it, restoring the previous view when the
+  pointer leaves (toggleable from the graph toolbar)
+
+### Chart, table and heatmap polish (0.4.0 revision)
+
+- Treemap is now squarified (no more thin slivers), draws parent tiles with a header strip,
+  clips and elides labels inside their tile, and picks a readable text color per tile
+- Treemap depth (1/2/3) can be chosen from a selector inside the Treemap subtab
+- Bar rows are sorted by the active metric, labels and values are elided, and rows that do
+  not fit are reported instead of silently clipped
+- Details table percent bar no longer overlaps its value; headers align consistently and
+  column auto-sizing is skipped on very large folders
+- Details table % of parent uses the item's real immediate parent (correct in flat mode)
+- Heatmap lists only the folders directly inside the selected folder, with % of parent and
+  a whole-row heat scale (red/green overrides for snapshot deltas)
+- Details panel no longer shows a meaningless "Allocated"/"Compression Rate" for folders
+- Selecting an item from another scanned root switches the active root first, so the
+  Extensions/Chart/Heatmap/Details views no longer go empty
+- Extensions view falls back to file entries in the tree data and reports clearly when a
+  folder has no files in the current scan
+- Theme now styles `QProgressBar`, `QScrollBar` and `QTableView` (previously default light
+  widgets appeared in dark mode)
+- Details table % of Parent no longer draws the value twice
+- Descendant matching is shared via `PathUtils::isSameOrDescendant` and handles drive roots
+  and trailing separators, so flat mode and the Extensions view work under `C:`
+- Pie free-space slice shares the total denominator with the used slices (no overlap)
+- Graph mouse handling: instant single click, drag guard, right-click suppression, and
+  in-place selection recolouring instead of a full page rebuild
+- Graph hover focus uses hover intent and is cancelled by press/drag; a hover caused by the
+  camera moving under a stationary pointer is ignored, and blur no longer zooms back out
+  (Escape or Fit does)
+- Sort indicators and combo arrows are styled with icon images; tables use explicit column
+  widths so headers are not clipped
+- Treemap honours "Include free space" with a free-space tile at drive roots
+- Graph defaults to the hierarchical Tree layout for more than ten nodes, pins the root in
+  Force mode, and uses tuned force/tree spacing to keep edges from crossing
+- New Duplicates tab (staged size → partial hash → full hash duplicate finder) with a
+  minimum-size filter and reclaimable-space summary; `--find-duplicates <path> [minMB]`
+  diagnostic
+- Duplicates "Skip system folders" toggle skips Windows/Program Files/ProgramData/WinSxS,
+  packaged app caches, the recycle bin, volume metadata and page/hibernation files
+- Combo/spin controls reserve space for their arrows so text no longer overlaps them
+- Expand All asks for confirmation on large trees (defaulting to Cancel), refuses roots
+  above 5,000 folders, and no longer floods the graph: tree-visibility changes are
+  coalesced and the graph's visible-path filter is an O(1) set lookup
+- Details table % of parent reserves space for the value so the bar cannot run under it
+- Check boxes use a themed accent indicator with a check icon
+- Version bumped to 0.5.0
+
+### New views and controls
+
+- New `Details` tab: sortable per-item table (name, type, size, % of parent with an
+  inline bar, files, folders, modified) with an "Include subfolders" flat mode,
+  reachable via `Ctrl+6`
+- Details table CSV export from the File menu ("Export Details as CSV...") or the
+  panel's Export CSV button
+- New toolbar drive selector showing the current volume's free/used bar, with a drop-down
+  of all ready drives
+- Extensions view can group by raw extension or by file family (Video, Audio, Image,
+  Document, Archive, Disk image, Code/Text, Program, Font, Other)
+- Chart panel can include the volume's free space as its own slice when scanning a drive
+  root
+
 ### Details panel
 
 - Details panel shows:
@@ -205,11 +324,12 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 ## Deferred / Left For Later
 
-### Everything integration
+### Everything integration polish
 
-- Everything SDK integration is intentionally not active right now
-- Filesystem scanning is the active scan path
-- Everything-specific work should be revisited later as a separate phase
+- Everything SDK is active as the preferred engine with filesystem fallback
+- Everything metadata beyond path/size (owner, attributes, created/accessed) is not
+  requested yet, so those details fall back to `-` for Everything-scanned items
+- Real-machine build/smoke validation of the Everything path is still pending
 
 ### Snapshot UX / analysis
 
@@ -227,20 +347,21 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 - No unified application settings dialog yet beyond snapshot settings
 - No theme management beyond current defaults
-- No keyboard shortcut pass
+- Keyboard shortcuts exist for the main tabs (`Ctrl+1`..`Ctrl+6`), scan (`Ctrl+O`),
+  refresh (`F5`) and copy path; no full shortcut pass yet
 
 ### Reports / cleanup / dedupe
 
-- No report export yet
-- No virtual trash flow yet
-- No duplicate finder yet
-- No cleanup policies yet
+- CSV export exists for the details table; PDF/HTML report export is still deferred
+- Duplicate finder exists (Duplicates tab); virtual trash and cleanup policies are still
+  deferred, so deletion is intentionally manual for now
 
 ### Graph / heatmap / timeline visuals
 
 - Graph tab now renders a real structural graph using vis-network inside `QWebEngineView` with delta coloring
 - Graph tab uses the main app details panel for selection instead of a duplicate embedded sidebar
-- Graph visibility is now pruned to the folders currently visible/expanded in the tree pane
+- Graph visibility follows the tree expansion by default and can be switched to the whole
+  subtree from the graph's "Follow tree expansion" checkbox
 - Graph sizing modes now support bytes, file count, and folder count
 - Graph selection now uses color states for selected nodes and ancestor chain highlighting
 - Graph includes a small in-view legend and root/up navigation affordance
@@ -263,11 +384,11 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 ### Deferred chart work
 
-- Treemap subfolder depth control was intentionally removed from the UI because only the menu shell existed; recursive nested treemap rendering still needs a real implementation before it should be exposed again.
-- When revisiting treemap depth later, implement:
-  - nested subfolder box subdivision up to a selected depth
-  - per-depth hit testing and labels
-  - consistent interaction with current metric mode
+- Recursive nested treemap rendering is implemented (squarified layout up to the selected
+  Depth 1/2/3) with per-depth hit testing, clipped labels and metric-aware text; verified
+  visually at depth 3
+- Treemap nested subdivision now reserves a header strip on parent tiles so children never
+  cover the parent label
 - Pie charts now show tooltip details on hover including name, size/files, and percentage
 - Treemap tiles now show richer text including percentage where space allows
 - File selection from chart/graph now reselects the file in the left tree after parent focus sync
@@ -324,24 +445,28 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 ## Recommended Next Phase
 
-Phase: chart/extensions refinement + packaging cleanup
+Phase: timeline depth + remaining analysis views
 
 Recommended order:
 
-1. Refine the new chart views where pie/bar behavior still needs polish
-2. Optionally install `qtserialport` for the MSVC Qt tree to eliminate the non-blocking WebEngine/Positioning deployment warning
+1. Timeline/history charting for size vs allocated space (needs allocated-size capture
+   in `ScanResult` first)
+2. Validate scheduled task behavior on real cadence runs
 3. Revisit crash/stability work if the MSVC path still proves flaky in real use
-4. Validate scheduled task behavior on real cadence runs if needed
+4. Report/export work (CSV/HTML/PDF) once the chart and details views settle
 
 ## Practical Backlog
 
+Recently completed (see the sections above): sortable details table, drive selector with
+free/used bars, free-space chart toggle, and extension category families.
+
 Implement next when useful:
 
-1. A true details-table tab/view for sortable per-item inspection
-2. Better timeline/history charting for size vs allocated space
-3. Drive selector with free/used bars
-4. Optional chart toggles like free-space inclusion and alternate chart modes
-5. Richer category families/filters on top of the new extensions view
+1. Timeline/history charting for size vs allocated space
+2. Chart view should support click/hover highlighting of the matching tree item
+3. Optional alternate chart presentation once the current pie/bars are considered done
+4. Report export (CSV / HTML) for the details table and chart data
+5. Snapshot pruning UI for old snapshots beyond the retention window
 
 Explicitly skipped for now:
 
@@ -356,6 +481,24 @@ Explicitly skipped for now:
 - MSVC Qt WebEngine build output: `build-msvc/OpenTree.exe`
 - Current WebEngine-capable compiler/toolchain: Visual Studio 2022 MSVC + Qt 6.8.0 `msvc2022_64`
 - MSVC rebuild helper: `build_msvc.bat`
-- Filesystem scanning is the current default path
+- MinGW rebuild helper (no Visual Studio required): `build_mingw.bat`
+  - expects Qt 6.8.0 MinGW kit + GCC 13.1 under `%USERPROFILE%\Qt`
+  - builds into `%USERPROFILE%\otv2-build` through a no-space junction because
+    `windres` cannot handle spaces in include paths
+  - has no Qt WebEngine (WebEngine on Windows is MSVC-only), so the Graph tab shows a
+    text fallback; use the MSVC build for the vis.js graph
+- `build_msvc.bat` now locates Visual Studio via `vswhere` and the Qt MSVC kit under
+  `%USERPROFILE%\Qt\6.8.0\msvc2022_64`
+- Chart label preview diagnostic: `OpenTree.exe --render-chart-preview <out.png> [pie|bars|treemap]`
+- Details table preview diagnostic: `OpenTree.exe --render-details-preview <out.png>`
+- Full window preview (real scan, offscreen):
+  `OpenTree.exe --render-window-preview <out.png> [path] [tabIndex]`
+- CSV export check: `OpenTree.exe --export-details-csv <out.csv>`
+  - the offscreen previews need `QT_QPA_PLATFORM=offscreen`; note that the MSVC
+    WebEngine build cannot run under the offscreen platform
+  - `build_msvc.bat` output runs the graph; the MinGW build has no WebEngine
+- Scanning now prefers the Everything SDK and falls back to filesystem scanning
+- Headless scan-engine comparison: `OpenTree.exe --test-scan <path>`
+  - writes a report to `%TEMP%\opentree-test-scan.txt`
 - Background snapshot mode:
   - `OpenTree.exe --background-snapshot`
