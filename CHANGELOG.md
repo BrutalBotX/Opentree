@@ -4,6 +4,22 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.6.0] - 2026-09-27
+
+### Added
+
+- Virtual trash: a Trash tab that stages deletion intents (database only, nothing on disk
+  is touched), shows the projected reclaim, and can send the staged items to the Windows
+  Recycle Bin behind an explicit confirmation. Drive roots and protected system locations
+  are refused, and the destructive action is styled and defaults to Cancel.
+- Schema groundwork for the remaining features: `virtual_trash`, `master_folders`,
+  `snapshot_ledger` and `resolution_rules` tables.
+- `--test-trash <path>` headless check of the staging bookkeeping (never deletes anything).
+
+### Changed
+
+- Version bumped to 0.6.0.
+
 ## [0.5.0] - 2026-09-27
 
 ### Added

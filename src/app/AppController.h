@@ -13,6 +13,8 @@ namespace opentree {
 class ConfigService;
 class DatabaseManager;
 class DuplicatesPanel;
+class TrashPanel;
+class VirtualTrashService;
 class EverythingClient;
 class FileRepository;
 class FolderRepository;
@@ -82,6 +84,7 @@ private:
     void handleCompareSnapshotRequest(int snapshotId);
     void refreshTimeline();
     void refreshRecentRoots();
+    void updateTrashSelection();
     bool loadCachedRootResult(const QString &rootPath, ScanResult *result, QString *errorMessage = nullptr) const;
 
     QString m_activeFolderPath;
@@ -98,6 +101,8 @@ private:
     ConfigService *m_configService;
     DatabaseManager *m_databaseManager;
     DuplicatesPanel *m_duplicatesPanel = nullptr;
+    TrashPanel *m_trashPanel = nullptr;
+    VirtualTrashService *m_trashService = nullptr;
     EverythingClient *m_everythingClient;
     ScanService *m_scanService;
     SnapshotService *m_snapshotService = nullptr;

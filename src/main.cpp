@@ -28,6 +28,7 @@
 #include "services/DedupService.h"
 #include "services/ScanService.h"
 #include "services/SnapshotService.h"
+#include "services/VirtualTrashService.h"
 #include "integrations/EverythingClient.h"
 #include "app/MainWindow.h"
 #include "ui/ChartPanel.h"
@@ -433,6 +434,64 @@ int runExportDetailsPreviewMode(const QString &outputPath)
     return panel.exportCsv(outputPath, &error) ? 0 : 1;
 }
 
+// Exercises the virtual trash staging bookkeeping without touching the file system.
+// Usage: OpenTree.exe --test-trash <path>
+int runTrashTestMode(const QString &path)
+{
+    QCoreApplication app(__argc, __argv);
+    opentree::Logger::initialize();
+
+    opentree::DatabaseManager databaseManager;
+    if (!databaseManager.initialize()) {
+        return 1;
+    }
+
+    opentree::VirtualTrashService trash(databaseManager.database());
+    const QString normalized = opentree::PathUtils::normalizePath(path);
+    const QFileInfo info(normalized);
+    const bool isFolder = info.isDir();
+
+    QString error;
+    QStringList report;
+    report << QStringLiteral("Virtual trash staging test for %1").arg(normalized);
+
+    if (!trash.stage(normalized, info.size(), isFolder, QString(), QStringLiteral("dry-run staging"), &error)) {
+        report << QStringLiteral("stage failed: %1").arg(error);
+    } else {
+        report << QStringLiteral("staged ok (%1, %2)")
+                      .arg(isFolder ? QStringLiteral("folder") : QStringLiteral("file"),
+                           opentree::SizeFormatter::formatBytes(info.size()));
+    }
+
+    const QVector<opentree::TrashItem> items = trash.stagedItems(&error);
+    report << QStringLiteral("staged items: %1").arg(items.size());
+    for (const opentree::TrashItem &item : items) {
+        report << QStringLiteral("  - %1 (%2)").arg(item.path, opentree::SizeFormatter::formatBytes(item.size));
+    }
+    report << QStringLiteral("projected reclaim: %1").arg(opentree::SizeFormatter::formatBytes(trash.stagedBytes(&error)));
+
+    QString reason;
+    const bool eligible = opentree::VirtualTrashService::canMoveToRecycleBin(normalized, &reason);
+    report << QStringLiteral("recycle-bin eligible: %1%2")
+                  .arg(eligible ? QStringLiteral("yes") : QStringLiteral("no"),
+                       eligible ? QString() : QStringLiteral(" (%1)").arg(reason));
+
+    // Leave the staged list as it was found.
+    trash.clearStaged(&error);
+    report << QStringLiteral("staged list cleared (no files were touched)");
+
+    const QString reportPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(QStringLiteral("opentree-trash-test.txt"));
+    QFile reportFile(reportPath);
+    if (reportFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&reportFile);
+        for (const QString &line : report) {
+            stream << line << '\n';
+        }
+    }
+    return 0;
+}
+
 // Scans a folder and reports duplicate files. Usage:
 //   OpenTree.exe --find-duplicates <path> [minSizeMB]
 int runFindDuplicatesMode(const QString &path, int minimumMB, bool includeSystem)
@@ -546,7 +605,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.5.0"));
+    QApplication::setApplicationVersion(QStringLiteral("0.6.0"));
 
     QString startupPath;
     QString scanTestPath;
@@ -561,6 +620,7 @@ int main(int argc, char *argv[])
     QString findDuplicatesPath;
     int findDuplicatesMinMB = 0;
     bool findDuplicatesIncludeSystem = false;
+    QString trashTestPath;
 
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
@@ -587,6 +647,10 @@ int main(int argc, char *argv[])
             if (index + 1 < argc && !QString::fromLocal8Bit(argv[index + 1]).startsWith('-')) {
                 detailsPreviewMode = QString::fromLocal8Bit(argv[++index]);
             }
+            continue;
+        }
+        if (argument == "--test-trash" && index + 1 < argc) {
+            trashTestPath = QString::fromLocal8Bit(argv[++index]);
             continue;
         }
         if (argument == "--find-duplicates" && index + 1 < argc) {
@@ -617,6 +681,10 @@ int main(int argc, char *argv[])
         if (argument == "--open-path" && index + 1 < argc) {
             startupPath = QString::fromLocal8Bit(argv[++index]);
         }
+    }
+
+    if (!trashTestPath.isEmpty()) {
+        return runTrashTestMode(trashTestPath);
     }
 
     if (!findDuplicatesPath.isEmpty()) {

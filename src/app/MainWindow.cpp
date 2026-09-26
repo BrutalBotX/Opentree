@@ -29,6 +29,7 @@
 #include "ui/DriveSelector.h"
 #include "ui/DuplicatesPanel.h"
 #include "ui/ExtensionsPanel.h"
+#include "ui/TrashPanel.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
 #include "ui/TimelinePanel.h"
@@ -106,6 +107,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_showTimelineTabAction = new QAction("Timeline", this);
     m_showDetailsTabAction = new QAction("Details", this);
     m_showDuplicatesTabAction = new QAction("Duplicates", this);
+    m_showTrashTabAction = new QAction("Trash", this);
     m_expandAllAction = new QAction("Expand All", this);
     m_collapseAllAction = new QAction("Collapse All", this);
     m_treemapDepth1Action = new QAction("Depth 1", this);
@@ -210,6 +212,7 @@ MainWindow::MainWindow(QWidget *parent)
     tabsMenu->addAction(m_showTimelineTabAction);
     tabsMenu->addAction(m_showDetailsTabAction);
     tabsMenu->addAction(m_showDuplicatesTabAction);
+    tabsMenu->addAction(m_showTrashTabAction);
     m_treemapMenu = viewMenu->addMenu("Treemap Depth");
     m_treemapMenu->addAction(m_treemapDepth1Action);
     m_treemapMenu->addAction(m_treemapDepth2Action);
@@ -275,6 +278,11 @@ MainWindow::MainWindow(QWidget *parent)
             m_tabs->setCurrentWidget(m_duplicatesPanel);
         }
     });
+    connect(m_showTrashTabAction, &QAction::triggered, this, [this]() {
+        if (m_trashPanel) {
+            m_tabs->setCurrentWidget(m_trashPanel);
+        }
+    });
     connect(m_showTimelineTabAction, &QAction::triggered, this, [this]() { showTimelineTab(); });
 
     auto *viewMetricGroup = new QActionGroup(this);
@@ -309,6 +317,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_showTimelineTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+5")));
     m_showDetailsTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+6")));
     m_showDuplicatesTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+7")));
+    m_showTrashTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+8")));
 
     addToolBar(Qt::TopToolBarArea, m_mainToolBar);
     m_mainToolBar->setMovable(false);
@@ -558,6 +567,21 @@ void MainWindow::setDuplicatesPanel(DuplicatesPanel *panel)
     m_duplicatesPanel = panel;
     m_tabs->addTab(panel, "Duplicates");
     m_showDuplicatesTabAction->setEnabled(true);
+}
+
+TrashPanel *MainWindow::trashPanel() const
+{
+    return m_trashPanel;
+}
+
+void MainWindow::setTrashPanel(TrashPanel *panel)
+{
+    if (!panel || m_trashPanel) {
+        return;
+    }
+    m_trashPanel = panel;
+    m_tabs->addTab(panel, "Trash");
+    m_showTrashTabAction->setEnabled(true);
 }
 
 int MainWindow::currentTabIndex() const

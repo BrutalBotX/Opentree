@@ -75,3 +75,47 @@ CREATE INDEX IF NOT EXISTS idx_folders_parent_path ON folders(parent_path);
 CREATE INDEX IF NOT EXISTS idx_files_parent_path ON files(parent_path);
 CREATE INDEX IF NOT EXISTS idx_snapshot_items_snapshot_id ON snapshot_items(snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_snapshot_file_events_snapshot_id ON snapshot_file_events(snapshot_id);
+
+-- Virtual trash: staged deletion intents. Staging only writes a row here and nothing on
+-- disk is touched until the user explicitly confirms moving the staged items to the
+-- Recycle Bin.
+CREATE TABLE IF NOT EXISTS virtual_trash (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL UNIQUE,
+    size INTEGER NOT NULL DEFAULT 0,
+    is_folder INTEGER NOT NULL DEFAULT 0,
+    root_path TEXT,
+    staged_at TEXT NOT NULL,
+    reason TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_virtual_trash_staged_at ON virtual_trash(staged_at);
+
+-- Merkle-style structural ledger. Folder paths are registered once in master_folders and
+-- every snapshot stores one small row per tracked folder, so unchanged trees cost nothing
+-- beyond the shared folder rows.
+CREATE TABLE IF NOT EXISTS master_folders (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL UNIQUE
+);
+
+CREATE TABLE IF NOT EXISTS snapshot_ledger (
+    snapshot_id INTEGER NOT NULL,
+    folder_id INTEGER NOT NULL,
+    total_size INTEGER NOT NULL DEFAULT 0,
+    file_count INTEGER NOT NULL DEFAULT 0,
+    folder_count INTEGER NOT NULL DEFAULT 0,
+    PRIMARY KEY(snapshot_id, folder_id),
+    FOREIGN KEY(snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE,
+    FOREIGN KEY(folder_id) REFERENCES master_folders(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_snapshot_ledger_folder ON snapshot_ledger(folder_id);
+
+-- Per-path scan resolution: 2 = high resolution (structural + file events), 1 = macro
+-- (structural sizes only), 0 = blacklist (skipped by the scanner).
+CREATE TABLE IF NOT EXISTS resolution_rules (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    path TEXT NOT NULL UNIQUE,
+    tier INTEGER NOT NULL DEFAULT 2
+);

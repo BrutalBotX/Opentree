@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.5.0 LANGUAGES CXX)
+project(OpenTree VERSION 0.6.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -61,8 +61,12 @@ qt_add_executable(OpenTree
     src/services/ScanService.cpp
     src/services/DedupService.h
     src/services/DedupService.cpp
+    src/services/VirtualTrashService.h
+    src/services/VirtualTrashService.cpp
     src/ui/DuplicatesPanel.h
     src/ui/DuplicatesPanel.cpp
+    src/ui/TrashPanel.h
+    src/ui/TrashPanel.cpp
     src/data/DatabaseManager.h
     src/data/DatabaseManager.cpp
     src/data/FolderRepository.h

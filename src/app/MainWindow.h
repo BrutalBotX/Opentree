@@ -30,6 +30,7 @@ class TreePanel;
 class DetailsTablePanel;
 class DriveSelector;
 class DuplicatesPanel;
+class TrashPanel;
 
 class MainWindow : public QMainWindow {
     Q_OBJECT
@@ -60,6 +61,8 @@ public:
     DetailsTablePanel *detailsTablePanel() const;
     DuplicatesPanel *duplicatesPanel() const;
     void setDuplicatesPanel(DuplicatesPanel *panel);
+    TrashPanel *trashPanel() const;
+    void setTrashPanel(TrashPanel *panel);
     DriveSelector *driveSelector() const;
     int currentTabIndex() const;
     bool isTimelineTabVisible() const;
@@ -123,6 +126,7 @@ private:
     TimelinePanel *m_timelinePanel;
     DetailsTablePanel *m_detailsTablePanel;
     DuplicatesPanel *m_duplicatesPanel = nullptr;
+    TrashPanel *m_trashPanel = nullptr;
     QAction *m_scanAction;
     QAction *m_createSnapshotAction;
     QAction *m_compareSnapshotAction;
@@ -141,6 +145,7 @@ private:
     QAction *m_showTimelineTabAction;
     QAction *m_showDetailsTabAction;
     QAction *m_showDuplicatesTabAction;
+    QAction *m_showTrashTabAction;
     QAction *m_expandAllAction;
     QAction *m_collapseAllAction;
     QAction *m_treemapDepth1Action;

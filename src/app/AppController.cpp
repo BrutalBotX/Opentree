@@ -24,12 +24,14 @@
 #include "services/ConfigService.h"
 #include "services/ScanService.h"
 #include "services/SnapshotService.h"
+#include "services/VirtualTrashService.h"
 #include "ui/DetailsPanel.h"
 #include "ui/ChartPanel.h"
 #include "ui/DetailsTablePanel.h"
 #include "ui/DriveSelector.h"
 #include "ui/DuplicatesPanel.h"
 #include "ui/ExtensionsPanel.h"
+#include "ui/TrashPanel.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
 #include "ui/SnapshotSettingsDialog.h"
@@ -220,6 +222,12 @@ void AppController::attachWindow(MainWindow *window)
     m_duplicatesPanel = new DuplicatesPanel(m_configService, m_window);
     m_window->setDuplicatesPanel(m_duplicatesPanel);
     connect(m_duplicatesPanel, &DuplicatesPanel::entryActivated, this, &AppController::handleChartEntryActivated);
+
+    if (m_databaseManager && m_databaseManager->database().isValid()) {
+        m_trashService = new VirtualTrashService(m_databaseManager->database());
+    }
+    m_trashPanel = new TrashPanel(m_trashService, m_window);
+    m_window->setTrashPanel(m_trashPanel);
     connect(m_window->driveSelector(), &DriveSelector::driveActivated, this, &AppController::handleRecentRootRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenRequested, this, &AppController::handleChartOpenRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryShowInExplorerRequested, this, &AppController::handleChartShowInExplorerRequested);
@@ -604,6 +612,7 @@ void AppController::handleEntryActivated(const TreeEntry &entry)
     updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
         graph->setSelectedPath(entry.path);
     });
+    updateTrashSelection();
 }
 
 void AppController::handleGraphEntryActivated(const TreeEntry &entry)
@@ -878,6 +887,20 @@ void AppController::handleOpenLogFileRequest()
     QDesktopServices::openUrl(QUrl::fromLocalFile(QDir::current().absoluteFilePath("opentree.log")));
 }
 
+void AppController::updateTrashSelection()
+{
+    if (!m_window || !m_window->trashPanel()) {
+        return;
+    }
+
+    if (const TreeEntry *entry = findTreeEntry(m_activeFolderPath)) {
+        m_window->trashPanel()->setSelection(*entry);
+    } else {
+        TreeEntry empty;
+        m_window->trashPanel()->setSelection(empty);
+    }
+}
+
 void AppController::handleExpandAllRequest()
 {
     if (!m_window || !m_window->treePanel()) {
@@ -1135,6 +1158,7 @@ void AppController::syncActiveResultUi(const ScanResult &result, const QString &
     });
     m_window->heatmapPanel()->setActiveFolderPath(activeFolderPath);
     m_window->heatmapPanel()->setHeatmapData(result.treeEntries, compareRows);
+    updateTrashSelection();
     m_window->timelinePanel()->setCurrentRootPath(result.rootPath);
     if (resetCompare) {
         m_window->timelinePanel()->resetCompareState();
