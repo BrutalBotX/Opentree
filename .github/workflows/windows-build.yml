@@ -216,39 +216,38 @@ jobs:
         shell: pwsh
         continue-on-error: true
         run: |
+          $diagnostics = "D:\diagnostics.txt"
           $lines = @()
           $lines += "sha: $env:GITHUB_SHA"
           $lines += "QT_ROOT_DIR: $env:QT_ROOT_DIR"
           $lines += ""
-          $lines += "--- configure log (last 60 lines) ---"
-          if (Test-Path build-msvc\configure.log) {
-            $lines += (Get-Content build-msvc\configure.log -Tail 60)
-          } else {
-            $lines += "no configure.log"
-          }
+          $lines += "--- configure log (last 80 lines) ---"
+          if (Test-Path build-msvc\configure.log) { $lines += (Get-Content build-msvc\configure.log -Tail 80) } else { $lines += "no configure.log" }
           $lines += ""
           $lines += "--- CMakeCache (Qt/WebEngine) ---"
           if (Test-Path build-msvc\CMakeCache.txt) {
             $lines += (Select-String -Path build-msvc\CMakeCache.txt -Pattern 'Qt6|WebEngine|WebChannel' -ErrorAction SilentlyContinue |
-              Select-Object -First 25 | ForEach-Object { $_.Line.Trim() })
+              Select-Object -First 30 | ForEach-Object { $_.Line.Trim() })
           }
           $lines += ""
-          $lines += "--- build log (OpenTree: lines) ---"
           $lines += "--- exe imports ---"
           if (Test-Path build-msvc\OpenTree.exe) {
             $dumpbin = (Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
             $lines += ((& $dumpbin /dependents build-msvc\OpenTree.exe) | Where-Object { $_ -match 'Qt6' } | ForEach-Object { $_.Trim() })
-          } else {
-            $lines += "no OpenTree.exe"
-          }
-          $lines | Set-Content -Path ci-diagnostics.txt -Encoding utf8
+          } else { $lines += "no OpenTree.exe" }
+          $lines -join "`n" | Set-Content -Path $diagnostics -Encoding utf8
+
+          # Publish to a throw-away branch so the job log (unreadable without auth) is not
+          # needed. Force push keeps it simple.
           git config user.email "ci@opentree.invalid"
           git config user.name "OpenTree CI"
+          git checkout --orphan ci-diagnostics
+          git rm -r --cached . --quiet
+          git add -f ci-diagnostics.txt 2>$null
+          Copy-Item $diagnostics .\ci-diagnostics.txt -Force
           git add -f ci-diagnostics.txt
-          git commit -m "ci diagnostics for $env:GITHUB_SHA [skip ci]"
-          git push origin HEAD:main
-        env:
-          GIT_TERMINAL_PROMPT: "0"
+          git commit -m "ci diagnostics for $env:GITHUB_SHA"
+          git push -f origin ci-diagnostics
 
       - name: Attach installer to the release
         if: startsWith(github.ref, 'refs/tags/')
