@@ -6,14 +6,14 @@
 ;   ISCC.exe /DMyAppVersion=0.13.0 installer\OpenTree.iss
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.13.0"
+  #define MyAppVersion "0.13.1"
 #endif
 
 #define MyAppName "OpenTree"
 #define MyAppPublisher "BrutalBot"
 #define MyAppURL "https://github.com/BrutalBotX/Opentree"
 #define MyAppExeName "OpenTree.exe"
-#define MyBuildDir "..\build-msvc"
+#define MyBuildDir "stage"
 #define MyIconFile "..\assets\opentree.ico"
 
 [Setup]
@@ -56,7 +56,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-; The whole deployed build folder: OpenTree.exe plus the Qt runtime and the Everything SDK.
+; Source is the staged runtime folder (see stage_runtime.ps1): OpenTree.exe, the Qt runtime,
+; the Everything SDK and the WebEngine runtime, without any build intermediates.
 Source: "{#MyBuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion

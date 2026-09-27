@@ -31,11 +31,38 @@ jobs:
           arch: 'win64_msvc2022_64'
           modules: 'qtwebengine qtwebchannel'
 
+      - name: Check that the Qt kit has WebEngine
+        shell: pwsh
+        run: |
+          $missing = @()
+          foreach ($dll in @('Qt6WebEngineWidgets.dll', 'Qt6WebEngineCore.dll', 'Qt6WebChannel.dll')) {
+            if (-not (Test-Path (Join-Path $env:QT_ROOT_DIR "bin\$dll"))) { $missing += $dll }
+          }
+          if ($missing.Count -gt 0) {
+            Write-Host "Qt kit at $env:QT_ROOT_DIR"
+            Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'bin') -Filter 'Qt6WebEngine*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
+            throw "The Qt kit is missing WebEngine: $($missing -join ', '). The installer would ship a graph-less build."
+          }
+          Write-Host "WebEngine present in $env:QT_ROOT_DIR"
+
       - name: Configure
         run: cmake -S . -B build-msvc -G "NMake Makefiles" -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" -DCMAKE_BUILD_TYPE=Release
 
       - name: Build
         run: cmake --build build-msvc --config Release
+
+      - name: Check that the build really has the graph
+        shell: pwsh
+        run: |
+          $dumpbin = (Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
+          $imports = & $dumpbin /dependents build-msvc\OpenTree.exe
+          if (-not ($imports -match 'Qt6WebEngineWidgets.dll')) {
+            throw "build-msvc\OpenTree.exe does not link Qt6WebEngineWidgets.dll - the graph would be missing."
+          }
+          if (-not (Test-Path 'build-msvc\QtWebEngineProcess.exe')) {
+            throw "build-msvc\QtWebEngineProcess.exe is missing - windeployqt did not deploy the WebEngine runtime."
+          }
+          Write-Host "Graph support verified in build-msvc\OpenTree.exe"
 
       - name: Test
         run: ctest --test-dir build-msvc -R core --output-on-failure

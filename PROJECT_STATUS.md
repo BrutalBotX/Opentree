@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase: 0.6.0 ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â storage intelligence (ledger, insights, trash, reports, settings)
+Phase: 0.6.0 ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â storage intelligence (ledger, insights, trash, reports, settings)
 
 This file tracks what is done, what is intentionally deferred, and what the next phase should focus on.
 
@@ -35,6 +35,14 @@ This file tracks what is done, what is intentionally deferred, and what the next
   formatting, staged-hash duplicate detection, analysis, reports and the snapshot ledger.
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
+
+### 0.13.1 follow-up (same night)
+
+- Installer fix: the 0.13.0 release shipped without WebEngine (CI built from a Qt kit that had
+  none, and the graph is optional at configure time, so the build silently produced a
+  graph-less exe). CI now verifies the Qt kit and the built exe, and the installer stages a
+  clean runtime folder instead of packaging build intermediates. Verified by installing into a
+  temp folder and running the graph smoke test from there with a system-only PATH.
 
 ### 0.13.0 follow-up (same night)
 
@@ -121,7 +129,7 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 - Address bar autocomplete using scanned paths
 - Scheduled automatic duplicate/junk sweeps built on the virtual trash staging flow
-- Database maintenance action (VACUUM + retention pruning) ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â the local database can grow to
+- Database maintenance action (VACUUM + retention pruning) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the local database can grow to
   several hundred MB on heavily snapshotted roots
 - Cached-root fast reload polish for very large roots
 - Installer/release pipeline: versioned artifacts, clean-machine validation, titlebar icon
@@ -257,7 +265,7 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - Treemap honours "Include free space" with a free-space tile at drive roots
 - Graph defaults to the hierarchical Tree layout for more than ten nodes, pins the root in
   Force mode, and uses tuned force/tree spacing to keep edges from crossing
-- New Duplicates tab (staged size ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ partial hash ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã‚Â ÃƒÂ¢Ã¢â€šÂ¬Ã¢â€žÂ¢ full hash duplicate finder) with a
+- New Duplicates tab (staged size ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ partial hash ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬ÃƒÂ¢Ã¢â‚¬Å¾Ã‚Â¢ full hash duplicate finder) with a
   minimum-size filter and reclaimable-space summary; `--find-duplicates <path> [minMB]`
   diagnostic
 - Duplicates "Skip system folders" toggle skips Windows/Program Files/ProgramData/WinSxS,

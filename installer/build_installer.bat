@@ -31,6 +31,10 @@ if "%APP_VERSION%"=="" (
     exit /b 1
 )
 
+echo Staging the runtime...
+powershell -NoProfile -ExecutionPolicy Bypass -File "stage_runtime.ps1" -BuildDir "..\build-msvc" -StageDir "stage"
+if errorlevel 1 exit /b 1
+
 echo Building installer for OpenTree %APP_VERSION%
 "%ISCC%" /DMyAppVersion=%APP_VERSION% "OpenTree.iss"
 exit /b %errorlevel%

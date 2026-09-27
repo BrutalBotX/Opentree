@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.13.0 LANGUAGES CXX)
+project(OpenTree VERSION 0.13.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -133,6 +133,9 @@ target_link_libraries(OpenTree PRIVATE
 if (Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND)
     target_link_libraries(OpenTree PRIVATE Qt6::WebEngineWidgets Qt6::WebChannel)
     target_compile_definitions(OpenTree PRIVATE OPENTREE_HAVE_WEBENGINE=1)
+    message(STATUS "OpenTree: Graph tab enabled (Qt6::WebEngineWidgets found)")
+else()
+    message(WARNING "OpenTree: Graph tab DISABLED (Qt6::WebEngineWidgets/Qt6::WebChannel not found) - the tab will show a text list")
 endif()
 
 # Windows GUI subsystem: without this the MSVC build links a console binary and Windows

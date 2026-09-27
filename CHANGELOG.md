@@ -4,6 +4,29 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.13.1] - 2026-09-27
+
+### Fixed
+
+- **The 0.13.0 installer shipped without the graph.** The release was built by CI from a Qt kit
+  that had no WebEngine, and because the graph is optional at configure time the build quietly
+  produced a graph-less executable; the installer then packaged that. The CI workflow now
+  refuses to continue when the Qt kit lacks WebEngine or when the freshly built exe does not
+  link `Qt6WebEngineWidgets.dll`, so a build like that can no longer be published.
+- The installer no longer packages build intermediates. `installer/stage_runtime.ps1` stages
+  the deployed runtime (exe, Qt DLLs and plugins, WebEngine runtime, Everything SDK) into a
+  clean folder first, so `CMakeFiles`, autogen output, `Makefile`, `CMakeCache.txt`,
+  `OpenTreeTests.exe` and friends stay out of the installed copy. The staging step also checks
+  that the WebEngine files are present before the installer is compiled.
+- Verified end to end: the installer was installed silently into a clean folder and
+  `OpenTree.exe --smoke-graph` ran from there with `PATH` reduced to the system directories,
+  which is what double-clicking does.
+
+### Changed
+
+- CMake now prints whether the graph is enabled (and warns loudly when it is not) instead of
+  staying silent about a missing WebEngine.
+
 ## [0.13.0] - 2026-09-27
 
 ### Added

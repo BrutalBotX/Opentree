@@ -29,6 +29,7 @@ github/
 
 # Installer build output
 installer/output/
+installer/stage/
 
 # Extracted Everything SDK tree. Only dll/include/lib are tracked (as upstream does);
 # the samples, VS projects and SDK sources are local reference material.
