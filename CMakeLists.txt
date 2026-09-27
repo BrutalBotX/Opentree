@@ -130,10 +130,18 @@ target_link_libraries(OpenTree PRIVATE
     Qt6::Network
 )
 
-# Optional: the Graph tab needs WebEngine. Check for the imported targets, not the
+# Optional: the Graph tab needs WebEngine. Check for the imported targets rather than the
 # Qt6WebEngineWidgets_FOUND variables, which are not set reliably across kits (same trap as
-# Qt6::PrintSupport below).
+# Qt6::PrintSupport below), and fall back to the per-module packages if the aggregate
+# find_package(Qt6 COMPONENTS ...) did not load them.
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebChannel)
+if (NOT TARGET Qt6::WebEngineWidgets)
+    find_package(Qt6WebEngineWidgets QUIET)
+endif()
+if (NOT TARGET Qt6::WebChannel)
+    find_package(Qt6WebChannel QUIET)
+endif()
+
 if (TARGET Qt6::WebEngineWidgets AND TARGET Qt6::WebChannel)
     target_link_libraries(OpenTree PRIVATE Qt6::WebEngineWidgets Qt6::WebChannel)
     target_compile_definitions(OpenTree PRIVATE OPENTREE_HAVE_WEBENGINE=1)

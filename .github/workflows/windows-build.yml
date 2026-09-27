@@ -64,6 +64,40 @@ jobs:
           }
           Write-Host "WebEngine present in $env:QT_ROOT_DIR"
 
+      - name: Probe the Qt kit with CMake
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path probe | Out-Null
+          @'
+          cmake_minimum_required(VERSION 3.24)
+          project(probe LANGUAGES CXX)
+          find_package(Qt6 REQUIRED COMPONENTS Widgets)
+          find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebChannel)
+          if (TARGET Qt6::WebEngineWidgets)
+            message(STATUS "PROBE: aggregate Qt6 WebEngineWidgets target present")
+          else()
+            message(STATUS "PROBE: aggregate Qt6 WebEngineWidgets target MISSING")
+          endif()
+          find_package(Qt6WebEngineWidgets QUIET)
+          if (TARGET Qt6::WebEngineWidgets)
+            message(STATUS "PROBE: Qt6WebEngineWidgets package usable")
+          else()
+            message(FATAL_ERROR "PROBE: Qt6WebEngineWidgets package NOT usable")
+          endif()
+          '@ | Set-Content -Path probe\CMakeLists.txt -Encoding utf8
+          $qtBin = (Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'bin') -Filter 'Qt6Web*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
+          $qtCmake = (Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'lib\cmake') -Filter 'Qt6Web*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
+          $probe = (& cmake -S probe -B probe-build -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" 2>&1 | Out-String)
+          @(
+            "QT_ROOT_DIR: $env:QT_ROOT_DIR",
+            "bin: $qtBin",
+            "lib/cmake: $qtCmake",
+            "",
+            "--- cmake probe output ---",
+            $probe
+          ) | Set-Content -Path ci-diagnostics.txt -Encoding utf8
+          Write-Host $probe
+
       - name: Configure
         shell: pwsh
         run: |
@@ -124,6 +158,41 @@ jobs:
           name: OpenTree-Setup-${{ steps.version.outputs.value }}
           path: installer/output/OpenTree-Setup-*.exe
           if-no-files-found: error
+
+      - name: Publish CI diagnostics
+        if: always()
+        shell: pwsh
+        continue-on-error: true
+        run: |
+          # A readable channel for CI-only problems (job logs need authentication, the
+          # diagnostics branch does not). Read it from the ci-diagnostics branch.
+          $lines = @()
+          if (Test-Path ci-diagnostics.txt) { $lines += (Get-Content ci-diagnostics.txt) }
+          $lines += ""
+          $lines += "--- configure log (WebEngine lines) ---"
+          if (Test-Path build-msvc\configure.log) {
+            $lines += (Select-String -Path build-msvc\configure.log -Pattern 'OpenTree:|WebEngine|WebChannel' -ErrorAction SilentlyContinue |
+              Select-Object -First 12 | ForEach-Object { $_.Line.Trim() })
+          }
+          $lines += ""
+          $lines += "--- build without the graph? ---"
+          if (Test-Path build-msvc\OpenTree.exe) {
+            $dumpbin = (Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
+            $imports = (& $dumpbin /dependents build-msvc\OpenTree.exe) -join "`n"
+            $lines += "links Qt6WebEngineWidgets: $($imports -match 'Qt6WebEngineWidgets.dll')"
+            $lines += "QtWebEngineProcess deployed: $(Test-Path 'build-msvc\QtWebEngineProcess.exe')"
+          } else {
+            $lines += "no OpenTree.exe was produced"
+          }
+          $lines | Set-Content -Path ci-diagnostics.txt -Encoding utf8
+
+          git config user.email "ci@opentree.invalid"
+          git config user.name "OpenTree CI"
+          git checkout --orphan ci-diagnostics
+          git rm -r --cached . 2>$null | Out-Null
+          git add -f ci-diagnostics.txt
+          git commit -m "CI diagnostics for $env:GITHUB_SHA"
+          git push -f origin ci-diagnostics
 
       - name: Attach installer to the release
         if: startsWith(github.ref, 'refs/tags/')
