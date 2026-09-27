@@ -4,6 +4,32 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.9.0] - 2026-09-27
+
+### Added
+
+- Reports: the pie chart joined the mix. The PDF and HTML reports now show three charts: a
+  bar chart of the largest folders, a **pie chart of the folder share** (top folders plus
+  "other") and a donut of the file-type breakdown.
+- `--smoke-graph <path>` diagnostic: runs the app, opens the Graph tab from the main event
+  loop and quits, so the lazy WebEngine start can be verified without the offscreen preview
+  harness (which cannot host Chromium).
+
+### Changed
+
+- **Memory**: the Graph view no longer starts Chromium until the Graph tab is opened for the
+  first time, and the WebEngine view is destroyed again when the tab is left, so the renderer
+  process exits and its memory is returned. Measured on this machine (MSVC build, one scan):
+  - app running without ever opening the graph: **443 MB -> 190 MB**
+  - after leaving the graph tab: **559 MB -> 421 MB** (renderer released)
+  - the MinGW build (no WebEngine) stays around 92 MB
+- Scan results are shared instead of copied. `ScanResult` is now held by
+  `std::shared_ptr<const ScanResult>` and referenced by the controller, the tree model, the
+  root sessions and the chart, details, extensions, duplicates and insights panels; a
+  whole-drive scan used to be duplicated once per panel. The duplicate finder hashes the
+  shared file list instead of taking a copy, and `ScanService` hands its result over by move.
+- Version bumped to 0.9.0.
+
 ## [0.8.0] - 2026-09-27
 
 ### Changed

@@ -20,7 +20,7 @@ class InsightsPanel : public QWidget {
 public:
     explicit InsightsPanel(AnalysisService *analysisService, QWidget *parent = nullptr);
 
-    void setScanResult(const ScanResult &result);
+    void setScanResult(const ScanResultPtr &result);
     void refresh();
 
 private:
@@ -34,7 +34,7 @@ private:
     QTableWidget *m_staleTable;
     QTableWidget *m_junkTable;
     QPushButton *m_stageJunkButton;
-    ScanResult m_result;
+    ScanResultPtr m_result = std::make_shared<const ScanResult>();
     qint64 m_junkBytes = 0;
 };
 

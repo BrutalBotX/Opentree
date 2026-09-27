@@ -21,7 +21,7 @@ public:
 
     explicit ExtensionsPanel(QWidget *parent = nullptr);
 
-    void setScanResult(const ScanResult &result);
+    void setScanResult(const ScanResultPtr &result);
     void setActiveFolderPath(const QString &path);
     void setViewMetric(ViewMetric metric);
 
@@ -32,7 +32,7 @@ private:
     QLabel *m_summaryLabel;
     QComboBox *m_modeCombo;
     QTableWidget *m_table;
-    ScanResult m_result;
+    ScanResultPtr m_result = std::make_shared<const ScanResult>();
     QString m_activeFolderPath;
     ViewMetric m_viewMetric = ViewMetric::Percentage;
     GroupMode m_groupMode = GroupMode::Extension;

@@ -154,11 +154,11 @@ ExtensionsPanel::ExtensionsPanel(QWidget *parent)
     rebuild();
 }
 
-void ExtensionsPanel::setScanResult(const ScanResult &result)
+void ExtensionsPanel::setScanResult(const ScanResultPtr &result)
 {
     m_result = result;
     if (m_activeFolderPath.isEmpty()) {
-        m_activeFolderPath = result.rootPath;
+        m_activeFolderPath = result ? result->rootPath : QString();
     }
     rebuild();
 }
@@ -192,12 +192,12 @@ void ExtensionsPanel::rebuild()
     // Prefer the file list, but fall back to file entries in the tree: a cached root only
     // carries folder summaries, and a partial result should still show something.
     QVector<QPair<QString, qint64>> files;
-    files.reserve(m_result.files.size());
-    for (const FileEntry &file : m_result.files) {
+    files.reserve(m_result->files.size());
+    for (const FileEntry &file : m_result->files) {
         files.push_back({file.path, file.size});
     }
     if (files.isEmpty()) {
-        for (const TreeEntry &entry : m_result.treeEntries) {
+        for (const TreeEntry &entry : m_result->treeEntries) {
             if (entry.kind == TreeEntryKind::File) {
                 files.push_back({entry.path, entry.size});
             }

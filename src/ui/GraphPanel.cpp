@@ -88,9 +88,6 @@ GraphPanel::GraphPanel(QWidget *parent)
 #if defined(OPENTREE_HAVE_WEBENGINE)
     , m_bridge(new GraphBridge(this))
     , m_channel(new QWebChannel(this))
-    , m_view(new QWebEngineView(this))
-#else
-    , m_view(new QTextBrowser(this))
 #endif
 {
     auto *layout = new QVBoxLayout(this);
@@ -107,17 +104,13 @@ GraphPanel::GraphPanel(QWidget *parent)
     addressRow->addWidget(m_addressBar, 1);
     addressRow->addWidget(m_followTreeCheck, 0);
     layout->addLayout(addressRow);
-#if !defined(OPENTREE_HAVE_WEBENGINE)
-    m_view->setReadOnly(true);
-#else
+#if defined(OPENTREE_HAVE_WEBENGINE)
     m_bridge->onActivate = [this](const QString &path) { activateNode(path); };
     m_bridge->onOpen = [this](const QString &path) { openNode(path); };
     m_bridge->onContextMenu = [this](const QString &path, int x, int y) { showNodeContextMenu(path, x, y); };
     m_channel->registerObject(QStringLiteral("graphBridge"), m_bridge);
-    m_view->page()->setWebChannel(m_channel);
 #endif
     layout->addWidget(m_summaryLabel);
-    layout->addWidget(m_view, 1);
 
     connect(m_followTreeCheck, &QCheckBox::toggled, this, [this](bool checked) {
         m_followTreeExpansion = checked;
@@ -130,6 +123,92 @@ GraphPanel::GraphPanel(QWidget *parent)
     });
 
     setGraphData(QString(), {}, {});
+}
+
+void GraphPanel::ensureView()
+{
+    if (m_view) {
+        return;
+    }
+
+#if defined(OPENTREE_HAVE_WEBENGINE)
+    auto *view = new QWebEngineView(this);
+    view->page()->setWebChannel(m_channel);
+    m_view = view;
+#else
+    auto *view = new QTextBrowser(this);
+    view->setReadOnly(true);
+    m_view = view;
+#endif
+
+    // Place the view right under the summary label, where the constructor used to add it.
+    if (auto *box = qobject_cast<QVBoxLayout *>(layout())) {
+        const int summaryIndex = box->indexOf(m_summaryLabel);
+        box->insertWidget(summaryIndex + 1, m_view, 1);
+    }
+
+    m_renderDirty = true;
+    // renderGraph() runs from showEvent() so the page is loaded exactly once.
+}
+
+void GraphPanel::releaseView()
+{
+#if defined(OPENTREE_HAVE_WEBENGINE)
+    if (!m_view) {
+        return;
+    }
+    // Leaving the Graph tab destroys the WebEngine view. That shuts the renderer process
+    // down and returns its memory (~100-150 MB) instead of merely freezing the page; the
+    // view is recreated on the next visit. Chromium's in-process state stays loaded either
+    // way, which is why the lazy first start matters more than this step.
+    m_view->deleteLater();
+    m_view = nullptr;
+    m_renderDirty = true;
+    Logger::info(QStringLiteral("graph-debug releaseView: graph tab hidden, WebEngine view released"));
+#endif
+}
+
+void GraphPanel::showEvent(QShowEvent *event)
+{
+    QWidget::showEvent(event);
+
+    // Chromium is started here, on the first time the Graph tab is shown. It is deferred to
+    // the next event-loop turn because creating and inserting a WebEngine view while the
+    // show event is being delivered re-enters the layout/show handling.
+    QTimer::singleShot(0, this, [this]() {
+        const bool created = !m_view;
+        ensureView();
+
+#if defined(OPENTREE_HAVE_WEBENGINE)
+        if (m_view && m_view->page()
+            && m_view->page()->lifecycleState() == QWebEnginePage::LifecycleState::Discarded) {
+            m_view->page()->setLifecycleState(QWebEnginePage::LifecycleState::Active);
+            m_renderDirty = true;
+        }
+#endif
+
+        if (!m_renderDirty) {
+            return;
+        }
+
+        if (created) {
+            // Let the freshly created page finish initialising before the first load.
+            QTimer::singleShot(400, this, [this]() {
+                if (m_renderDirty) {
+                    renderGraph();
+                }
+            });
+            return;
+        }
+
+        renderGraph();
+    });
+}
+
+void GraphPanel::hideEvent(QHideEvent *event)
+{
+    QWidget::hideEvent(event);
+    releaseView();
 }
 
 void GraphPanel::setGraphData(const QString &rootPath, const QVector<TreeEntry> &entries, const QVector<SnapshotCompareRow> &compareRows)
@@ -449,6 +528,12 @@ void GraphPanel::renderGraph()
                      .arg(m_currentCompareRows.size()));
     if (m_addressBar->text().compare(m_graphRootPath, Qt::CaseInsensitive) != 0) {
         m_addressBar->setText(m_graphRootPath);
+    }
+    if (!m_view) {
+        // The graph tab has not been shown yet: keep the payload pending and render it on
+        // the first show, so Chromium is never started for users who do not open the graph.
+        m_renderDirty = true;
+        return;
     }
     if (m_currentEntries.isEmpty()) {
         m_summaryLabel->setText("Graph: scan a folder to visualize its structure.");

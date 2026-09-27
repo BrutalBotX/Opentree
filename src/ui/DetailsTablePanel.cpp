@@ -332,11 +332,11 @@ DetailsTablePanel::DetailsTablePanel(QWidget *parent)
     rebuild();
 }
 
-void DetailsTablePanel::setScanResult(const ScanResult &result)
+void DetailsTablePanel::setScanResult(const ScanResultPtr &result)
 {
     m_result = result;
     if (m_activeFolderPath.isEmpty()) {
-        m_activeFolderPath = result.rootPath;
+        m_activeFolderPath = result ? result->rootPath : QString();
     }
     rebuild();
 }
@@ -374,14 +374,14 @@ void DetailsTablePanel::setFlatMode(bool flat)
 
 void DetailsTablePanel::rebuild()
 {
-    if (m_result.treeEntries.isEmpty() || m_activeFolderPath.isEmpty()) {
+    if (m_result->treeEntries.isEmpty() || m_activeFolderPath.isEmpty()) {
         m_model->setRows({});
         m_summaryLabel->setText(QStringLiteral("Details: scan a folder to inspect its items."));
         return;
     }
 
     qint64 referenceSize = 0;
-    for (const TreeEntry &entry : m_result.treeEntries) {
+    for (const TreeEntry &entry : m_result->treeEntries) {
         if (entry.kind == TreeEntryKind::Folder && samePath(entry.path, m_activeFolderPath)) {
             referenceSize = entry.size;
             break;
@@ -391,7 +391,7 @@ void DetailsTablePanel::rebuild()
     const bool flat = m_flatCheck->isChecked();
     QVector<DetailsTableModel::Row> rows;
     rows.reserve(256);
-    for (const TreeEntry &entry : m_result.treeEntries) {
+    for (const TreeEntry &entry : m_result->treeEntries) {
         const bool include = flat ? isSameOrDescendant(entry.path, m_activeFolderPath) && !samePath(entry.path, m_activeFolderPath)
                                   : samePath(entry.parentPath, m_activeFolderPath);
         if (include) {

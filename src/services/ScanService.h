@@ -18,7 +18,8 @@ public:
 
     void scanPath(const QString &rootPath);
     bool isBusy() const;
-    ScanResult lastResult() const;
+    // Takes ownership of the last scan result so it does not have to be copied.
+    ScanResultPtr takeLastResult();
     QString lastError() const;
     static ScanResult performFilesystemScan(const QString &rootPath, const QStringList &excludedPatterns);
     static ScanResult buildTreeResult(const QString &rootPath, const QVector<FolderEntry> &folders, const QVector<FileEntry> &files);
@@ -42,7 +43,7 @@ private:
     ConfigService *m_configService;
     EverythingClient *m_everythingClient;
     QFutureWatcher<ScanResult> m_watcher;
-    ScanResult m_lastResult;
+    ScanResultPtr m_lastResult;
     QString m_lastError;
 };
 

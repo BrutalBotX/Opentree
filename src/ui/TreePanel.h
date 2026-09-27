@@ -20,7 +20,7 @@ public:
     explicit TreePanel(QWidget *parent = nullptr);
 
     void setModel(FolderTreeModel *model);
-    void setScanResult(const ScanResult &result);
+    void setScanResult(const ScanResultPtr &result);
     void setRootSessions(const QVector<RootSession> &sessions);
     void selectEntryPath(const QString &path);
     void expandAll();

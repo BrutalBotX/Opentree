@@ -114,19 +114,19 @@ DuplicatesPanel::DuplicatesPanel(ConfigService *configService, QWidget *parent)
     m_summaryLabel->setText(QStringLiteral("Duplicates: scan a folder, then find identical files above the size limit."));
 }
 
-void DuplicatesPanel::setScanResult(const ScanResult &result)
+void DuplicatesPanel::setScanResult(const ScanResultPtr &result)
 {
-    m_files = result.files;
-    m_rootPath = result.rootPath;
+    m_result = result ? result : std::make_shared<const ScanResult>();
+    m_rootPath = m_result->rootPath;
     m_tree->clear();
 
-    if (m_files.isEmpty()) {
+    if (m_result->files.isEmpty()) {
         m_summaryLabel->setText(QStringLiteral("Duplicates: scan a folder first."));
         return;
     }
 
     m_summaryLabel->setText(QStringLiteral("Duplicates: %1 files scanned under %2. Press \"Find duplicates\".")
-                                .arg(m_files.size())
+                                .arg(m_result->files.size())
                                 .arg(m_rootPath));
 }
 
@@ -135,7 +135,7 @@ void DuplicatesPanel::startScan()
     if (m_watcher.isRunning()) {
         return;
     }
-    if (m_files.isEmpty()) {
+    if (m_result->files.isEmpty()) {
         m_summaryLabel->setText(QStringLiteral("Duplicates: scan a folder first."));
         return;
     }
@@ -150,14 +150,16 @@ void DuplicatesPanel::startScan()
     m_scanButton->setEnabled(false);
     m_tree->clear();
     m_summaryLabel->setText(QStringLiteral("Duplicates: comparing %1 files of at least %2%3 ...")
-                                .arg(m_files.size())
+                                .arg(m_result->files.size())
                                 .arg(SizeFormatter::formatBytes(minimumBytes))
                                 .arg(skipSystemPaths ? QStringLiteral(" (skipping system folders)") : QString()));
 
-    const QVector<FileEntry> files = m_files;
+    // Capture the shared result, not a copy of the file list: hashing a large scan must not
+    // duplicate every path.
+    const ScanResultPtr result = m_result;
     DedupService service;
-    m_watcher.setFuture(QtConcurrent::run([service, files, minimumBytes, skipSystemPaths]() {
-        return service.findDuplicates(files, minimumBytes, skipSystemPaths);
+    m_watcher.setFuture(QtConcurrent::run([service, result, minimumBytes, skipSystemPaths]() {
+        return service.findDuplicates(result->files, minimumBytes, skipSystemPaths);
     }));
 }
 

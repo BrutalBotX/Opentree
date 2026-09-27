@@ -89,8 +89,7 @@ signals:
     void nodeActivated(const QString &path);
     void followTreeExpansionChanged(bool follow);
 
-public slots:
-    Q_INVOKABLE
+public slots:    Q_INVOKABLE
     void activateNode(const QString &path);
     Q_INVOKABLE
     void openNode(const QString &path);
@@ -98,8 +97,17 @@ public slots:
 private slots:
     void handleAddressSubmitted();
 
+protected:
+    // The WebEngine view is created only when the Graph tab is actually shown, and its
+    // renderer is discarded again when the tab is left. Loading Chromium costs a few hundred
+    // megabytes, so it must not happen for users who never open the graph.
+    void showEvent(QShowEvent *event) override;
+    void hideEvent(QHideEvent *event) override;
+
 private:
     void showNodeContextMenu(const QString &nodeId, int screenX, int screenY);
+    void ensureView();
+    void releaseView();
     const TreeEntry *findEntryByPath(const QString &path) const;
     QString buildEmptyHtml() const;
     QString buildHtml() const;
@@ -116,9 +124,9 @@ private:
 #if defined(OPENTREE_HAVE_WEBENGINE)
     GraphBridge *m_bridge;
     QWebChannel *m_channel;
-    QWebEngineView *m_view;
+    QWebEngineView *m_view = nullptr;   // created lazily on first show
 #else
-    QTextBrowser *m_view;
+    QTextBrowser *m_view = nullptr;     // created lazily on first show
 #endif
 
     QString m_currentRootPath;

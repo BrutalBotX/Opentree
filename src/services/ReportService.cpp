@@ -6,8 +6,10 @@
 #include <QFileInfo>
 #include <QHash>
 #include <QTextStream>
+#include <QtMath>
 
 #include <algorithm>
+#include <cmath>
 
 #include "services/PdfReportWriter.h"
 #include "utils/SizeFormatter.h"
@@ -131,7 +133,61 @@ QString buildStyles()
         ".stackseg{display:block;height:18px;}"
         ".legend{font-size:12px;color:#5a6675;margin-top:6px;}"
         ".legend span{display:inline-flex;align-items:center;margin-right:14px;}"
-        ".legend i{width:10px;height:10px;display:inline-block;border-radius:2px;margin-right:5px;}");
+        ".legend i{width:10px;height:10px;display:inline-block;border-radius:2px;margin-right:5px;}"
+        ".pierow{display:flex;align-items:center;gap:20px;margin:6px 0 10px 0;}"
+        ".pierow svg{flex:0 0 auto;}"
+        ".legendcol{font-size:12px;color:#5a6675;display:flex;flex-direction:column;gap:4px;}");
+}
+
+// Inline SVG pie so the HTML report carries the same chart as the PDF.
+QString buildSvgPie(const QVector<QPair<QString, qint64>> &slices, qint64 total, int size = 200)
+{
+    if (slices.isEmpty() || total <= 0) {
+        return {};
+    }
+
+    QString svg = QStringLiteral("<svg width='%1' height='%1' viewBox='0 0 %1 %1' xmlns='http://www.w3.org/2000/svg'>")
+                      .arg(size);
+    const double center = size / 2.0;
+    const double radius = center - 2.0;
+    double angle = -90.0; // start at 12 o'clock
+
+    for (int index = 0; index < slices.size(); ++index) {
+        const QString &label = slices[index].first;
+        const qint64 value = slices[index].second;
+        const double sweep = 360.0 * double(value) / double(total);
+        if (sweep <= 0.0) {
+            continue;
+        }
+        const QString color = chartColors().at(index % chartColors().size());
+
+        if (sweep >= 359.99) {
+            svg += QStringLiteral("<circle cx='%1' cy='%1' r='%2' fill='%3'><title>%4</title></circle>")
+                       .arg(QString::number(center, 'f', 2), QString::number(radius, 'f', 2), color,
+                            htmlEscape(label));
+            angle += sweep;
+            continue;
+        }
+
+        const double startRadians = qDegreesToRadians(angle);
+        const double endRadians = qDegreesToRadians(angle + sweep);
+        const double x0 = center + radius * std::cos(startRadians);
+        const double y0 = center + radius * std::sin(startRadians);
+        const double x1 = center + radius * std::cos(endRadians);
+        const double y1 = center + radius * std::sin(endRadians);
+        const int largeArc = sweep > 180.0 ? 1 : 0;
+
+        svg += QStringLiteral("<path d='M%1 %2 L%3 %4 A%5 %5 0 %6 1 %7 %8 Z' fill='%9'><title>%10</title></path>")
+                   .arg(QString::number(center, 'f', 2), QString::number(center, 'f', 2),
+                        QString::number(x0, 'f', 2), QString::number(y0, 'f', 2),
+                        QString::number(radius, 'f', 2), QString::number(largeArc),
+                        QString::number(x1, 'f', 2), QString::number(y1, 'f', 2),
+                        color, htmlEscape(label));
+        angle += sweep;
+    }
+
+    svg += QStringLiteral("</svg>");
+    return svg;
 }
 
 QString buildTotalsRow(const ScanResult &result)
@@ -195,6 +251,33 @@ QString ReportService::buildHtmlReport(const ScanResult &result, const ReportOpt
                           chartColors().at(index % chartColors().size()),
                           SizeFormatter::formatBytes(folder.size));
         }
+
+        // Pie: how the scanned total splits across the biggest folders.
+        QVector<QPair<QString, qint64>> shareSlices;
+        qint64 topSum = 0;
+        const int pieSlices = std::min<int>(data.folders.size(), 6);
+        for (int index = 0; index < pieSlices; ++index) {
+            const TreeEntry &folder = data.folders[index];
+            shareSlices.push_back({folder.name.isEmpty() ? folder.path : folder.name, folder.size});
+            topSum += folder.size;
+        }
+        if (data.totalBytes > topSum) {
+            shareSlices.push_back({QStringLiteral("Other folders and files"), data.totalBytes - topSum});
+        }
+
+        html << QStringLiteral("<h3>Folder share</h3><div class='pierow'>%1<div class='legendcol'>")
+                    .arg(buildSvgPie(shareSlices, data.totalBytes));
+        for (int index = 0; index < shareSlices.size(); ++index) {
+            const double share = data.totalBytes <= 0
+                ? 0.0
+                : 100.0 * double(shareSlices[index].second) / double(data.totalBytes);
+            html << QStringLiteral("<span><i style='background:%1'></i>%2 &middot; %3 (%4%)</span>")
+                        .arg(chartColors().at(index % chartColors().size()),
+                             htmlEscape(shareSlices[index].first),
+                             SizeFormatter::formatBytes(shareSlices[index].second),
+                             QString::number(share, 'f', 1));
+        }
+        html << QStringLiteral("</div></div>");
     }
 
     if (hasTypeChart) {

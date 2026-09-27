@@ -107,7 +107,7 @@ InsightsPanel::InsightsPanel(AnalysisService *analysisService, QWidget *parent)
     refresh();
 }
 
-void InsightsPanel::setScanResult(const ScanResult &result)
+void InsightsPanel::setScanResult(const ScanResultPtr &result)
 {
     m_result = result;
     m_statusLabel->setVisible(false);
@@ -123,7 +123,7 @@ void InsightsPanel::refresh()
         return;
     }
 
-    if (m_result.rootPath.isEmpty()) {
+    if (m_result->rootPath.isEmpty()) {
         m_forecastLabel->setText(QStringLiteral("Insights: scan a folder to forecast disk usage and find stale or junk files."));
         m_staleTable->setRowCount(0);
         m_junkTable->setRowCount(0);
@@ -132,7 +132,7 @@ void InsightsPanel::refresh()
 
     // Forecast
     QString error;
-    const DiskForecast forecast = m_analysisService->forecastForRoot(m_result.rootPath, &error);
+    const DiskForecast forecast = m_analysisService->forecastForRoot(m_result->rootPath, &error);
     if (!forecast.available) {
         m_forecastLabel->setText(QStringLiteral("Disk forecast: %1").arg(forecast.basis));
     } else {
@@ -151,7 +151,7 @@ void InsightsPanel::refresh()
     }
 
     // Stale files
-    const QVector<StaleFile> stale = m_analysisService->staleFiles(m_result, m_staleDaysSpin->value(), 200, &error);
+    const QVector<StaleFile> stale = m_analysisService->staleFiles(*m_result, m_staleDaysSpin->value(), 200, &error);
     qint64 staleBytes = 0;
     {
         TableSortGuard guard(m_staleTable);
@@ -167,7 +167,7 @@ void InsightsPanel::refresh()
     }
 
     // Junk
-    const QVector<JunkGroup> junk = m_analysisService->junkFiles(m_result);
+    const QVector<JunkGroup> junk = m_analysisService->junkFiles(*m_result);
     m_junkBytes = 0;
     {
         TableSortGuard guard(m_junkTable);
@@ -193,11 +193,11 @@ void InsightsPanel::refresh()
 
 void InsightsPanel::stageJunk()
 {
-    if (!m_analysisService || m_result.rootPath.isEmpty()) {
+    if (!m_analysisService || m_result->rootPath.isEmpty()) {
         return;
     }
 
-    const QVector<JunkFile> junkFiles = m_analysisService->junkFileList(m_result);
+    const QVector<JunkFile> junkFiles = m_analysisService->junkFileList(*m_result);
     if (junkFiles.isEmpty()) {
         return;
     }
@@ -220,7 +220,7 @@ void InsightsPanel::stageJunk()
     int staged = 0;
     qint64 stagedBytes = 0;
     QString error;
-    EntryActionHub::instance()->stage(candidates, m_result.rootPath, QStringLiteral("Junk candidate"),
+    EntryActionHub::instance()->stage(candidates, m_result->rootPath, QStringLiteral("Junk candidate"),
                                       &staged, &stagedBytes, &error);
     if (staged == 0) {
         QMessageBox::warning(this, QStringLiteral("Stage junk"),

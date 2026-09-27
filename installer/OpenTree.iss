@@ -1,7 +1,7 @@
 ; OpenTree Windows installer scaffold for Inno Setup 6
 
 #define MyAppName "OpenTree"
-#define MyAppVersion "0.8.0"
+#define MyAppVersion "0.9.0"
 #define MyAppPublisher "OpenTree Contributors"
 #define MyAppExeName "OpenTree.exe"
 #define MyBuildDir "..\..\build-msvc"

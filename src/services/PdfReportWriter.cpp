@@ -134,7 +134,9 @@ private:
     void drawSectionHeading(const QString &text);
     void drawTable(const TableData &table, bool drawTitle);
     void drawBarChart(const QString &title, const QVector<BarItem> &items);
+    void drawPieChart(const QString &title, const QVector<Slice> &slices, qint64 total);
     void drawDonutChart(const QString &title, const QVector<Slice> &slices, qint64 total);
+    void drawLegend(qreal top, qreal left, const QVector<Slice> &slices, qint64 total, int maxRows = 9);
     void drawSummaryCards(const QStringList &labels, const QStringList &values, const QVector<QColor> &accents);
 
     QFont font(qreal size, bool bold = false) const;
@@ -367,7 +369,7 @@ void ReportDocument::drawBarChart(const QString &title, const QVector<BarItem> &
     }
 
     // Only the leading bars are charted; the full list is in the table further down.
-    constexpr int kMaximumBars = 12;
+    constexpr int kMaximumBars = 10;
     QVector<BarItem> bars = items;
     if (bars.size() > kMaximumBars) {
         bars.resize(kMaximumBars);
@@ -416,6 +418,57 @@ void ReportDocument::drawBarChart(const QString &title, const QVector<BarItem> &
     m_cursorY += 10.0;
 }
 
+void ReportDocument::drawLegend(qreal top, qreal left, const QVector<Slice> &slices, qint64 total, int maxRows)
+{
+    const qreal legendLeft = left;
+    const qreal legendWidth = m_pageRect.right() - legendLeft;
+    const int legendRows = std::min<int>(slices.size(), maxRows);
+    const qreal legendRowHeight = 15.0;
+    for (int index = 0; index < legendRows; ++index) {
+        const Slice &slice = slices[index];
+        const qreal y = top + index * legendRowHeight;
+        m_painter.setPen(Qt::NoPen);
+        m_painter.setBrush(slicePalette().at(index % slicePalette().size()));
+        m_painter.drawRoundedRect(QRectF(legendLeft, y + 4.0, 9.0, 9.0), 2.0, 2.0);
+
+        const double share = 100.0 * double(slice.value) / double(total);
+        drawText(QRectF(legendLeft + 14.0, y, (legendWidth - 14.0) * 0.55, legendRowHeight), slice.label,
+                 font(8.0), QColor("#1f2937"), Qt::AlignLeft | Qt::AlignVCenter, Qt::ElideRight);
+        drawText(QRectF(legendLeft + (legendWidth * 0.55), y, legendWidth * 0.45, legendRowHeight),
+                 QStringLiteral("%1  (%2%)").arg(SizeFormatter::formatBytes(slice.value)).arg(QString::number(share, 'f', 1)),
+                 font(8.0), QColor("#5a6675"), Qt::AlignRight | Qt::AlignVCenter);
+    }
+}
+
+void ReportDocument::drawPieChart(const QString &title, const QVector<Slice> &slices, qint64 total)
+{
+    if (slices.isEmpty() || total <= 0) {
+        return;
+    }
+
+    const qreal chartHeight = 172.0;
+    ensureSpace(chartHeight + 10.0);
+
+    drawText(QRectF(m_pageRect.left(), m_cursorY, contentWidth(), 16.0), title,
+             font(10.0, true), QColor("#334155"));
+    const qreal chartTop = m_cursorY + 18.0;
+
+    const qreal diameter = 130.0;
+    const QRectF pie(m_pageRect.left() + 6.0, chartTop, diameter, diameter);
+    qreal startAngle = 90.0; // 12 o'clock, clockwise
+    for (int index = 0; index < slices.size(); ++index) {
+        const Slice &slice = slices[index];
+        const qreal span = -360.0 * double(slice.value) / double(total);
+        m_painter.setPen(QPen(QColor("#ffffff"), 1.0));
+        m_painter.setBrush(slicePalette().at(index % slicePalette().size()));
+        m_painter.drawPie(pie, int(startAngle * 16.0), int(span * 16.0));
+        startAngle += span;
+    }
+
+    drawLegend(chartTop, pie.right() + 18.0, slices, total);
+    m_cursorY = chartTop + diameter + 16.0;
+}
+
 void ReportDocument::drawDonutChart(const QString &title, const QVector<Slice> &slices, qint64 total)
 {
     if (slices.isEmpty() || total <= 0) {
@@ -452,26 +505,10 @@ void ReportDocument::drawDonutChart(const QString &title, const QVector<Slice> &
              QStringLiteral("total"), font(7.5), QColor("#8a94a3"), Qt::AlignHCenter | Qt::AlignVCenter);
 
     // Legend to the right of the donut.
-    const qreal legendLeft = donut.right() + 18.0;
-    const qreal legendWidth = m_pageRect.right() - legendLeft;
     const int legendRows = std::min<int>(slices.size(), 9);
-    const qreal legendRowHeight = 15.0;
-    for (int index = 0; index < legendRows; ++index) {
-        const Slice &slice = slices[index];
-        const qreal y = chartTop + index * legendRowHeight;
-        m_painter.setPen(Qt::NoPen);
-        m_painter.setBrush(slicePalette().at(index % slicePalette().size()));
-        m_painter.drawRoundedRect(QRectF(legendLeft, y + 4.0, 9.0, 9.0), 2.0, 2.0);
+    drawLegend(chartTop, donut.right() + 18.0, slices, total);
 
-        const double share = 100.0 * double(slice.value) / double(total);
-        drawText(QRectF(legendLeft + 14.0, y, (legendWidth - 14.0) * 0.55, legendRowHeight), slice.label,
-                 font(8.0), QColor("#1f2937"), Qt::AlignLeft | Qt::AlignVCenter, Qt::ElideRight);
-        drawText(QRectF(legendLeft + (legendWidth * 0.55), y, legendWidth * 0.45, legendRowHeight),
-                 QStringLiteral("%1  (%2%)").arg(SizeFormatter::formatBytes(slice.value)).arg(QString::number(share, 'f', 1)),
-                 font(8.0), QColor("#5a6675"), Qt::AlignRight | Qt::AlignVCenter);
-    }
-
-    m_cursorY = std::max(chartTop + diameter, chartTop + legendRows * legendRowHeight) + 16.0;
+    m_cursorY = std::max(chartTop + diameter, chartTop + legendRows * 15.0) + 16.0;
 }
 
 bool ReportDocument::write(const ScanResult &result, const ReportOptions &options, QString *errorMessage)
@@ -538,6 +575,21 @@ bool ReportDocument::write(const ScanResult &result, const ReportOptions &option
             bars.push_back({folder.path, folder.size});
         }
         drawBarChart(QStringLiteral("Largest folders"), bars);
+
+        // Pie: how the scanned total splits across the biggest folders.
+        QVector<Slice> folderSlices;
+        qint64 topSum = 0;
+        const int pieSlices = std::min<int>(folders.size(), 6);
+        for (int index = 0; index < pieSlices; ++index) {
+            const TreeEntry &folder = folders[index];
+            folderSlices.push_back({folder.name.isEmpty() ? folder.path : folder.name, folder.size});
+            topSum += folder.size;
+        }
+        if (totalBytes > topSum) {
+            folderSlices.push_back({QStringLiteral("Other folders and files"), totalBytes - topSum});
+        }
+        drawPieChart(QStringLiteral("Folder share"), folderSlices, totalBytes);
+
         drawDonutChart(QStringLiteral("File types by size"), typeSlices, totalBytes);
     }
 

@@ -57,23 +57,23 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 
 ```text
 OpenTree/                     <- repository root (this folder is the working tree)
-├── CMakeLists.txt
-├── build_msvc.bat            <- MSVC 2022 + Qt WebEngine build
-├── build_mingw.bat           <- MinGW build (no WebEngine, graph falls back to text)
-├── src/
-├── resources/
-├── tests/                    <- core test suite (OpenTreeTests)
-├── assets/
-├── docs/
-├── installer/
-├── third_party/
-│   ├── include/
-│   ├── dll/
-│   └── lib/
-├── CHANGELOG.md
-├── README.md
-├── TIMELINE_PLAN.md
-└── PROJECT_STATUS.md
+â”œâ”€â”€ CMakeLists.txt
+â”œâ”€â”€ build_msvc.bat            <- MSVC 2022 + Qt WebEngine build
+â”œâ”€â”€ build_mingw.bat           <- MinGW build (no WebEngine, graph falls back to text)
+â”œâ”€â”€ src/
+â”œâ”€â”€ resources/
+â”œâ”€â”€ tests/                    <- core test suite (OpenTreeTests)
+â”œâ”€â”€ assets/
+â”œâ”€â”€ docs/
+â”œâ”€â”€ installer/
+â”œâ”€â”€ third_party/
+â”‚   â”œâ”€â”€ include/
+â”‚   â”œâ”€â”€ dll/
+â”‚   â””â”€â”€ lib/
+â”œâ”€â”€ CHANGELOG.md
+â”œâ”€â”€ README.md
+â”œâ”€â”€ TIMELINE_PLAN.md
+â””â”€â”€ PROJECT_STATUS.md
 ```
 
 `github/` is the legacy export bundle from before the repository root became the working
@@ -162,6 +162,7 @@ OpenTree.exe --test-ledger <path>               :: verify the Merkle ledger and 
 OpenTree.exe --render-chart-preview <out.png> [pie|bars|treemap[N]|pie+freespace]
 OpenTree.exe --render-details-preview <out.png> [flat]
 OpenTree.exe --render-window-preview <out.png> [path] [tabIndex]
+OpenTree.exe --smoke-graph <path>                 :: checks the lazy WebEngine start (the graph needs a real window)
 ```
 
 ### Tests
@@ -218,14 +219,16 @@ Expected shape:
 
 ```text
 themes/
-└── my-theme/
-    ├── theme.json
-    └── theme.qss
+â””â”€â”€ my-theme/
+    â”œâ”€â”€ theme.json
+    â””â”€â”€ theme.qss
 ```
 
 ## Notes
 
-- Graph view depends on Qt WebEngine.
+- Graph view depends on Qt WebEngine. Chromium is only started when the Graph tab is first
+  opened, and the view is released again when it is left, so the graph costs nothing until
+  it is actually used.
 - The app currently targets Windows-first workflows.
 - The repo includes the Everything SDK headers/imports/binaries. The Everything index is the
   preferred scan engine and the filesystem walk is the automatic fallback when Everything is
@@ -242,7 +245,7 @@ themes/
 - Multi-root tree browsing is supported, but right-side panels still follow one active root context at a time.
 - Graph view remains dependent on Qt WebEngine for full functionality.
 - Cached reload currently prioritizes fast folder-tree display; the background refresh still does a full filesystem scan.
-- App icon may not render on titlebar in some Windows configurations — shell cache or `.ico` format compatibility.
+- App icon may not render on titlebar in some Windows configurations â€” shell cache or `.ico` format compatibility.
 
 ## Known Bugs / Rough Edges
 

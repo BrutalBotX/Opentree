@@ -188,9 +188,9 @@ bool TreePanel::eventFilter(QObject *watched, QEvent *event)
     return QWidget::eventFilter(watched, event);
 }
 
-void TreePanel::setScanResult(const ScanResult &result)
+void TreePanel::setScanResult(const ScanResultPtr &result)
 {
-    setRootSessions({RootSession {result.rootPath, result}});
+    setRootSessions({RootSession {result ? result->rootPath : QString(), result}});
 }
 
 void TreePanel::setRootSessions(const QVector<RootSession> &sessions)

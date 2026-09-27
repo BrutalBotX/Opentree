@@ -40,11 +40,14 @@ ScanService::ScanService(ConfigService *configService, EverythingClient *everyth
     , m_everythingClient(everythingClient)
 {
     connect(&m_watcher, &QFutureWatcher<ScanResult>::finished, this, [this]() {
-        m_lastResult = m_watcher.result();
-        if (m_lastResult.rootPath.isEmpty()) {
+        // Move the watcher's result into a shared, immutable instance: from here on every
+        // panel shares it instead of copying it.
+        auto result = std::make_shared<ScanResult>(std::move(m_watcher.result()));
+        if (result->rootPath.isEmpty()) {
             emit scanFailed(m_lastError.isEmpty() ? QStringLiteral("Scan failed") : m_lastError);
             return;
         }
+        m_lastResult = result;
         emit scanFinished();
     });
 }
@@ -72,9 +75,11 @@ bool ScanService::isBusy() const
     return m_watcher.isRunning();
 }
 
-ScanResult ScanService::lastResult() const
+ScanResultPtr ScanService::takeLastResult()
 {
-    return m_lastResult;
+    ScanResultPtr result = m_lastResult;
+    m_lastResult.reset();
+    return result;
 }
 
 QString ScanService::lastError() const

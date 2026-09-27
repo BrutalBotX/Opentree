@@ -304,7 +304,7 @@ void AppController::attachWindow(MainWindow *window)
 
         Logger::info(QStringLiteral("graph-debug graphTabActivated currentTab=%1 root=%2 active=%3")
                          .arg(m_window->currentTabIndex())
-                         .arg(m_currentResult.rootPath)
+                         .arg(m_currentResult->rootPath)
                          .arg(m_activeFolderPath));
 
         GraphPanel *graph = m_window->graphPanel();
@@ -314,7 +314,7 @@ void AppController::attachWindow(MainWindow *window)
         updateGraphPanel(graph, [&](GraphPanel *panel) {
             panel->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
             panel->setOtherThresholdPercent(m_otherThresholdPercent);
-            panel->setGraphData(m_currentResult.rootPath, m_currentResult.treeEntries, {});
+            panel->setGraphData(m_currentResult->rootPath, m_currentResult->treeEntries, {});
             if (!m_activeFolderPath.isEmpty()) {
                 panel->setSelectedPath(m_activeFolderPath);
                 panel->setGraphRootPath(m_activeFolderPath);
@@ -361,21 +361,21 @@ void AppController::handleScanRequest()
     refreshRecentRoots();
     m_window->timelinePanel()->setCurrentRootPath(normalizedFolder);
 
-    ScanResult cachedResult;
+    ScanResultPtr cachedResult;
     QString cacheError;
     if (loadCachedRootResult(normalizedFolder, &cachedResult, &cacheError)) {
         m_currentResult = cachedResult;
-        m_activeFolderPath = cachedResult.rootPath;
+        m_activeFolderPath = cachedResult->rootPath;
         bool replaced = false;
         for (RootSession &session : m_rootSessions) {
-            if (session.rootPath.compare(cachedResult.rootPath, Qt::CaseInsensitive) == 0) {
+            if (session.rootPath.compare(cachedResult->rootPath, Qt::CaseInsensitive) == 0) {
                 session.result = cachedResult;
                 replaced = true;
                 break;
             }
         }
         if (!replaced) {
-            m_rootSessions.push_back({cachedResult.rootPath, cachedResult});
+            m_rootSessions.push_back({cachedResult->rootPath, cachedResult});
         }
         syncActiveResultUi(cachedResult, m_activeFolderPath, {}, true);
         m_window->setStatusText(QStringLiteral("Showing cached result for %1, refreshing...").arg(normalizedFolder));
@@ -385,7 +385,7 @@ void AppController::handleScanRequest()
 
     m_window->setBusy(true);
     m_window->setProgress(0);
-    if (cachedResult.rootPath.isEmpty()) {
+    if (!cachedResult || cachedResult->rootPath.isEmpty()) {
         m_window->setStatusText(QStringLiteral("Scanning %1").arg(normalizedFolder));
     }
     m_scanService->scanPath(normalizedFolder);
@@ -427,9 +427,9 @@ void AppController::activateRootSession(const QString &rootPath, bool showGraphT
     const QString normalizedRoot = normalizeRootKey(rootPath);
 
     for (const RootSession &session : m_rootSessions) {
-        if (session.rootPath.compare(normalizedRoot, Qt::CaseInsensitive) == 0 && !session.result.rootPath.isEmpty()) {
+        if (session.rootPath.compare(normalizedRoot, Qt::CaseInsensitive) == 0 && !session.result->rootPath.isEmpty()) {
             m_currentResult = session.result;
-            m_activeFolderPath = session.result.rootPath;
+            m_activeFolderPath = session.result->rootPath;
             syncActiveResultUi(session.result, m_activeFolderPath, {}, false);
             if (showGraphTab) {
                 m_window->showGraphTab();
@@ -443,21 +443,21 @@ void AppController::activateRootSession(const QString &rootPath, bool showGraphT
     m_window->timelinePanel()->setCurrentRootPath(normalizedRoot);
     m_window->driveSelector()->setRootPath(normalizedRoot);
 
-    ScanResult cachedResult;
+    ScanResultPtr cachedResult;
     QString cacheError;
     if (loadCachedRootResult(normalizedRoot, &cachedResult, &cacheError)) {
         m_currentResult = cachedResult;
-        m_activeFolderPath = cachedResult.rootPath;
+        m_activeFolderPath = cachedResult->rootPath;
         bool replaced = false;
         for (RootSession &session : m_rootSessions) {
-            if (session.rootPath.compare(cachedResult.rootPath, Qt::CaseInsensitive) == 0) {
+            if (session.rootPath.compare(cachedResult->rootPath, Qt::CaseInsensitive) == 0) {
                 session.result = cachedResult;
                 replaced = true;
                 break;
             }
         }
         if (!replaced) {
-            m_rootSessions.push_back({cachedResult.rootPath, cachedResult});
+            m_rootSessions.push_back({cachedResult->rootPath, cachedResult});
         }
         syncActiveResultUi(cachedResult, m_activeFolderPath, {}, true);
         m_window->setStatusText(QStringLiteral("Showing cached result for %1, refreshing...").arg(normalizedRoot));
@@ -467,7 +467,7 @@ void AppController::activateRootSession(const QString &rootPath, bool showGraphT
 
     m_window->setBusy(true);
     m_window->setProgress(0);
-    if (cachedResult.rootPath.isEmpty()) {
+    if (!cachedResult || cachedResult->rootPath.isEmpty()) {
         m_window->setStatusText(QStringLiteral("Scanning %1").arg(normalizedRoot));
     }
     m_scanService->scanPath(normalizedRoot);
@@ -512,7 +512,7 @@ void AppController::handleCreateSnapshotRequest()
     Logger::info("Create snapshot action triggered");
     m_window->setStatusText("Create Snapshot requested in controller");
 
-    if (m_currentResult.rootPath.isEmpty()) {
+    if (m_currentResult->rootPath.isEmpty()) {
         QMessageBox::information(
             m_window,
             "Create Snapshot",
@@ -523,7 +523,7 @@ void AppController::handleCreateSnapshotRequest()
 
     QString error;
     const SnapshotCreateResult createResult = m_snapshotService->createSnapshot(
-        m_currentResult,
+        *m_currentResult,
         m_configService->snapshotThresholdBytes(),
         &error);
     if (!error.isEmpty()) {
@@ -533,7 +533,7 @@ void AppController::handleCreateSnapshotRequest()
 
     QString listError;
     const QVector<SnapshotSummary> snapshots = m_snapshotService->listSnapshots(&listError);
-    m_window->timelinePanel()->setCurrentRootPath(m_currentResult.rootPath);
+    m_window->timelinePanel()->setCurrentRootPath(m_currentResult->rootPath);
     m_window->timelinePanel()->setSnapshots(snapshots);
     if (!listError.isEmpty()) {
         QMessageBox::warning(m_window, "Create Snapshot", QStringLiteral("Snapshot was processed, but timeline refresh failed: %1").arg(listError));
@@ -547,7 +547,7 @@ void AppController::handleCreateSnapshotRequest()
                 m_window,
                 "Create Snapshot",
                 QStringLiteral("Snapshot write reported success, but no snapshots are visible for the current root.\n\nRoot: %1\nDatabase: %2")
-                    .arg(m_currentResult.rootPath)
+                    .arg(m_currentResult->rootPath)
                     .arg(m_databaseManager->databasePath()));
         } else {
             QMessageBox::information(
@@ -586,26 +586,29 @@ void AppController::handleScanFinished()
         return;
     }
 
-    const ScanResult result = m_scanService->lastResult();
+    const ScanResultPtr result = m_scanService->takeLastResult();
+    if (!result) {
+        return;
+    }
     m_currentResult = result;
-    m_activeFolderPath = result.rootPath;
+    m_activeFolderPath = result->rootPath;
     bool replaced = false;
     for (RootSession &session : m_rootSessions) {
-        if (session.rootPath.compare(result.rootPath, Qt::CaseInsensitive) == 0) {
+        if (session.rootPath.compare(result->rootPath, Qt::CaseInsensitive) == 0) {
             session.result = result;
             replaced = true;
             break;
         }
     }
     if (!replaced) {
-        m_rootSessions.push_back({result.rootPath, result});
+        m_rootSessions.push_back({result->rootPath, result});
     }
     syncActiveResultUi(result, m_activeFolderPath, {}, true);
     refreshTimeline();
     if (m_folderRepository && m_fileRepository) {
         QString error;
-        if (!m_folderRepository->replaceAll(result.folders, result.rootPath, &error)
-            || !m_fileRepository->replaceAll(result.files, result.rootPath, &error)) {
+        if (!m_folderRepository->replaceAll(result->folders, result->rootPath, &error)
+            || !m_fileRepository->replaceAll(result->files, result->rootPath, &error)) {
             Logger::warning("Failed to persist scan: " + error);
         }
     }
@@ -613,14 +616,14 @@ void AppController::handleScanFinished()
     m_window->setBusy(false);
     m_window->setProgress(100);
     m_window->setStatusText(QStringLiteral("Scanned %1 folders and %2 files via %3")
-                                .arg(result.folders.size())
-                                .arg(result.files.size())
-                                .arg(result.usedEverything ? "Everything" : "filesystem"));
+                                .arg(result->folders.size())
+                                .arg(result->files.size())
+                                .arg(result->usedEverything ? "Everything" : "filesystem"));
     m_window->notify(QStringLiteral("Scan complete"),
                      QStringLiteral("%1 folders and %2 files via %3")
-                         .arg(result.folders.size())
-                         .arg(result.files.size())
-                         .arg(result.usedEverything ? QStringLiteral("Everything") : QStringLiteral("filesystem")));
+                         .arg(result->folders.size())
+                         .arg(result->files.size())
+                         .arg(result->usedEverything ? QStringLiteral("Everything") : QStringLiteral("filesystem")));
 }
 
 void AppController::handleScanFailed(const QString &message)
@@ -643,8 +646,8 @@ void AppController::handleEntryActivated(const TreeEntry &entry)
     // Selecting an item that belongs to another scanned root has to switch the active
     // root first; otherwise the panels stay scoped to the old root and can show nothing.
     if (const RootSession *session = findRootSessionForPath(entry.path)) {
-        if (m_currentResult.rootPath.compare(session->result.rootPath, Qt::CaseInsensitive) != 0) {
-            activateRootSession(session->result.rootPath, false);
+        if (m_currentResult->rootPath.compare(session->result->rootPath, Qt::CaseInsensitive) != 0) {
+            activateRootSession(session->result->rootPath, false);
         }
     }
 
@@ -667,8 +670,8 @@ void AppController::handleGraphEntryActivated(const TreeEntry &entry)
                      .arg(entry.path)
                      .arg(entry.parentPath));
     if (const RootSession *session = findRootSessionForPath(entry.path)) {
-        if (m_currentResult.rootPath.compare(session->result.rootPath, Qt::CaseInsensitive) != 0) {
-            activateRootSession(session->result.rootPath, true);
+        if (m_currentResult->rootPath.compare(session->result->rootPath, Qt::CaseInsensitive) != 0) {
+            activateRootSession(session->result->rootPath, true);
         }
     }
 
@@ -734,8 +737,8 @@ void AppController::handleGraphPathEntered(const QString &path)
 void AppController::handleChartEntryActivated(const TreeEntry &entry)
 {
     if (const RootSession *session = findRootSessionForPath(entry.path)) {
-        if (m_currentResult.rootPath.compare(session->result.rootPath, Qt::CaseInsensitive) != 0) {
-            activateRootSession(session->result.rootPath, false);
+        if (m_currentResult->rootPath.compare(session->result->rootPath, Qt::CaseInsensitive) != 0) {
+            activateRootSession(session->result->rootPath, false);
         }
     }
 
@@ -785,8 +788,8 @@ void AppController::handleNavigateToEntryRequested(const TreeEntry &entry, const
 void AppController::handleChartOpenInGraphRequested(const TreeEntry &entry)
 {
     if (const RootSession *session = findRootSessionForPath(entry.path)) {
-        if (m_currentResult.rootPath.compare(session->result.rootPath, Qt::CaseInsensitive) != 0) {
-            activateRootSession(session->result.rootPath, true);
+        if (m_currentResult->rootPath.compare(session->result->rootPath, Qt::CaseInsensitive) != 0) {
+            activateRootSession(session->result->rootPath, true);
         }
     }
 
@@ -855,8 +858,8 @@ void AppController::handleOthersThresholdRequest()
 
 void AppController::handleRescanCurrentRootRequest()
 {
-    if (!m_currentResult.rootPath.isEmpty()) {
-        openPath(m_currentResult.rootPath);
+    if (!m_currentResult->rootPath.isEmpty()) {
+        openPath(m_currentResult->rootPath);
     }
 }
 
@@ -875,7 +878,7 @@ void AppController::handleClearAllRootsRequest()
     }
 
     m_rootSessions.clear();
-    m_currentResult = {};
+    m_currentResult = std::make_shared<const ScanResult>();
     m_activeFolderPath.clear();
     if (m_window) {
         m_window->treePanel()->setRootSessions({});
@@ -937,14 +940,14 @@ void AppController::updateTimelineFolderHistory()
         return;
     }
 
-    const QString folderPath = m_activeFolderPath.isEmpty() ? m_currentResult.rootPath : m_activeFolderPath;
-    if (folderPath.isEmpty() || m_currentResult.rootPath.isEmpty()) {
+    const QString folderPath = m_activeFolderPath.isEmpty() ? m_currentResult->rootPath : m_activeFolderPath;
+    if (folderPath.isEmpty() || m_currentResult->rootPath.isEmpty()) {
         m_window->timelinePanel()->setFolderHistory(QString(), {});
         return;
     }
 
     QString error;
-    const QVector<FolderHistoryPoint> points = m_snapshotService->folderHistory(m_currentResult.rootPath, folderPath, 40, &error);
+    const QVector<FolderHistoryPoint> points = m_snapshotService->folderHistory(m_currentResult->rootPath, folderPath, 40, &error);
     m_window->timelinePanel()->setFolderHistory(folderPath, points);
 }
 
@@ -957,7 +960,7 @@ void AppController::handleExpandAllRequest()
     // Expanding walks the whole model and re-lays out the view, so a whole drive root
     // (hundreds of thousands of folders) would freeze or crash the app. Warn first, and
     // refuse outright above a hard ceiling.
-    const int folderCount = m_currentResult.folders.size();
+    const int folderCount = m_currentResult->folders.size();
     constexpr int kExpandAllWarnThreshold = 200;
     constexpr int kExpandAllBlockThreshold = 5000;
 
@@ -1087,10 +1090,10 @@ void AppController::applyViewMetric(ViewMetric metric)
 RootSession *AppController::findRootSessionForPath(const QString &path)
 {
     for (RootSession &session : m_rootSessions) {
-        if (session.result.rootPath.isEmpty()) {
+        if (session.result->rootPath.isEmpty()) {
             continue;
         }
-        if (isSameOrDescendantPath(path, session.result.rootPath)) {
+        if (isSameOrDescendantPath(path, session.result->rootPath)) {
             return &session;
         }
     }
@@ -1100,10 +1103,10 @@ RootSession *AppController::findRootSessionForPath(const QString &path)
 const RootSession *AppController::findRootSessionForPath(const QString &path) const
 {
     for (const RootSession &session : m_rootSessions) {
-        if (session.result.rootPath.isEmpty()) {
+        if (session.result->rootPath.isEmpty()) {
             continue;
         }
-        if (isSameOrDescendantPath(path, session.result.rootPath)) {
+        if (isSameOrDescendantPath(path, session.result->rootPath)) {
             return &session;
         }
     }
@@ -1129,7 +1132,7 @@ void AppController::handleNavigatePath(const QString &path, bool showGraphTab)
 
     const QString targetPath = QDir::toNativeSeparators(info.absoluteFilePath());
     if (const RootSession *session = findRootSessionForPath(targetPath)) {
-        activateRootSession(session->result.rootPath, showGraphTab);
+        activateRootSession(session->result->rootPath, showGraphTab);
         focusFolderPath(targetPath, showGraphTab);
         return;
     }
@@ -1147,8 +1150,8 @@ void AppController::focusFolderPath(const QString &path, bool showGraphTab)
     }
 
     if (const RootSession *session = findRootSessionForPath(path)) {
-        if (m_currentResult.rootPath.compare(session->result.rootPath, Qt::CaseInsensitive) != 0) {
-            activateRootSession(session->result.rootPath, showGraphTab);
+        if (m_currentResult->rootPath.compare(session->result->rootPath, Qt::CaseInsensitive) != 0) {
+            activateRootSession(session->result->rootPath, showGraphTab);
         }
     }
 
@@ -1161,16 +1164,16 @@ void AppController::focusFolderPath(const QString &path, bool showGraphTab)
     syncFolderFocusUi(*entry, showGraphTab);
 }
 
-void AppController::syncActiveResultUi(const ScanResult &result, const QString &activeFolderPath, const QVector<SnapshotCompareRow> &compareRows, bool resetCompare)
+void AppController::syncActiveResultUi(const ScanResultPtr &result, const QString &activeFolderPath, const QVector<SnapshotCompareRow> &compareRows, bool resetCompare)
 {
-    if (!m_window) {
+    if (!m_window || !result) {
         return;
     }
 
     Logger::info(QStringLiteral("graph-debug syncActiveResultUi root=%1 active=%2 entries=%3 compareRows=%4 resetCompare=%5")
-                     .arg(result.rootPath)
+                     .arg(result->rootPath)
                      .arg(activeFolderPath)
-                     .arg(result.treeEntries.size())
+                     .arg(result->treeEntries.size())
                      .arg(compareRows.size())
                      .arg(resetCompare ? QStringLiteral("true") : QStringLiteral("false")));
 
@@ -1198,17 +1201,17 @@ void AppController::syncActiveResultUi(const ScanResult &result, const QString &
         graph->beginBatchUpdate();
         graph->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
         graph->setOtherThresholdPercent(m_otherThresholdPercent);
-        graph->setGraphData(result.rootPath, result.treeEntries, compareRows);
+        graph->setGraphData(result->rootPath, result->treeEntries, compareRows);
         graph->setSelectedPath(activeFolderPath);
         graph->setGraphRootPath(activeFolderPath);
         graph->endBatchUpdate();
     });
     m_window->heatmapPanel()->setActiveFolderPath(activeFolderPath);
-    m_window->heatmapPanel()->setHeatmapData(result.treeEntries, compareRows);
+    m_window->heatmapPanel()->setHeatmapData(result->treeEntries, compareRows);
     if (m_insightsPanel) {
         m_insightsPanel->setScanResult(result);
     }
-    m_window->timelinePanel()->setCurrentRootPath(result.rootPath);
+    m_window->timelinePanel()->setCurrentRootPath(result->rootPath);
     if (resetCompare) {
         m_window->timelinePanel()->resetCompareState();
     }
@@ -1262,7 +1265,7 @@ void AppController::syncFileSelectionUi(const TreeEntry &entry)
 
 const TreeEntry *AppController::findTreeEntry(const QString &path) const
 {
-    for (const TreeEntry &entry : m_currentResult.treeEntries) {
+    for (const TreeEntry &entry : m_currentResult->treeEntries) {
         if (entry.path.compare(path, Qt::CaseInsensitive) == 0) {
             return &entry;
         }
@@ -1404,7 +1407,7 @@ void AppController::handleExportDetailsCsvRequest()
         return;
     }
 
-    const QString suggested = QDir(QDir(m_activeFolderPath.isEmpty() ? m_currentResult.rootPath : m_activeFolderPath).absolutePath())
+    const QString suggested = QDir(QDir(m_activeFolderPath.isEmpty() ? m_currentResult->rootPath : m_activeFolderPath).absolutePath())
                                   .filePath(QStringLiteral("opentree-details.csv"));
     QString filePath = QFileDialog::getSaveFileName(m_window, "Export details as CSV", suggested, "CSV files (*.csv)");
     if (filePath.isEmpty()) {
@@ -1428,14 +1431,14 @@ void AppController::handleExportReportRequest(const QString &format)
         return;
     }
 
-    if (m_currentResult.rootPath.isEmpty()) {
+    if (m_currentResult->rootPath.isEmpty()) {
         QMessageBox::information(m_window, QStringLiteral("Export report"), QStringLiteral("Scan a folder first."));
         return;
     }
 
     const bool pdf = format.compare(QStringLiteral("pdf"), Qt::CaseInsensitive) == 0;
     const QString extension = pdf ? QStringLiteral("pdf") : QStringLiteral("html");
-    const QString suggested = QDir(m_currentResult.rootPath)
+    const QString suggested = QDir(m_currentResult->rootPath)
                                   .filePath(QStringLiteral("opentree-report.") + extension);
     const QString filter = pdf ? QStringLiteral("PDF files (*.pdf)") : QStringLiteral("HTML files (*.html)");
 
@@ -1449,8 +1452,8 @@ void AppController::handleExportReportRequest(const QString &format)
 
     QString error;
     const bool ok = pdf
-        ? ReportService::writePdfReport(filePath, m_currentResult, {}, &error)
-        : ReportService::writeHtmlReport(filePath, m_currentResult, {}, &error);
+        ? ReportService::writePdfReport(filePath, *m_currentResult, {}, &error)
+        : ReportService::writeHtmlReport(filePath, *m_currentResult, {}, &error);
 
     if (ok) {
         m_window->setStatusText(QStringLiteral("Report exported to %1").arg(filePath));
@@ -1539,14 +1542,14 @@ void AppController::handleCompareSnapshotRequest(int snapshotId)
         return;
     }
 
-    if (m_currentResult.rootPath.isEmpty()) {
+    if (m_currentResult->rootPath.isEmpty()) {
         QMessageBox::information(m_window, "Compare Snapshot", "Scan a folder first.");
         return;
     }
 
     QString error;
-    const SnapshotCompareResult compare = m_snapshotService->compareSnapshotToCurrent(snapshotId, m_currentResult, &error);
-    const QVector<SnapshotCompareRow> rows = m_snapshotService->compareSnapshotRows(snapshotId, m_currentResult, &error);
+    const SnapshotCompareResult compare = m_snapshotService->compareSnapshotToCurrent(snapshotId, *m_currentResult, &error);
+    const QVector<SnapshotCompareRow> rows = m_snapshotService->compareSnapshotRows(snapshotId, *m_currentResult, &error);
     const QVector<SnapshotFileEvent> events = m_snapshotService->snapshotFileEvents(snapshotId, &error);
     if (!compare.found) {
         QMessageBox::warning(m_window, "Compare Snapshot", error.isEmpty() ? "Nothing to compare." : error);
@@ -1560,24 +1563,24 @@ void AppController::handleCompareSnapshotRequest(int snapshotId)
 
     updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
         graph->beginBatchUpdate();
-        graph->setGraphData(m_currentResult.rootPath, m_currentResult.treeEntries, rows);
-        graph->setSelectedPath(m_activeFolderPath.isEmpty() ? m_currentResult.rootPath : m_activeFolderPath);
+        graph->setGraphData(m_currentResult->rootPath, m_currentResult->treeEntries, rows);
+        graph->setSelectedPath(m_activeFolderPath.isEmpty() ? m_currentResult->rootPath : m_activeFolderPath);
         if (!m_activeFolderPath.isEmpty()) {
             graph->setGraphRootPath(m_activeFolderPath);
         }
         graph->endBatchUpdate();
     });
     m_window->heatmapPanel()->setActiveFolderPath(m_activeFolderPath);
-    m_window->heatmapPanel()->setHeatmapData(m_currentResult.treeEntries, rows);
+    m_window->heatmapPanel()->setHeatmapData(m_currentResult->treeEntries, rows);
     m_window->setStatusText(QStringLiteral("Compared snapshot from %1").arg(compare.snapshotCreatedAt));
 }
 
-bool AppController::loadCachedRootResult(const QString &rootPath, ScanResult *result, QString *errorMessage) const
+bool AppController::loadCachedRootResult(const QString &rootPath, ScanResultPtr *result, QString *errorMessage) const
 {
     if (!result) {
         return false;
     }
-    *result = {};
+    *result = nullptr;
     const QString normalizedRoot = normalizeRootKey(rootPath);
     if (!m_folderRepository || !m_fileRepository || normalizedRoot.isEmpty()) {
         return false;
@@ -1596,8 +1599,7 @@ bool AppController::loadCachedRootResult(const QString &rootPath, ScanResult *re
         return false;
     }
 
-    *result = ScanService::buildTreeResult(normalizedRoot, folders, {});
-    result->usedEverything = false;
+    *result = std::make_shared<const ScanResult>(ScanService::buildTreeResult(normalizedRoot, folders, {}));
     return true;
 }
 

@@ -289,11 +289,11 @@ void ChartPanel::setIncludeFreeSpace(bool enabled)
     m_freeSpaceCheck->setChecked(enabled);
 }
 
-void ChartPanel::setScanResult(const ScanResult &result)
+void ChartPanel::setScanResult(const ScanResultPtr &result)
 {
     m_result = result;
     if (m_activeFolderPath.isEmpty()) {
-        m_activeFolderPath = result.rootPath;
+        m_activeFolderPath = result ? result->rootPath : QString();
     }
     rebuild();
 }
@@ -368,7 +368,7 @@ void ChartPanel::rebuild()
     m_slices.clear();
     m_activeFolderSize = 0;
 
-    if (m_result.treeEntries.isEmpty() || m_activeFolderPath.isEmpty()) {
+    if (m_result->treeEntries.isEmpty() || m_activeFolderPath.isEmpty()) {
         m_summaryLabel->setText("Chart: scan a folder to see pie, bar, and treemap charts for top folders and files.");
         m_pieView->update();
         m_barView->update();
@@ -378,7 +378,7 @@ void ChartPanel::rebuild()
 
     TreeEntry activeEntry;
     bool foundActive = false;
-    for (const TreeEntry &entry : m_result.treeEntries) {
+    for (const TreeEntry &entry : m_result->treeEntries) {
         if (entry.kind == TreeEntryKind::Folder && samePath(entry.path, m_activeFolderPath)) {
             activeEntry = entry;
             foundActive = true;
@@ -413,12 +413,12 @@ void ChartPanel::rebuild()
 
     QVector<TreeEntry> childFolders;
     QVector<FileEntry> childFiles;
-    for (const TreeEntry &entry : m_result.treeEntries) {
+    for (const TreeEntry &entry : m_result->treeEntries) {
         if (entry.kind == TreeEntryKind::Folder && samePath(entry.parentPath, activeEntry.path)) {
             childFolders.push_back(entry);
         }
     }
-    for (const FileEntry &file : m_result.files) {
+    for (const FileEntry &file : m_result->files) {
         if (samePath(file.parentPath, activeEntry.path)) {
             childFiles.push_back(file);
         }
@@ -946,14 +946,14 @@ QVector<ChartPanel::TreemapNode> ChartPanel::buildTreemapNodes(const QString &ro
     qint64 otherBytes = 0;
     qint64 parentSize = m_activeFolderSize;
     if (depth > 0) {
-        for (const TreeEntry &candidate : m_result.treeEntries) {
+        for (const TreeEntry &candidate : m_result->treeEntries) {
             if (candidate.path.compare(rootPath, Qt::CaseInsensitive) == 0) {
                 parentSize = candidate.size;
                 break;
             }
         }
     }
-    for (const TreeEntry &entry : m_result.treeEntries) {
+    for (const TreeEntry &entry : m_result->treeEntries) {
         if (entry.parentPath.compare(rootPath, Qt::CaseInsensitive) != 0) {
             continue;
         }

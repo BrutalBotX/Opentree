@@ -111,7 +111,7 @@ QVariant FolderTreeModel::headerData(int section, Qt::Orientation orientation, i
 
 void FolderTreeModel::setEntries(const QVector<TreeEntry> &entries, const QString &rootPath)
 {
-    setRootSessions({RootSession {rootPath, ScanResult {rootPath, {}, {}, entries, false}}});
+    setRootSessions({RootSession {rootPath, std::make_shared<const ScanResult>(ScanResult {rootPath, {}, {}, entries, false})}});
 }
 
 void FolderTreeModel::setRootSessions(const QVector<RootSession> &sessions)
@@ -126,13 +126,13 @@ void FolderTreeModel::setRootSessions(const QVector<RootSession> &sessions)
     nodes.insert(m_root->entry.path, m_root.get());
 
     for (const RootSession &session : sessions) {
-        if (session.result.rootPath.isEmpty()) {
+        if (session.result->rootPath.isEmpty()) {
             continue;
         }
 
-        for (const TreeEntry &entry : session.result.treeEntries) {
+        for (const TreeEntry &entry : session.result->treeEntries) {
             QString parentKey = entry.parentPath;
-            if (entry.path.compare(session.result.rootPath, Qt::CaseInsensitive) == 0) {
+            if (entry.path.compare(session.result->rootPath, Qt::CaseInsensitive) == 0) {
                 parentKey = m_root->entry.path;
             }
 

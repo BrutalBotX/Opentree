@@ -27,7 +27,7 @@ public:
 
     explicit ChartPanel(QWidget *parent = nullptr);
 
-    void setScanResult(const ScanResult &result);
+    void setScanResult(const ScanResultPtr &result);
     void setActiveFolderPath(const QString &path);
     void setOtherThresholdPercent(double percent);
     void setViewMetric(ViewMetric metric);
@@ -95,7 +95,7 @@ private:
     QWidget *m_pieView;
     QWidget *m_barView;
     QWidget *m_treemapView;
-    ScanResult m_result;
+    ScanResultPtr m_result = std::make_shared<const ScanResult>();
     QString m_activeFolderPath;
     QVector<ChartSlice> m_slices;
     mutable QVector<TreemapNode> m_treemapNodes;

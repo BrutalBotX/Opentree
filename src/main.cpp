@@ -75,13 +75,16 @@ int runBackgroundSnapshotMode()
             QCoreApplication::processEvents();
         }
 
-        const opentree::ScanResult result = scanService.lastResult();
-        if (result.rootPath.isEmpty()) {
+        const opentree::ScanResultPtr result = scanService.takeLastResult();
+        if (!result) {
+            continue;
+        }
+        if (result->rootPath.isEmpty()) {
             continue;
         }
 
         QString error;
-        snapshotService.createSnapshot(result, configService.snapshotThresholdBytes(), &error);
+        snapshotService.createSnapshot(*result, configService.snapshotThresholdBytes(), &error);
     }
 
     return 0;
@@ -372,7 +375,7 @@ int runChartPreviewMode(const QString &outputPath, const QString &rawMode)
     const bool includeFreeSpace = rawMode.contains(QStringLiteral("freespace"), Qt::CaseInsensitive);
 
     const QString root = includeFreeSpace ? QStringLiteral("C:/") : QStringLiteral("C:/ChartDemo");
-    const opentree::ScanResult result = buildPreviewScanResult(root);
+    const opentree::ScanResultPtr result = std::make_shared<const opentree::ScanResult>(buildPreviewScanResult(root));
 
     opentree::ChartPanel panel;
     panel.resize(1200, 760);
@@ -409,7 +412,7 @@ int runDetailsPreviewMode(const QString &outputPath, const QString &mode)
     opentree::Logger::initialize();
 
     const QString root = QStringLiteral("C:/ChartDemo");
-    const opentree::ScanResult result = buildPreviewScanResult(root);
+    const opentree::ScanResultPtr result = std::make_shared<const opentree::ScanResult>(buildPreviewScanResult(root));
 
     opentree::DetailsTablePanel panel;
     panel.resize(1200, 700);
@@ -433,7 +436,7 @@ int runExportDetailsPreviewMode(const QString &outputPath)
     opentree::Logger::initialize();
 
     const QString root = QStringLiteral("C:/ChartDemo");
-    const opentree::ScanResult result = buildPreviewScanResult(root);
+    const opentree::ScanResultPtr result = std::make_shared<const opentree::ScanResult>(buildPreviewScanResult(root));
 
     opentree::DetailsTablePanel panel;
     panel.setScanResult(result);
@@ -780,6 +783,64 @@ int runFindDuplicatesMode(const QString &path, int minimumMB, bool includeSystem
 // Opens a real folder, waits for the scan to finish, then grabs the whole window so the
 // layout (toolbar, drive selector, tabs) can be inspected without a desktop session.
 // Usage: OpenTree.exe --render-window-preview <out.png> [path] [tabIndex]
+// Smoke test for the lazy WebEngine start: runs the normal application, opens the Graph tab
+// from the main event loop and quits. No nested event loops, so it exercises the same path a
+// user clicking the tab takes.
+int runGraphSmokeMode(const QString &path)
+{
+    QApplication app(__argc, __argv);
+    opentree::Logger::initialize();
+
+    opentree::ConfigService configService;
+    opentree::DatabaseManager databaseManager;
+    if (!databaseManager.initialize()) {
+        return 1;
+    }
+
+    opentree::AppController controller;
+    opentree::MainWindow window;
+    controller.attachWindow(&window);
+    window.resize(1400, 860);
+    window.show();
+
+    controller.openPath(path);
+
+    // Let the scan finish, then switch to the graph tab from the main loop.
+    QTimer::singleShot(4000, &window, [&window]() {
+        window.showGraphTab();
+    });
+    if (qEnvironmentVariableIsSet("OPENTREE_SMOKE_LEAVE_GRAPH")) {
+        // Switch back to a non-graph tab: the renderer should be discarded and its memory
+        // returned while the user works elsewhere.
+        QTimer::singleShot(8000, &window, [&window]() {
+            window.setCurrentTabIndex(8);
+        });
+        QTimer::singleShot(12000, &window, [&window]() {
+            window.close();
+        });
+    } else {
+        QTimer::singleShot(9000, &window, [&window]() {
+            window.close();
+        });
+    }
+
+    const int code = app.exec();
+
+    QStringList report;
+    report << QStringLiteral("Graph smoke test finished for %1").arg(path);
+    report << QStringLiteral("exit code: %1").arg(code);
+    const QString reportPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(QStringLiteral("opentree-graph-smoke.txt"));
+    QFile reportFile(reportPath);
+    if (reportFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&reportFile);
+        for (const QString &line : report) {
+            stream << line << '\n';
+        }
+    }
+    return code;
+}
+
 int runWindowPreviewMode(const QString &outputPath, const QString &path, int tabIndex)
 {
     QApplication app(__argc, __argv);
@@ -909,6 +970,23 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
         return 0;
     }
 
+    // Give late-created widgets (the WebEngine graph view when the Graph tab is opened for
+    // the first time) a moment to initialise before grabbing the window; capturing Chromium
+    // in the middle of its first paint is what crashes.
+    if (tabIndex == 0) {
+        QEventLoop settleLoop;
+        QTimer::singleShot(1500, &settleLoop, &QEventLoop::quit);
+        settleLoop.exec();
+    }
+
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_NO_GRAB")) {
+        // Lifecycle check without capturing (used to tell app bugs apart from grab bugs).
+        QEventLoop idleLoop;
+        QTimer::singleShot(800, &idleLoop, &QEventLoop::quit);
+        idleLoop.exec();
+        return 0;
+    }
+
     const bool saved = window.grab().save(outputPath);
     return saved ? 0 : 1;
 }
@@ -919,7 +997,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.8.0"));
+    QApplication::setApplicationVersion(QStringLiteral("0.9.0"));
 
     QString startupPath;
     QString scanTestPath;
@@ -940,6 +1018,7 @@ int main(int argc, char *argv[])
     QString insightsPath;
     int insightsStaleDays = 365;
     QString ledgerTestPath;
+    QString graphSmokePath;
 
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
@@ -966,6 +1045,10 @@ int main(int argc, char *argv[])
             if (index + 1 < argc && !QString::fromLocal8Bit(argv[index + 1]).startsWith('-')) {
                 detailsPreviewMode = QString::fromLocal8Bit(argv[++index]);
             }
+            continue;
+        }
+        if (argument == "--smoke-graph" && index + 1 < argc) {
+            graphSmokePath = QString::fromLocal8Bit(argv[++index]);
             continue;
         }
         if (argument == "--test-ledger" && index + 1 < argc) {
@@ -1016,6 +1099,10 @@ int main(int argc, char *argv[])
         if (argument == "--open-path" && index + 1 < argc) {
             startupPath = QString::fromLocal8Bit(argv[++index]);
         }
+    }
+
+    if (!graphSmokePath.isEmpty()) {
+        return runGraphSmokeMode(graphSmokePath);
     }
 
     if (!ledgerTestPath.isEmpty()) {

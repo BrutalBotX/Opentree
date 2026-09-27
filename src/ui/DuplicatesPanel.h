@@ -24,7 +24,7 @@ class DuplicatesPanel : public QWidget {
 public:
     explicit DuplicatesPanel(ConfigService *configService, QWidget *parent = nullptr);
 
-    void setScanResult(const ScanResult &result);
+    void setScanResult(const ScanResultPtr &result);
 
 public slots:
     void startScan();
@@ -43,7 +43,7 @@ private:
     QCheckBox *m_skipSystemCheck;
     QPushButton *m_scanButton;
     QTreeWidget *m_tree;
-    QVector<FileEntry> m_files;
+    ScanResultPtr m_result = std::make_shared<const ScanResult>();
     QFutureWatcher<DedupResult> m_watcher;
     QString m_rootPath;
 };

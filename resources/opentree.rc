@@ -17,11 +17,11 @@ BEGIN
         BEGIN
             VALUE "CompanyName", "OpenTree"
             VALUE "FileDescription", "OpenTree disk usage explorer"
-            VALUE "FileVersion", "0.8.0"
+            VALUE "FileVersion", "0.9.0"
             VALUE "InternalName", "OpenTree"
             VALUE "OriginalFilename", "OpenTree.exe"
             VALUE "ProductName", "OpenTree"
-            VALUE "ProductVersion", "0.8.0"
+            VALUE "ProductVersion", "0.9.0"
         END
     END
     BLOCK "VarFileInfo"

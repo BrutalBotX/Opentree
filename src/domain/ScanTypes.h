@@ -4,6 +4,8 @@
 #include <QString>
 #include <QVector>
 
+#include <memory>
+
 namespace opentree {
 
 struct FileEntry {
@@ -56,9 +58,13 @@ struct ScanResult {
     bool usedEverything = false;
 };
 
+// Scan results are large (a whole-drive scan is hundreds of megabytes of paths), so they are
+// shared instead of copied: one instance is passed around by pointer.
+using ScanResultPtr = std::shared_ptr<const ScanResult>;
+
 struct RootSession {
     QString rootPath;
-    ScanResult result;
+    ScanResultPtr result;
 };
 
 }

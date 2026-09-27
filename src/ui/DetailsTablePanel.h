@@ -60,7 +60,7 @@ class DetailsTablePanel : public QWidget {
 public:
     explicit DetailsTablePanel(QWidget *parent = nullptr);
 
-    void setScanResult(const ScanResult &result);
+    void setScanResult(const ScanResultPtr &result);
     void setActiveFolderPath(const QString &path);
     void setViewMetric(ViewMetric metric);
     bool isFlatMode() const;
@@ -80,7 +80,7 @@ private:
     QPushButton *m_exportButton;
     QTableView *m_table;
     DetailsTableModel *m_model;
-    ScanResult m_result;
+    ScanResultPtr m_result = std::make_shared<const ScanResult>();
     QString m_activeFolderPath;
     ViewMetric m_viewMetric = ViewMetric::Size;
 };

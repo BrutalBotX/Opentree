@@ -69,7 +69,7 @@ private:
     void reloadThemes();
     void applyCurrentTheme();
     void applyViewMetric(ViewMetric metric);
-    void syncActiveResultUi(const ScanResult &result, const QString &activeFolderPath, const QVector<SnapshotCompareRow> &compareRows, bool resetCompare);
+    void syncActiveResultUi(const ScanResultPtr &result, const QString &activeFolderPath, const QVector<SnapshotCompareRow> &compareRows, bool resetCompare);
     void syncFolderFocusUi(const TreeEntry &entry, bool showGraphTab);
     void syncFileSelectionUi(const TreeEntry &entry);
     void handleNavigatePath(const QString &path, bool showGraphTab);
@@ -90,11 +90,11 @@ private:
     void updateTimelineFolderHistory();
     void refreshRecentRoots();
     void maybeShowEverythingPrompt();
-    bool loadCachedRootResult(const QString &rootPath, ScanResult *result, QString *errorMessage = nullptr) const;
+    bool loadCachedRootResult(const QString &rootPath, ScanResultPtr *result, QString *errorMessage = nullptr) const;
 
     QString m_activeFolderPath;
     QString m_lastRequestedRootPath;
-    ScanResult m_currentResult;
+    ScanResultPtr m_currentResult = std::make_shared<const ScanResult>();
     QVector<RootSession> m_rootSessions;
     double m_otherThresholdPercent = 1.0;
     ViewMetric m_viewMetric = ViewMetric::Size;
