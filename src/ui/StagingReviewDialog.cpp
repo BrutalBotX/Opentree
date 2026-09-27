@@ -22,7 +22,7 @@ QString itemCountText(int count)
 
 } // namespace
 
-StagingReviewDialog::StagingReviewDialog(Action action, const QVector<StagingCandidate> &items,
+StagingReviewDialog::StagingReviewDialog(Action action, const QVector<StageRequest> &items,
                                          const QStringList &skipped, QWidget *parent)
     : QDialog(parent)
 {
@@ -42,7 +42,7 @@ StagingReviewDialog::StagingReviewDialog(Action action, const QVector<StagingCan
     layout->addWidget(headline);
 
     m_itemCount = items.size();
-    for (const StagingCandidate &candidate : items) {
+    for (const StageRequest &candidate : items) {
         m_totalBytes += candidate.size;
     }
 
@@ -57,7 +57,7 @@ StagingReviewDialog::StagingReviewDialog(Action action, const QVector<StagingCan
     table->setColumnWidth(2, 90);
     table->setRowCount(items.size());
     for (int row = 0; row < items.size(); ++row) {
-        const StagingCandidate &candidate = items[row];
+        const StageRequest &candidate = items[row];
         table->setItem(row, 0, makeTextItem(candidate.path, candidate.path));
         table->setItem(row, 1, makeNumberItem(SizeFormatter::formatBytes(candidate.size), candidate.size));
         table->setItem(row, 2, makeTextItem(candidate.isFolder ? QStringLiteral("Folder") : QStringLiteral("File")));

@@ -89,7 +89,7 @@ private:
     void refreshTimeline();
     void updateTimelineFolderHistory();
     void refreshRecentRoots();
-    void updateTrashSelection();
+    void maybeShowEverythingPrompt();
     bool loadCachedRootResult(const QString &rootPath, ScanResult *result, QString *errorMessage = nullptr) const;
 
     QString m_activeFolderPath;

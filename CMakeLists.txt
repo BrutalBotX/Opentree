@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.6.1 LANGUAGES CXX)
+project(OpenTree VERSION 0.7.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -70,6 +70,12 @@ qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/services/ReportService.cpp
     src/services/AnalysisService.h
     src/services/AnalysisService.cpp
+    src/ui/EntryActions.h
+    src/ui/EntryActions.cpp
+    src/ui/EverythingPromptDialog.h
+    src/ui/EverythingPromptDialog.cpp
+    src/utils/ProcessUtils.h
+    src/utils/ProcessUtils.cpp
     src/ui/InsightsPanel.h
     src/ui/InsightsPanel.cpp
     src/ui/DuplicatesPanel.h
@@ -149,7 +155,11 @@ if (TARGET Qt6::Test)
         src/services/AnalysisService.cpp
         src/services/ReportService.cpp
         src/services/SnapshotService.cpp
+        src/services/VirtualTrashService.cpp
+        src/integrations/EverythingClient.cpp
+        src/ui/EntryActions.cpp
         src/ui/ThemeManager.cpp
+        src/utils/Logger.cpp
     )
     target_include_directories(OpenTreeTests PRIVATE src third_party/include)
     target_link_libraries(OpenTreeTests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Test)

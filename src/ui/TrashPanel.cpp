@@ -20,7 +20,6 @@ TrashPanel::TrashPanel(VirtualTrashService *trashService, QWidget *parent)
     , m_trashService(trashService)
     , m_summaryLabel(new QLabel(this))
     , m_statusLabel(new QLabel(this))
-    , m_stageButton(new QPushButton(QStringLiteral("Stage Current Selection"), this))
     , m_unstageButton(new QPushButton(QStringLiteral("Remove from List"), this))
     , m_clearButton(new QPushButton(QStringLiteral("Clear List"), this))
     , m_recycleButton(new QPushButton(QStringLiteral("Move to Recycle Bin..."), this))
@@ -49,8 +48,6 @@ TrashPanel::TrashPanel(VirtualTrashService *trashService, QWidget *parent)
     m_table->setColumnWidth(4, 200);
     m_table->sortItems(1, Qt::DescendingOrder); // largest first by default
 
-    m_stageButton->setToolTip(QStringLiteral("Add the item selected in the tree to the staged list.\n"
-                                             "This only records the intent; nothing is deleted."));
     m_unstageButton->setToolTip(QStringLiteral("Remove the selected row from the staged list."));
     m_clearButton->setToolTip(QStringLiteral("Empty the staged list. Nothing on disk is affected."));
     m_recycleButton->setToolTip(QStringLiteral("Review the staged items, then move them to the Windows Recycle Bin."));
@@ -58,7 +55,6 @@ TrashPanel::TrashPanel(VirtualTrashService *trashService, QWidget *parent)
 
     auto *buttonRow = new QHBoxLayout;
     buttonRow->setContentsMargins(0, 0, 0, 0);
-    buttonRow->addWidget(m_stageButton, 0);
     buttonRow->addWidget(m_unstageButton, 0);
     buttonRow->addWidget(m_clearButton, 0);
     buttonRow->addStretch(1);
@@ -69,18 +65,11 @@ TrashPanel::TrashPanel(VirtualTrashService *trashService, QWidget *parent)
     layout->addLayout(buttonRow);
     layout->addWidget(m_table, 1);
 
-    connect(m_stageButton, &QPushButton::clicked, this, &TrashPanel::stageSelection);
     connect(m_unstageButton, &QPushButton::clicked, this, &TrashPanel::unstageSelected);
     connect(m_clearButton, &QPushButton::clicked, this, &TrashPanel::clearStaged);
     connect(m_recycleButton, &QPushButton::clicked, this, &TrashPanel::moveStagedToRecycleBin);
 
     refresh();
-}
-
-void TrashPanel::setSelection(const TreeEntry &entry)
-{
-    m_selection = entry;
-    m_stageButton->setEnabled(!entry.path.isEmpty());
 }
 
 void TrashPanel::refresh()
@@ -129,29 +118,8 @@ void TrashPanel::refresh()
               .arg(items.size())
               .arg(items.size() == 1 ? QString() : QStringLiteral("s"))
               .arg(SizeFormatter::formatBytes(totalBytes))
-        : QStringLiteral("Trash: nothing staged. Select an item in the tree and press \"Stage Current Selection\"."));
-}
-
-void TrashPanel::stageSelection()
-{
-    if (!m_trashService || m_selection.path.isEmpty()) {
-        return;
-    }
-
-    QString error;
-    if (!m_trashService->stage(m_selection.path, m_selection.size,
-                               m_selection.kind == TreeEntryKind::Folder,
-                               m_selection.parentPath,
-                               QStringLiteral("Staged from the tree"),
-                               &error)) {
-        QMessageBox::warning(this, QStringLiteral("Stage for deletion"), error);
-        return;
-    }
-
-    m_statusLabel->setText(QStringLiteral("Staged %1. Review it below, then move it to the Recycle Bin when ready.")
-                               .arg(m_selection.path));
-    m_statusLabel->setVisible(true);
-    refresh();
+        : QStringLiteral("Trash: nothing staged. Right-click a file or folder anywhere in OpenTree and choose "
+                         "\"Stage for Deletion\" to add it here."));
 }
 
 void TrashPanel::unstageSelected()
@@ -213,7 +181,7 @@ void TrashPanel::moveStagedToRecycleBin()
         return;
     }
 
-    QVector<StagingCandidate> candidates;
+    QVector<StageRequest> candidates;
     candidates.reserve(items.size());
     QStringList skipped;
     for (const TrashItem &item : items) {
@@ -222,7 +190,7 @@ void TrashPanel::moveStagedToRecycleBin()
             skipped << QStringLiteral("%1 (%2)").arg(item.path, reason);
             continue;
         }
-        StagingCandidate candidate;
+        StageRequest candidate;
         candidate.path = item.path;
         candidate.size = item.size;
         candidate.isFolder = item.isFolder;
@@ -245,7 +213,7 @@ void TrashPanel::moveStagedToRecycleBin()
     int removed = 0;
     qint64 removedBytes = 0;
     QStringList failures;
-    for (const StagingCandidate &candidate : candidates) {
+    for (const StageRequest &candidate : candidates) {
         QString moveError;
         if (!VirtualTrashService::moveToRecycleBin(candidate.path, &moveError)) {
             failures << moveError;

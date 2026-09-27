@@ -62,9 +62,8 @@ void ScanService::scanPath(const QString &rootPath)
 
     const QStringList excluded = m_configService->excludedPatterns();
     const bool useEverything = m_configService->useEverything();
-    const QString everythingExecutablePath = m_configService->resolvedEverythingExecutablePath();
-    m_watcher.setFuture(QtConcurrent::run([this, normalizedRoot, excluded, useEverything, everythingExecutablePath]() {
-        return performScan(normalizedRoot, excluded, useEverything, everythingExecutablePath);
+    m_watcher.setFuture(QtConcurrent::run([this, normalizedRoot, excluded, useEverything]() {
+        return performScan(normalizedRoot, excluded, useEverything);
     }));
 }
 
@@ -85,18 +84,16 @@ QString ScanService::lastError() const
 
 ScanResult ScanService::performScan(const QString &rootPath,
                                     const QStringList &excludedPatterns,
-                                    bool useEverything,
-                                    const QString &everythingExecutablePath)
+                                    bool useEverything)
 {
     if (useEverything && m_everythingClient) {
         emit scanProgress(5, QStringLiteral("Querying Everything index"));
 
+        // The SDK only talks to a running Everything. OpenTree never launches it by itself:
+        // when it is not running the filesystem walk takes over and the UI offers the
+        // download/start options instead.
         QString everythingError;
-        bool everythingReady = m_everythingClient->testConnection(&everythingError);
-        if (!everythingReady && !everythingExecutablePath.isEmpty()) {
-            emit scanProgress(8, QStringLiteral("Starting Everything"));
-            everythingReady = m_everythingClient->ensureEverythingRunning(everythingExecutablePath, &everythingError);
-        }
+        const bool everythingReady = m_everythingClient->testConnection(&everythingError);
 
         if (everythingReady) {
             QVector<FileEntry> everythingFiles;

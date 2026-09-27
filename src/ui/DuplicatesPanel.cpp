@@ -5,6 +5,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QPushButton>
 #include <QSpinBox>
 #include <QTreeWidget>
@@ -13,6 +14,7 @@
 #include <QtConcurrent>
 
 #include "services/ConfigService.h"
+#include "ui/EntryActions.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
@@ -64,6 +66,38 @@ DuplicatesPanel::DuplicatesPanel(ConfigService *configService, QWidget *parent)
     m_tree->setSortingEnabled(false);
     m_tree->setEditTriggers(QAbstractItemView::NoEditTriggers);
     connect(m_tree, &QTreeWidget::itemActivated, this, &DuplicatesPanel::handleItemActivated);
+    m_tree->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_tree, &QWidget::customContextMenuRequested, this, [this](const QPoint &position) {
+        QTreeWidgetItem *item = m_tree->itemAt(position);
+        if (!item) {
+            return;
+        }
+        const QString path = item->data(0, Qt::UserRole).toString();
+        if (path.isEmpty()) {
+            return; // Group headers have no path of their own.
+        }
+
+        TreeEntry entry;
+        entry.kind = TreeEntryKind::File;
+        entry.path = path;
+        entry.size = item->data(0, Qt::UserRole + 1).toLongLong();
+        entry.name = QFileInfo(path).fileName();
+        entry.parentPath = QFileInfo(path).path();
+
+        QMenu menu(this);
+        QAction *openAction = menu.addAction(QStringLiteral("Open"));
+        menu.addSeparator();
+        const SharedEntryActions shared = addSharedEntryActions(menu);
+        QAction *selected = menu.exec(m_tree->viewport()->mapToGlobal(position));
+        if (!selected) {
+            return;
+        }
+        if (selected == openAction) {
+            emit entryActivated(entry);
+            return;
+        }
+        runSharedEntryAction(this, selected, entry, shared);
+    });
 
     auto *topRow = new QHBoxLayout;
     topRow->setContentsMargins(0, 0, 0, 0);

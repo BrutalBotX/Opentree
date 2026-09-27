@@ -8,6 +8,7 @@
 #include <QHBoxLayout>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QPainter>
 #include <QPushButton>
 #include <QStyle>
@@ -19,6 +20,7 @@
 #include <algorithm>
 #include <utility>
 
+#include "ui/EntryActions.h"
 #include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 
@@ -289,6 +291,32 @@ DetailsTablePanel::DetailsTablePanel(QWidget *parent)
     m_table->setItemDelegateForColumn(DetailsTableModel::PercentColumn, new PercentBarDelegate(m_table));
 
     connect(m_table, &QTableView::clicked, this, &DetailsTablePanel::handleRowActivated);
+    m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_table, &QWidget::customContextMenuRequested, this, [this](const QPoint &position) {
+        const QModelIndex index = m_table->indexAt(position);
+        if (!index.isValid()) {
+            return;
+        }
+        const TreeEntry entry = m_model->entryAt(index.row());
+        if (entry.path.isEmpty()) {
+            return;
+        }
+
+        QMenu menu(this);
+        QAction *openAction = menu.addAction(QStringLiteral("Open"));
+        menu.addSeparator();
+        const SharedEntryActions shared = addSharedEntryActions(menu);
+        QAction *selected = menu.exec(m_table->viewport()->mapToGlobal(position));
+        if (!selected) {
+            return;
+        }
+        if (selected == openAction) {
+            emit entryActivated(entry);
+            return;
+        }
+        runSharedEntryAction(this, selected, entry, shared);
+    });
+
     connect(m_flatCheck, &QCheckBox::toggled, this, [this](bool) { rebuild(); });
     m_exportButton->setToolTip(QStringLiteral("Save the current table as a CSV file"));
     connect(m_exportButton, &QPushButton::clicked, this, [this]() { emit exportRequested(); });

@@ -64,6 +64,11 @@ ThemeDefinition makeTheme(const QString &id, const QString &name, const QString 
         "QPushButton#destructiveButton:hover { background: #B0392F; color: #FFFFFF; border: 1px solid #FF8A80; }"
         "QPushButton#destructiveButton:focus { border: 1px solid #FF8A80; }"
         "QPushButton#destructiveButton:disabled { color: rgba(255,138,128,0.4); border-color: rgba(176,57,47,0.4); }"
+        // Same destructive treatment for tool buttons (the details pane uses those).
+        "QToolButton#destructiveButton { color: #FF8A80; border: 1px solid #B0392F; }"
+        "QToolButton#destructiveButton:hover { background: #B0392F; color: #FFFFFF; border: 1px solid #FF8A80; }"
+        "QToolButton#destructiveButton:focus { border: 1px solid #FF8A80; }"
+        "QToolButton#destructiveButton:disabled { color: rgba(255,138,128,0.4); border-color: rgba(176,57,47,0.4); }"
         "QLineEdit { background: %5; color: %2; border: 1px solid %3; padding: 6px 8px; selection-background-color: %3; selection-color: %4; }"
         "QLineEdit:focus { border: 1px solid %7; }"
         "QComboBox, QSpinBox, QTimeEdit, QPlainTextEdit, QTextEdit { background: %5; color: %2; border: 1px solid %3; selection-background-color: %3; selection-color: %4; }"

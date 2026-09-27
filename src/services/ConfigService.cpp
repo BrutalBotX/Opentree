@@ -1,4 +1,5 @@
 #include "services/ConfigService.h"
+#include "integrations/EverythingClient.h"
 
 #include <QDir>
 #include <QFileInfo>
@@ -229,22 +230,29 @@ QString ConfigService::resolvedEverythingExecutablePath() const
         return configured;
     }
 
-    QStringList candidates;
-    candidates << QStringLiteral("C:/Program Files/Everything/Everything.exe")
-               << QStringLiteral("C:/Program Files (x86)/Everything/Everything.exe");
+    return EverythingClient::detectInstalledExecutable();
+}
 
-    const QString localAppData = QDir::fromNativeSeparators(qEnvironmentVariable("LOCALAPPDATA"));
-    if (!localAppData.isEmpty()) {
-        candidates << localAppData + QStringLiteral("/Programs/Everything/Everything.exe");
-    }
+bool ConfigService::everythingPromptShown() const
+{
+    return m_settings.value("Scanning/EverythingPromptShown", false).toBool();
+}
 
-    for (const QString &candidate : candidates) {
-        if (QFileInfo::exists(candidate)) {
-            return QDir::toNativeSeparators(candidate);
-        }
-    }
+void ConfigService::setEverythingPromptShown(bool shown)
+{
+    m_settings.setValue("Scanning/EverythingPromptShown", shown);
+    m_settings.sync();
+}
 
-    return {};
+bool ConfigService::everythingPromptSuppressed() const
+{
+    return m_settings.value("Scanning/EverythingPromptSuppressed", false).toBool();
+}
+
+void ConfigService::setEverythingPromptSuppressed(bool suppressed)
+{
+    m_settings.setValue("Scanning/EverythingPromptSuppressed", suppressed);
+    m_settings.sync();
 }
 
 bool ConfigService::snapshotScheduleEnabled() const
@@ -315,6 +323,8 @@ void ConfigService::ensureDefaults()
         m_settings.setValue("Scanning/ExclusionPatterns", "$Recycle.Bin;System Volume Information");
         m_settings.setValue("Scanning/EverythingExecutablePath", QString());
         m_settings.setValue("Scanning/UseEverything", true);
+        m_settings.setValue("Scanning/EverythingPromptShown", false);
+        m_settings.setValue("Scanning/EverythingPromptSuppressed", false);
         m_settings.setValue("Snapshots/Threshold", 50LL * 1024 * 1024);
         m_settings.setValue("Snapshots/RetentionDays", 30);
         m_settings.setValue("Snapshots/ScheduleEnabled", false);

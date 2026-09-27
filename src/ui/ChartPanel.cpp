@@ -21,6 +21,8 @@
 #include <QTabWidget>
 #include <QVBoxLayout>
 
+#include "ui/EntryActions.h"
+
 #include <algorithm>
 #include <cmath>
 #include <limits>
@@ -151,16 +153,17 @@ protected:
 
             QMenu menu(this);
             QAction *openAction = menu.addAction("Open");
-            QAction *copyPathAction = menu.addAction("Copy Path");
+            menu.addSeparator();
+            const SharedEntryActions shared = addSharedEntryActions(menu);
             menu.addSeparator();
             QAction *openGraphAction = menu.addAction("Open in Graph View");
             QAction *selectedAction = menu.exec(event->globalPos());
             if (selectedAction == openAction) {
                 emit m_owner->entryOpenRequested(node->entry);
-            } else if (selectedAction == copyPathAction) {
-                emit m_owner->entryCopyPathRequested(node->entry);
             } else if (selectedAction == openGraphAction) {
                 emit m_owner->entryOpenInGraphRequested(node->entry);
+            } else if (selectedAction) {
+                runSharedEntryAction(m_owner, selectedAction, node->entry, shared);
             }
             return;
         }
@@ -173,16 +176,17 @@ protected:
 
         QMenu menu(this);
         QAction *openAction = menu.addAction("Open");
-        QAction *copyPathAction = menu.addAction("Copy Path");
+        menu.addSeparator();
+        const SharedEntryActions shared = addSharedEntryActions(menu);
         menu.addSeparator();
         QAction *openGraphAction = menu.addAction("Open in Graph View");
         QAction *selectedAction = menu.exec(event->globalPos());
         if (selectedAction == openAction) {
             emit m_owner->entryOpenRequested(slice->entry);
-        } else if (selectedAction == copyPathAction) {
-            emit m_owner->entryCopyPathRequested(slice->entry);
         } else if (selectedAction == openGraphAction) {
             emit m_owner->entryOpenInGraphRequested(slice->entry);
+        } else if (selectedAction) {
+            runSharedEntryAction(m_owner, selectedAction, slice->entry, shared);
         }
     }
 

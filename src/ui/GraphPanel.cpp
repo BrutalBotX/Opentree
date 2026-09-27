@@ -1,8 +1,7 @@
 #include "ui/GraphPanel.h"
 
 #include <QHash>
-#include <QCheckBox>
-#include <QDir>
+#include <QCheckBox>#include <QDir>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -16,6 +15,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ui/EntryActions.h"
 #include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 #include "utils/Logger.h"
@@ -392,8 +392,14 @@ void GraphPanel::showNodeContextMenu(const QString &nodeId, int screenX, int scr
     menu.addSeparator();
     QAction *extensionsAction = menu.addAction(QStringLiteral("View in Extensions"));
     QAction *heatmapAction = menu.addAction(QStringLiteral("View in Heatmap"));
+    menu.addSeparator();
+    const SharedEntryActions shared = addSharedEntryActions(menu);
     QAction *selected = menu.exec(QPoint(screenX, screenY));
     if (!selected) {
+        return;
+    }
+
+    if (runSharedEntryAction(this, selected, *entry, shared)) {
         return;
     }
 

@@ -5,16 +5,12 @@
 #include <QStringList>
 #include <QVector>
 
+#include "ui/EntryActions.h"
+
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QTableWidget)
 
 namespace opentree {
-
-struct StagingCandidate {
-    QString path;
-    qint64 size = 0;
-    bool isFolder = false;
-};
 
 // Single review step for staging items in the virtual trash or sending them to the Windows
 // Recycle Bin. It lists exactly what will be affected and asks for one confirmation instead
@@ -28,7 +24,7 @@ public:
         MoveToRecycleBin,
     };
 
-    StagingReviewDialog(Action action, const QVector<StagingCandidate> &items,
+    StagingReviewDialog(Action action, const QVector<StageRequest> &items,
                         const QStringList &skipped, QWidget *parent = nullptr);
 
     int itemCount() const { return m_itemCount; }

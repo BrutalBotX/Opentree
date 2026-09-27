@@ -49,6 +49,7 @@ private:
     QAction *m_openAction;
     QAction *m_showInExplorerAction;
     QAction *m_copyPathAction;
+    QAction *m_stageAction;
 };
 
 }

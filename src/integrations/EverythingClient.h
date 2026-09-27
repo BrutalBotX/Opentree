@@ -26,13 +26,20 @@ public:
     QString availabilityError() const;
     QString libraryPath() const;
 
+    // The voidtools download page shown to users who do not have Everything yet.
+    static QString downloadUrl();
+
+    // Looks for an installed Everything.exe: the configured path first, then the uninstall
+    // registry entries and the usual install locations. Empty when nothing is installed.
+    static QString detectInstalledExecutable(const QString &configuredPath = QString());
+
+    // Starts an installed Everything so the SDK becomes reachable. Only used from an
+    // explicit user action; the scan path never launches anything on its own.
+    static bool startEverything(const QString &executablePath, QString *errorMessage = nullptr);
+
     // Runs a trivial query to confirm the Everything IPC/service is actually reachable.
     // DLL load alone is not enough: the DLL loads even when Everything is not running.
     bool testConnection(QString *errorMessage = nullptr);
-
-    // If the service is not reachable and a configured Everything.exe exists, start it and
-    // poll until the SDK answers. Returns true once the service is usable.
-    bool ensureEverythingRunning(const QString &everythingExecutablePath, QString *errorMessage = nullptr);
 
     // Single combined query returning files and folders under rootPath.
     bool queryRoot(const QString &rootPath, QVector<FileEntry> *files, QVector<FolderEntry> *folders, QString *errorMessage = nullptr);

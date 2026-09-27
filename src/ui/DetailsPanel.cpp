@@ -15,6 +15,7 @@
 #include <QUrl>
 #include <QVBoxLayout>
 
+#include "ui/EntryActions.h"
 #include "utils/FileMetadataUtils.h"
 #include "utils/SizeFormatter.h"
 
@@ -59,6 +60,7 @@ DetailsPanel::DetailsPanel(QWidget *parent)
     , m_openAction(new QAction("Open", this))
     , m_showInExplorerAction(new QAction("Show in Explorer", this))
     , m_copyPathAction(new QAction("Copy Path", this))
+    , m_stageAction(new QAction("Stage", this))
 {
     auto *outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(12, 12, 12, 12);
@@ -68,17 +70,21 @@ DetailsPanel::DetailsPanel(QWidget *parent)
     actionRow->setContentsMargins(0, 0, 0, 0);
     actionRow->setSpacing(8);
 
-    auto makeToolButton = [this](QAction *action) {
+    auto makeToolButton = [this](QAction *action, const QString &objectName = QString()) {
         auto *button = new QToolButton(this);
         button->setDefaultAction(action);
         button->setToolButtonStyle(Qt::ToolButtonTextOnly);
         button->setAutoRaise(true);
+        if (!objectName.isEmpty()) {
+            button->setObjectName(objectName);
+        }
         return button;
     };
 
     actionRow->addWidget(makeToolButton(m_openAction));
     actionRow->addWidget(makeToolButton(m_showInExplorerAction));
     actionRow->addWidget(makeToolButton(m_copyPathAction));
+    actionRow->addWidget(makeToolButton(m_stageAction, QStringLiteral("destructiveButton")));
     actionRow->addStretch();
     outerLayout->addLayout(actionRow);
 
@@ -132,20 +138,28 @@ DetailsPanel::DetailsPanel(QWidget *parent)
             QGuiApplication::clipboard()->setText(m_currentEntry.path);
         }
     });
+    m_stageAction->setToolTip(QStringLiteral("Stage for Deletion: add this item to the virtual trash list. "
+                                             "Nothing is deleted; the Trash tab moves items to the Recycle Bin."));
+    connect(m_stageAction, &QAction::triggered, this, [this]() {
+        if (m_currentEntry.path.isEmpty()) {
+            return;
+        }
+        stageEntry(this, m_currentEntry);
+    });
 
     setContextMenuPolicy(Qt::CustomContextMenu);
     connect(this, &QWidget::customContextMenuRequested, this, [this](const QPoint &position) {
         QMenu menu(this);
         QAction *openAction = menu.addAction("Open");
-        QAction *explorerAction = menu.addAction("Show in Explorer");
-        QAction *copyAction = menu.addAction("Copy Path");
+        menu.addSeparator();
+        const SharedEntryActions shared = addSharedEntryActions(menu);
         QAction *selected = menu.exec(mapToGlobal(position));
         if (selected == openAction) {
             m_openAction->trigger();
-        } else if (selected == explorerAction) {
-            m_showInExplorerAction->trigger();
-        } else if (selected == copyAction) {
-            m_copyPathAction->trigger();
+            return;
+        }
+        if (runSharedEntryAction(this, selected, m_currentEntry, shared)) {
+            return;
         }
     });
 
@@ -158,6 +172,7 @@ void DetailsPanel::updateActionState()
     m_openAction->setEnabled(hasSelection);
     m_showInExplorerAction->setEnabled(hasSelection);
     m_copyPathAction->setEnabled(hasSelection);
+    m_stageAction->setEnabled(hasSelection && EntryActionHub::instance()->isAvailable());
 }
 
 void DetailsPanel::setEntry(const TreeEntry &entry)

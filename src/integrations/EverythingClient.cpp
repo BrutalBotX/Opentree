@@ -5,6 +5,7 @@
 #include <QFileInfo>
 #include <QMutex>
 #include <QProcess>
+#include <QSettings>
 #include <QThread>
 
 #include "Everything.h"
@@ -93,6 +94,105 @@ QString EverythingClient::libraryPath() const
     return m_libraryPath;
 }
 
+QString EverythingClient::downloadUrl()
+{
+    return QStringLiteral("https://www.voidtools.com/downloads/");
+}
+
+QString EverythingClient::detectInstalledExecutable(const QString &configuredPath)
+{
+    const QString configured = QDir::fromNativeSeparators(configuredPath);
+    if (!configured.isEmpty() && QFileInfo::exists(configured)) {
+        return configured;
+    }
+
+    // Uninstall entries written by the Everything installer.
+    const QStringList uninstallRoots = {
+        QStringLiteral("HKEY_LOCAL_MACHINE\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+        QStringLiteral("HKEY_LOCAL_MACHINE\\SOFTWARE\\WOW6432Node\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+        QStringLiteral("HKEY_CURRENT_USER\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Uninstall"),
+    };
+
+    for (const QString &root : uninstallRoots) {
+        QSettings registry(root, QSettings::NativeFormat);
+        const QStringList groups = registry.childGroups();
+        for (const QString &group : groups) {
+            if (!group.contains(QStringLiteral("Everything"), Qt::CaseInsensitive)) {
+                continue;
+            }
+            registry.beginGroup(group);
+            const QString displayName = registry.value(QStringLiteral("DisplayName")).toString();
+            const QString installLocation = registry.value(QStringLiteral("InstallLocation")).toString();
+            QString displayIcon = registry.value(QStringLiteral("DisplayIcon")).toString();
+            registry.endGroup();
+
+            if (!displayName.contains(QStringLiteral("Everything"), Qt::CaseInsensitive)) {
+                continue;
+            }
+
+            QStringList candidates;
+            if (!installLocation.isEmpty()) {
+                candidates << QDir::fromNativeSeparators(installLocation) + QStringLiteral("/Everything.exe");
+            }
+            if (!displayIcon.isEmpty()) {
+                // DisplayIcon is usually "C:\Path\Everything.exe,0" and sometimes quoted.
+                displayIcon.remove(QLatin1Char('"'));
+                const int comma = displayIcon.lastIndexOf(QLatin1Char(','));
+                if (comma > 0) {
+                    displayIcon.truncate(comma);
+                }
+                candidates << QDir::fromNativeSeparators(displayIcon);
+            }
+
+            for (const QString &candidate : candidates) {
+                if (QFileInfo(candidate).isFile() && QFileInfo(candidate).fileName().compare(QStringLiteral("Everything.exe"), Qt::CaseInsensitive) == 0) {
+                    return candidate;
+                }
+            }
+        }
+    }
+
+    // Default install locations as a fallback.
+    QStringList paths;
+    paths << QStringLiteral("C:/Program Files/Everything/Everything.exe")
+          << QStringLiteral("C:/Program Files (x86)/Everything/Everything.exe");
+    const QString localAppData = QDir::fromNativeSeparators(qEnvironmentVariable("LOCALAPPDATA"));
+    if (!localAppData.isEmpty()) {
+        paths << localAppData + QStringLiteral("/Programs/Everything/Everything.exe");
+    }
+    for (const QString &candidate : paths) {
+        if (QFileInfo::exists(candidate)) {
+            return candidate;
+        }
+    }
+
+    return {};
+}
+
+bool EverythingClient::startEverything(const QString &executablePath, QString *errorMessage)
+{
+    const QString path = detectInstalledExecutable(executablePath);
+    if (path.isEmpty()) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("Everything is not installed. Download it from %1").arg(downloadUrl());
+        }
+        return false;
+    }
+
+    // Everything is a GUI application, so starting it detached cannot open a console window.
+    if (!QProcess::startDetached(path, {})) {
+        if (errorMessage) {
+            *errorMessage = QStringLiteral("Failed to launch %1.").arg(path);
+        }
+        return false;
+    }
+
+    if (errorMessage) {
+        errorMessage->clear();
+    }
+    return true;
+}
+
 bool EverythingClient::testConnection(QString *errorMessage)
 {
     QMutexLocker locker(&m_mutex);
@@ -139,44 +239,6 @@ bool EverythingClient::testConnectionLocked(QString *errorMessage)
         errorMessage->clear();
     }
     return true;
-}
-
-bool EverythingClient::ensureEverythingRunning(const QString &everythingExecutablePath, QString *errorMessage)
-{
-    QMutexLocker locker(&m_mutex);
-
-    if (testConnectionLocked(nullptr)) {
-        return true;
-    }
-
-    const QFileInfo executableInfo(everythingExecutablePath);
-    if (everythingExecutablePath.isEmpty() || !executableInfo.exists() || !executableInfo.isFile()) {
-        if (errorMessage) {
-            *errorMessage = everythingExecutablePath.isEmpty()
-                ? QStringLiteral("Everything service is not running and no Everything executable is configured.")
-                : QStringLiteral("Configured Everything executable does not exist: %1").arg(everythingExecutablePath);
-        }
-        return false;
-    }
-
-    if (!QProcess::startDetached(everythingExecutablePath, {})) {
-        if (errorMessage) {
-            *errorMessage = QStringLiteral("Failed to launch Everything executable: %1").arg(everythingExecutablePath);
-        }
-        return false;
-    }
-
-    for (int attempt = 0; attempt < 15; ++attempt) {
-        QThread::msleep(400);
-        if (testConnectionLocked(nullptr)) {
-            return true;
-        }
-    }
-
-    if (errorMessage) {
-        *errorMessage = QStringLiteral("Everything started, but the SDK did not become available in time.");
-    }
-    return false;
 }
 
 bool EverythingClient::queryRoot(const QString &rootPath, QVector<FileEntry> *files, QVector<FolderEntry> *folders, QString *errorMessage)

@@ -4,6 +4,7 @@
 #include <QHash>
 #include <QHeaderView>
 #include <QLabel>
+#include <QMenu>
 #include <QTableWidget>
 #include <QTableWidgetItem>
 #include <QVBoxLayout>
@@ -11,6 +12,7 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "ui/EntryActions.h"
 #include "ui/TableItems.h"
 #include "utils/SizeFormatter.h"
 
@@ -67,6 +69,35 @@ HeatmapPanel::HeatmapPanel(QWidget *parent)
     m_table->setColumnWidth(3, 80);
     m_table->setColumnWidth(4, 110);
     configureStandardTable(m_table);
+    m_table->setContextMenuPolicy(Qt::CustomContextMenu);
+    connect(m_table, &QWidget::customContextMenuRequested, this, [this](const QPoint &position) {
+        const QTableWidgetItem *clicked = m_table->itemAt(position);
+        if (!clicked) {
+            return;
+        }
+        const QTableWidgetItem *nameItem = m_table->item(clicked->row(), 0);
+        if (!nameItem) {
+            return;
+        }
+        const TreeEntry entry = nameItem->data(Qt::UserRole).value<TreeEntry>();
+        if (entry.path.isEmpty()) {
+            return;
+        }
+
+        QMenu menu(this);
+        QAction *openAction = menu.addAction(QStringLiteral("Open"));
+        menu.addSeparator();
+        const SharedEntryActions shared = addSharedEntryActions(menu);
+        QAction *selected = menu.exec(m_table->viewport()->mapToGlobal(position));
+        if (!selected) {
+            return;
+        }
+        if (selected == openAction) {
+            emit entryActivated(entry);
+            return;
+        }
+        runSharedEntryAction(this, selected, entry, shared);
+    });
     layout->addWidget(m_summaryLabel);
     layout->addWidget(m_table, 1);
 
@@ -149,6 +180,7 @@ void HeatmapPanel::rebuild()
         const double percent = denominator <= 0 ? 0.0 : (100.0 * double(entry.size) / double(denominator));
 
         QTableWidgetItem *nameItem = makeTextItem(entry.name.isEmpty() ? entry.path : entry.name, entry.path);
+        nameItem->setData(Qt::UserRole, QVariant::fromValue(entry));
         QTableWidgetItem *percentItem = makePercentItem(percent);
         QTableWidgetItem *sizeItem = makeNumberItem(SizeFormatter::formatBytes(entry.size), entry.size);
         QTableWidgetItem *filesItem = makeNumberItem(QString::number(entry.fileCount), entry.fileCount);

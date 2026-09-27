@@ -20,11 +20,11 @@ class TrashPanel : public QWidget {
 public:
     explicit TrashPanel(VirtualTrashService *trashService, QWidget *parent = nullptr);
 
-    void setSelection(const TreeEntry &entry);
+    // Re-reads the staged list. Staging itself happens from the context menus of the other
+    // views (EntryActionHub), which pings this panel through the controller.
     void refresh();
 
 private:
-    void stageSelection();
     void unstageSelected();
     void clearStaged();
     void moveStagedToRecycleBin();
@@ -32,12 +32,10 @@ private:
     VirtualTrashService *m_trashService;
     QLabel *m_summaryLabel;
     QLabel *m_statusLabel;
-    QPushButton *m_stageButton;
     QPushButton *m_unstageButton;
     QPushButton *m_clearButton;
     QPushButton *m_recycleButton;
     QTableWidget *m_table;
-    TreeEntry m_selection;
 };
 
 } // namespace opentree

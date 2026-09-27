@@ -20,6 +20,9 @@ public:
     void setActiveFolderPath(const QString &path);
     void setViewMetric(ViewMetric metric);
 
+signals:
+    void entryActivated(const TreeEntry &entry);
+
 private:
     void rebuild();
 

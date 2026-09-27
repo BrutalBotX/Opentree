@@ -36,6 +36,15 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
 
+### 0.7.0 follow-up (same night)
+
+- Staging moved into the app-wide context menus ("Stage for Deletion") with a shared builder,
+  the Trash tab refreshes automatically, and the Trash tab's own stage button was removed.
+- Everything flow reworked: the SDK is the only engine (no automatic `Everything.exe` launch),
+  with a first-run prompt that offers the voidtools download or starting an existing install.
+- Console/command-prompt windows removed from the background paths (hidden helpers, GUI
+  subsystem apps).
+
 ### 0.6.1 follow-up (same night)
 
 - One global accent-frame rule for every button plus clearer focus/hover outlines.

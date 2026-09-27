@@ -4,6 +4,36 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.7.0] - 2026-09-27
+
+### Added
+
+- Staging is now part of the app-wide context menus. Every view (tree, details pane, pie/bars/
+  treemap, details table, heatmap, duplicate finder and the graph) offers "Show in Explorer",
+  "Copy Path" and "Stage for Deletion" in the same order, built by one shared helper so the
+  menus stay identical everywhere.
+- The Trash tab refreshes automatically whenever something is staged, from anywhere.
+- First-run Everything prompt: when Everything is not running, OpenTree explains the benefit
+  and offers "Download Everything..." (opens the voidtools download page), "Start Everything
+  Now" (only when an install is detected) or "Continue Without It", plus "Don't show this
+  again".
+- `EntryActionHub` staging hub (views stage without touching the database directly) and
+  `ProcessUtils::runHidden` for console helpers.
+
+### Changed
+
+- The Everything SDK is the only engine OpenTree uses. Scans probe the SDK and fall back to
+  the filesystem walk; the app no longer launches `Everything.exe` on its own, it is only
+  started from an explicit user action (first-run prompt, "Test Everything Connection" or
+  "Locate Everything Executable...").
+- No background command prompt windows: scheduled-task helpers run hidden and both apps are
+  GUI-subsystem binaries.
+- Removed the "Stage Current Selection" button from the Trash tab (it acted on the tree
+  selection, which could be stale). Staging is now an explicit per-item context-menu action;
+  the Trash tab is review-only.
+- The details pane gained a "Stage" button and the full action wording in its context menu.
+- Version bumped to 0.7.0.
+
 ## [0.6.1] - 2026-09-27
 
 ### Fixed

@@ -28,7 +28,13 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 - Duplicates tab: staged size -> partial hash -> full hash duplicate detection with a skip-system-folders guard
 - Insights tab: disk-full forecast from the saved snapshot trend, stale-file detection, and junk candidates with one-click staging
 - Reports: export the current scan as HTML or PDF (root summary, largest folders, largest files, file-type breakdown)
-- Virtual trash: staged deletion intents with a projected reclaim; nothing is deleted until the user confirms moving items to the Windows Recycle Bin
+- Virtual trash: staging is an explicit "Stage for Deletion" action in every context menu
+  (tree, details pane, charts, details table, heatmap, duplicates, graph). The Trash tab
+  refreshes automatically and is review-only: nothing is deleted until the user confirms
+  moving items to the Windows Recycle Bin.
+- First-run Everything prompt: if Everything is not running, OpenTree offers to open the
+  voidtools download page or start an existing install. The SDK is the only engine; the app
+  never launches Everything by itself.
 - Unified Settings dialog (theme, scanning, snapshots, graph, deduplication) with live apply
 - Tray residency with notifications and optional close-to-tray behaviour
 - Snapshot manager dialog with tabulated snapshot rows and delete support

@@ -17,6 +17,7 @@
 #include <QVBoxLayout>
 
 #include "models/FolderTreeModel.h"
+#include "ui/EntryActions.h"
 #include "utils/Logger.h"
 
 namespace opentree {
@@ -285,8 +286,8 @@ void TreePanel::showContextMenu(const QPoint &position)
 
     QMenu menu(this);
     QAction *openAction = menu.addAction("Open");
-    QAction *showInExplorerAction = menu.addAction("Show in Explorer");
-    QAction *copyPathAction = menu.addAction("Copy Path");
+    menu.addSeparator();
+    const SharedEntryActions shared = addSharedEntryActions(menu);
 
     QAction *selectedAction = menu.exec(m_treeView->viewport()->mapToGlobal(position));
     if (!selectedAction) {
@@ -298,17 +299,7 @@ void TreePanel::showContextMenu(const QPoint &position)
         return;
     }
 
-    if (selectedAction == showInExplorerAction) {
-        const QString argument = QFileInfo(entry.path).isDir()
-            ? entry.path
-            : QStringLiteral("/select,") + QDir::toNativeSeparators(entry.path);
-        QProcess::startDetached("explorer.exe", {argument});
-        return;
-    }
-
-    if (selectedAction == copyPathAction) {
-        QGuiApplication::clipboard()->setText(entry.path);
-    }
+    runSharedEntryAction(this, selectedAction, entry, shared);
 }
 
 }

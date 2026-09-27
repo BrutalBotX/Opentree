@@ -32,6 +32,8 @@
 #include "ui/DetailsTablePanel.h"
 #include "ui/DriveSelector.h"
 #include "ui/DuplicatesPanel.h"
+#include "ui/EntryActions.h"
+#include "ui/EverythingPromptDialog.h"
 #include "ui/ExtensionsPanel.h"
 #include "ui/InsightsPanel.h"
 #include "ui/TrashPanel.h"
@@ -239,15 +241,10 @@ void AppController::attachWindow(MainWindow *window)
     if (m_databaseManager && m_databaseManager->database().isValid()) {
         m_trashService = new VirtualTrashService(m_databaseManager->database());
     }
-    m_trashPanel = new TrashPanel(m_trashService, m_window);
-    m_window->setTrashPanel(m_trashPanel);
-
-    if (m_databaseManager && m_databaseManager->database().isValid()) {
-        m_analysisService = new AnalysisService(m_databaseManager->database());
-    }
-    m_insightsPanel = new InsightsPanel(m_analysisService, m_trashService, m_window);
-    m_window->setInsightsPanel(m_insightsPanel);
-    connect(m_insightsPanel, &InsightsPanel::itemsStaged, this, [this](int count, qint64 bytes) {
+    // Staging happens from the context menus of every view; the hub keeps the Trash tab in
+    // sync no matter where the action came from.
+    EntryActionHub::instance()->setTrashService(m_trashService);
+    connect(EntryActionHub::instance(), &EntryActionHub::staged, this, [this](int count, qint64 bytes) {
         if (m_trashPanel) {
             m_trashPanel->refresh();
         }
@@ -257,6 +254,15 @@ void AppController::attachWindow(MainWindow *window)
                                         .arg(SizeFormatter::formatBytes(bytes)));
         }
     });
+    m_trashPanel = new TrashPanel(m_trashService, m_window);
+    m_window->setTrashPanel(m_trashPanel);
+
+    if (m_databaseManager && m_databaseManager->database().isValid()) {
+        m_analysisService = new AnalysisService(m_databaseManager->database());
+    }
+    m_insightsPanel = new InsightsPanel(m_analysisService, m_window);
+    m_window->setInsightsPanel(m_insightsPanel);
+    connect(m_window->heatmapPanel(), &HeatmapPanel::entryActivated, this, &AppController::handleChartEntryActivated);
     connect(m_window->driveSelector(), &DriveSelector::driveActivated, this, &AppController::handleRecentRootRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenRequested, this, &AppController::handleChartOpenRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryShowInExplorerRequested, this, &AppController::handleChartShowInExplorerRequested);
@@ -333,6 +339,9 @@ void AppController::attachWindow(MainWindow *window)
     applyViewMetric(m_viewMetric);
     refreshRecentRoots();
     refreshTimeline();
+
+    // First-run offer to use the Everything index. Delayed so the window is fully up.
+    QTimer::singleShot(1200, this, [this]() { maybeShowEverythingPrompt(); });
 }
 
 void AppController::handleScanRequest()
@@ -648,7 +657,6 @@ void AppController::handleEntryActivated(const TreeEntry &entry)
     updateGraphPanel(m_window->existingGraphPanel(), [&](GraphPanel *graph) {
         graph->setSelectedPath(entry.path);
     });
-    updateTrashSelection();
     updateTimelineFolderHistory();
 }
 
@@ -880,8 +888,7 @@ void AppController::handleClearAllRootsRequest()
         }
         m_window->driveSelector()->setRootPath(QString());
         m_window->heatmapPanel()->setHeatmapData({}, {});
-        m_window->heatmapPanel()->setActiveFolderPath(QString());
-        m_window->timelinePanel()->setCurrentRootPath(QString());
+        m_window->heatmapPanel()->setActiveFolderPath(QString());        m_window->timelinePanel()->setCurrentRootPath(QString());
         m_window->timelinePanel()->setSnapshots({});
         m_window->timelinePanel()->resetCompareState();
         m_window->setStatusText("Cleared all roots");
@@ -939,20 +946,6 @@ void AppController::updateTimelineFolderHistory()
     QString error;
     const QVector<FolderHistoryPoint> points = m_snapshotService->folderHistory(m_currentResult.rootPath, folderPath, 40, &error);
     m_window->timelinePanel()->setFolderHistory(folderPath, points);
-}
-
-void AppController::updateTrashSelection()
-{
-    if (!m_window || !m_window->trashPanel()) {
-        return;
-    }
-
-    if (const TreeEntry *entry = findTreeEntry(m_activeFolderPath)) {
-        m_window->trashPanel()->setSelection(*entry);
-    } else {
-        TreeEntry empty;
-        m_window->trashPanel()->setSelection(empty);
-    }
 }
 
 void AppController::handleExpandAllRequest()
@@ -1215,7 +1208,6 @@ void AppController::syncActiveResultUi(const ScanResult &result, const QString &
     if (m_insightsPanel) {
         m_insightsPanel->setScanResult(result);
     }
-    updateTrashSelection();
     m_window->timelinePanel()->setCurrentRootPath(result.rootPath);
     if (resetCompare) {
         m_window->timelinePanel()->resetCompareState();
@@ -1296,15 +1288,29 @@ void AppController::handleLocateEverythingRequest()
     m_configService->setEverythingExecutablePath(filePath);
 
     QString error;
-    if (m_everythingClient && m_everythingClient->ensureEverythingRunning(filePath, &error)) {
-        m_window->setStatusText(QStringLiteral("Everything executable set to %1 and service is reachable").arg(filePath));
+    if (m_everythingClient && m_everythingClient->testConnection(&error)) {
+        m_window->setStatusText(QStringLiteral("Everything executable set to %1 and the index is reachable").arg(filePath));
         QMessageBox::information(m_window, "Everything",
             QStringLiteral("Everything is available.\nExecutable: %1").arg(filePath));
-    } else {
-        m_window->setStatusText(QStringLiteral("Everything executable set to %1 (not reachable)").arg(filePath));
-        QMessageBox::warning(m_window, "Everything",
-            error.isEmpty() ? QStringLiteral("Everything is not reachable.") : error);
+        return;
     }
+
+    // Never launch silently: ask whether Everything should be started now.
+    const QMessageBox::StandardButton answer = QMessageBox::question(
+        m_window, QStringLiteral("Everything"),
+        QStringLiteral("Everything is not running, so the SDK cannot use it yet.\n\nStart Everything now?"),
+        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
+    if (answer == QMessageBox::Yes) {
+        QString startError;
+        if (EverythingClient::startEverything(filePath, &startError)) {
+            m_window->setStatusText(QStringLiteral("Everything is starting; scans will use its index once it is up"));
+            return;
+        }
+        QMessageBox::warning(m_window, QStringLiteral("Everything"), startError);
+        return;
+    }
+
+    m_window->setStatusText(QStringLiteral("Everything executable set to %1 (not running)").arg(filePath));
 }
 
 void AppController::handleTestEverythingRequest()
@@ -1330,18 +1336,66 @@ void AppController::handleTestEverythingRequest()
         return;
     }
 
-    const QString executablePath = m_configService->resolvedEverythingExecutablePath();
-    if (!executablePath.isEmpty() && m_everythingClient->ensureEverythingRunning(executablePath, &error)) {
-        m_window->setStatusText(QStringLiteral("Everything is available (started %1)").arg(executablePath));
-        QMessageBox::information(m_window, "Everything",
-            QStringLiteral("Everything was started and is now available.\nExecutable: %1").arg(executablePath));
+    // Not reachable: offer the same download/start options as the first-run prompt instead
+    // of launching anything silently.
+    const QString installed = EverythingClient::detectInstalledExecutable(m_configService->resolvedEverythingExecutablePath());
+    EverythingPromptDialog dialog(installed, error.isEmpty() ? m_everythingClient->availabilityError() : error, m_window);
+    dialog.exec();
+
+    if (dialog.downloadRequested()) {
+        QDesktopServices::openUrl(QUrl(EverythingClient::downloadUrl()));
+        m_window->setStatusText(QStringLiteral("Everything download page opened in the browser"));
+    }
+    if (dialog.startRequested()) {
+        QString startError;
+        if (EverythingClient::startEverything(installed, &startError)) {
+            m_window->setStatusText(QStringLiteral("Everything is starting; scans will use its index once it is up"));
+        } else {
+            QMessageBox::warning(m_window, QStringLiteral("Everything"), startError);
+        }
+    }
+
+    m_window->setStatusText(QStringLiteral("Everything unavailable: %1")
+                                .arg(error.isEmpty() ? QStringLiteral("not running") : error));
+}
+
+void AppController::maybeShowEverythingPrompt()
+{
+    if (!m_window || !m_everythingClient || !m_configService) {
+        return;
+    }
+    // Headless previews must not block on a dialog.
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_MODE")) {
+        return;
+    }
+    if (m_configService->everythingPromptSuppressed() || m_configService->everythingPromptShown()) {
+        return;
+    }
+    if (m_everythingClient->isAvailable() && m_everythingClient->testConnection(nullptr)) {
         return;
     }
 
-    const QString message = QStringLiteral("Everything is not reachable.\nSDK: %1\n%2")
-                                .arg(libraryPath, error.isEmpty() ? QStringLiteral("Everything service is not running.") : error);
-    m_window->setStatusText(QStringLiteral("Everything unavailable: %1").arg(error));
-    QMessageBox::warning(m_window, "Everything", message);
+    m_configService->setEverythingPromptShown(true);
+
+    const QString installed = EverythingClient::detectInstalledExecutable(m_configService->resolvedEverythingExecutablePath());
+    EverythingPromptDialog dialog(installed, m_everythingClient->availabilityError(), m_window);
+    dialog.exec();
+
+    if (dialog.dontShowAgain()) {
+        m_configService->setEverythingPromptSuppressed(true);
+    }
+    if (dialog.downloadRequested()) {
+        QDesktopServices::openUrl(QUrl(EverythingClient::downloadUrl()));
+        m_window->setStatusText(QStringLiteral("Everything download page opened in the browser"));
+    }
+    if (dialog.startRequested()) {
+        QString error;
+        if (EverythingClient::startEverything(installed, &error)) {
+            m_window->setStatusText(QStringLiteral("Everything is starting; scans will use its index once it is up"));
+        } else {
+            QMessageBox::warning(m_window, QStringLiteral("Everything"), error);
+        }
+    }
 }
 
 void AppController::handleExportDetailsCsvRequest()

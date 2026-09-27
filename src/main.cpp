@@ -6,6 +6,7 @@
 #include <QFile>
 #include <QIcon>
 #include <QStandardPaths>
+#include <QMenu>
 #include <QTextStream>
 #include <QTimer>
 
@@ -36,7 +37,9 @@
 #include "ui/ChartPanel.h"
 #include "ui/DetailsTablePanel.h"
 #include "ui/DuplicatesPanel.h"
+#include "ui/EntryActions.h"
 #include "ui/SettingsDialog.h"
+#include "ui/EverythingPromptDialog.h"
 #include "ui/StagingReviewDialog.h"
 #include "ui/ThemeManager.h"
 #include "ui/TreePanel.h"
@@ -153,11 +156,13 @@ int runScanTestMode(const QString &path)
     record(QStringLiteral("Everything SDK library: %1").arg(client.libraryPath()));
 
     QString error;
-    const QString executablePath = configService.resolvedEverythingExecutablePath();
-    bool ready = client.testConnection(&error);
-    if (!ready && !executablePath.isEmpty()) {
-        record(QStringLiteral("Everything not reachable (%1), starting %2").arg(error, executablePath));
-        ready = client.ensureEverythingRunning(executablePath, &error);
+    const bool ready = client.testConnection(&error);
+    if (!ready) {
+        const QString installed = opentree::EverythingClient::detectInstalledExecutable(configService.resolvedEverythingExecutablePath());
+        record(QStringLiteral("Everything not reachable: %1").arg(error));
+        record(installed.isEmpty()
+                   ? QStringLiteral("Everything is not installed. Download: %1").arg(opentree::EverythingClient::downloadUrl())
+                   : QStringLiteral("Everything is installed at %1 but is not running (the SDK needs it running).").arg(installed));
     }
 
     opentree::ScanResult everythingResult;
@@ -779,6 +784,9 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
     QApplication app(__argc, __argv);
     opentree::Logger::initialize();
 
+    // Headless preview runs must not block on first-run dialogs.
+    qputenv("OPENTREE_PREVIEW_MODE", "1");
+
     opentree::ConfigService configService;
     opentree::DatabaseManager databaseManager;
     if (!databaseManager.initialize()) {
@@ -793,6 +801,20 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
     window.show();
 
     controller.openPath(path);
+
+    if (!qEnvironmentVariable("OPENTREE_PREVIEW_STAGE_ITEM").isEmpty()) {
+        // Prove the staging path end to end: stage through the hub, then the Trash tab must
+        // show the item because the panel refreshes on the hub's staged() signal.
+        const QString stagePath = qEnvironmentVariable("OPENTREE_PREVIEW_STAGE_ITEM");
+        opentree::TreeEntry entry;
+        entry.kind = opentree::TreeEntryKind::File;
+        entry.path = stagePath;
+        entry.name = QFileInfo(stagePath).fileName();
+        entry.parentPath = QFileInfo(stagePath).path();
+        entry.size = QFileInfo(stagePath).size();
+        opentree::EntryActionHub::instance()->stage(entry, nullptr);
+        QCoreApplication::processEvents();
+    }
 
     QEventLoop loop;
     QTimer::singleShot(7000, &loop, &QEventLoop::quit);
@@ -826,9 +848,40 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
     }
     QCoreApplication::processEvents();
 
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_MENU")) {
+        QMenu menu;
+        menu.addAction(QStringLiteral("Open"));
+        menu.addSeparator();
+        opentree::addSharedEntryActions(menu);
+        menu.addSeparator();
+        menu.addAction(QStringLiteral("Open in Graph View"));
+        QAction *highlighted = menu.actions().value(4);
+        if (highlighted) {
+            menu.setActiveAction(highlighted);
+        }
+        menu.popup(QPoint(40, 40));
+        QCoreApplication::processEvents();
+        QCoreApplication::processEvents();
+        menu.grab().save(outputPath);
+        menu.close();
+        return 0;
+    }
+
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_EVERYTHING")) {
+        opentree::EverythingPromptDialog dialog(
+            qEnvironmentVariable("OPENTREE_PREVIEW_EVERYTHING").compare(QStringLiteral("installed"), Qt::CaseInsensitive) == 0
+                ? QStringLiteral("C:/Program Files/Everything/Everything.exe")
+                : QString(),
+            QStringLiteral("Everything service is not running (IPC error)."), &window);
+        dialog.show();
+        QCoreApplication::processEvents();
+        dialog.grab().save(outputPath);
+        return 0;
+    }
+
     if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_STAGING")) {
         const bool recycle = qEnvironmentVariable("OPENTREE_PREVIEW_STAGING").compare(QStringLiteral("recycle"), Qt::CaseInsensitive) == 0;
-        QVector<opentree::StagingCandidate> items;
+        QVector<opentree::StageRequest> items;
         items.push_back({QStringLiteral("C:/Users/ndsga/junkfix/cache/data.cache"), 512000, false});
         items.push_back({QStringLiteral("C:/Users/ndsga/junkfix/app.log"), 307200, false});
         items.push_back({QStringLiteral("C:/Users/ndsga/junkfix/temp/scratch.tmp"), 204800, false});
@@ -865,7 +918,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.6.1"));
+    QApplication::setApplicationVersion(QStringLiteral("0.7.0"));
 
     QString startupPath;
     QString scanTestPath;

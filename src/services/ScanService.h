@@ -32,8 +32,7 @@ signals:
 private:
     ScanResult performScan(const QString &rootPath,
                            const QStringList &excludedPatterns,
-                           bool useEverything,
-                           const QString &everythingExecutablePath);
+                           bool useEverything);
     static ScanResult performEverythingScan(const QString &rootPath,
                                             const QStringList &excludedPatterns,
                                             QVector<FileEntry> files,

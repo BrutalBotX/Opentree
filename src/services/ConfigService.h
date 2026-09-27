@@ -54,6 +54,11 @@ public:
     void setUseEverything(bool enabled);
     // Returns the configured Everything.exe path, or auto-detects a common install location.
     QString resolvedEverythingExecutablePath() const;
+    // First-run prompt bookkeeping: shown once unless the user asked not to see it again.
+    bool everythingPromptShown() const;
+    void setEverythingPromptShown(bool shown);
+    bool everythingPromptSuppressed() const;
+    void setEverythingPromptSuppressed(bool suppressed);
     bool snapshotScheduleEnabled() const;
     void setSnapshotScheduleEnabled(bool enabled);
     SnapshotScheduleMode snapshotScheduleMode() const;

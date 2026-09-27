@@ -12,18 +12,16 @@
 #include <QVBoxLayout>
 
 #include "services/AnalysisService.h"
-#include "services/VirtualTrashService.h"
+#include "ui/EntryActions.h"
 #include "ui/StagingReviewDialog.h"
 #include "ui/TableItems.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
 
-InsightsPanel::InsightsPanel(AnalysisService *analysisService, VirtualTrashService *trashService,
-                             QWidget *parent)
+InsightsPanel::InsightsPanel(AnalysisService *analysisService, QWidget *parent)
     : QWidget(parent)
     , m_analysisService(analysisService)
-    , m_trashService(trashService)
     , m_forecastLabel(new QLabel(this))
     , m_statusLabel(new QLabel(this))
     , m_refreshButton(new QPushButton(QStringLiteral("Refresh Analysis"), this))
@@ -190,12 +188,12 @@ void InsightsPanel::refresh()
                                        .arg(SizeFormatter::formatBytes(staleBytes),
                                             SizeFormatter::formatBytes(m_junkBytes)));
     }
-    m_stageJunkButton->setEnabled(m_trashService != nullptr && m_junkBytes > 0);
+    m_stageJunkButton->setEnabled(EntryActionHub::instance()->isAvailable() && m_junkBytes > 0);
 }
 
 void InsightsPanel::stageJunk()
 {
-    if (!m_trashService || !m_analysisService || m_result.rootPath.isEmpty()) {
+    if (!m_analysisService || m_result.rootPath.isEmpty()) {
         return;
     }
 
@@ -204,10 +202,10 @@ void InsightsPanel::stageJunk()
         return;
     }
 
-    QVector<StagingCandidate> candidates;
+    QVector<StageRequest> candidates;
     candidates.reserve(junkFiles.size());
     for (const JunkFile &file : junkFiles) {
-        StagingCandidate candidate;
+        StageRequest candidate;
         candidate.path = file.path;
         candidate.size = file.size;
         candidate.isFolder = false;
@@ -221,12 +219,13 @@ void InsightsPanel::stageJunk()
 
     int staged = 0;
     qint64 stagedBytes = 0;
-    for (const JunkFile &file : junkFiles) {
-        if (m_trashService->stage(file.path, file.size, false, m_result.rootPath,
-                                  QStringLiteral("Junk candidate"), nullptr)) {
-            ++staged;
-            stagedBytes += file.size;
-        }
+    QString error;
+    EntryActionHub::instance()->stage(candidates, m_result.rootPath, QStringLiteral("Junk candidate"),
+                                      &staged, &stagedBytes, &error);
+    if (staged == 0) {
+        QMessageBox::warning(this, QStringLiteral("Stage junk"),
+                             error.isEmpty() ? QStringLiteral("Nothing could be staged.") : error);
+        return;
     }
 
     m_statusLabel->setText(QStringLiteral("Staged %1 junk %2 (%3). Review them in the Trash tab "
@@ -235,7 +234,6 @@ void InsightsPanel::stageJunk()
                                .arg(staged == 1 ? QStringLiteral("item") : QStringLiteral("items"))
                                .arg(SizeFormatter::formatBytes(stagedBytes)));
     m_statusLabel->setVisible(true);
-    emit itemsStaged(staged, stagedBytes);
 }
 
 } // namespace opentree

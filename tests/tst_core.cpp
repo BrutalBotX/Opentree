@@ -2,6 +2,7 @@
 // detection, analysis, report generation and the snapshot ledger with its three-tier routing.
 #include <QtTest>
 #include <QDir>
+#include <QMenu>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTemporaryDir>
@@ -11,6 +12,8 @@
 #include "services/DedupService.h"
 #include "services/ReportService.h"
 #include "services/SnapshotService.h"
+#include "integrations/EverythingClient.h"
+#include "ui/EntryActions.h"
 #include "ui/TableItems.h"
 #include "ui/ThemeManager.h"
 #include "utils/PathUtils.h"
@@ -409,6 +412,8 @@ private slots:
             QVERIFY(styleSheet.contains(QStringLiteral("QPushButton, QToolButton {")));
             QVERIFY(styleSheet.contains(QStringLiteral("QPushButton:focus, QToolButton:focus")));
             QVERIFY(styleSheet.contains(QStringLiteral("QComboBox:focus, QSpinBox:focus")));
+            QVERIFY(styleSheet.contains(QStringLiteral("QPushButton#destructiveButton")));
+            QVERIFY(styleSheet.contains(QStringLiteral("QToolButton#destructiveButton")));
             QVERIFY(!styleSheet.contains(QStringLiteral("QDialog QPushButton")));
             QVERIFY(!styleSheet.contains(QStringLiteral("QMessageBox QPushButton")));
         }
@@ -466,6 +471,51 @@ private slots:
     }
 };
 
+class TestEntryActions : public QObject {
+    Q_OBJECT
+
+private slots:
+    void sharedMenuIsIdenticalEverywhere()
+    {
+        // Every view builds its context menu through this helper, so the staging entry is
+        // guaranteed to appear in the same place with the same wording.
+        QMenu menu;
+        const SharedEntryActions actions = addSharedEntryActions(menu);
+        QVERIFY(actions.showInExplorer != nullptr);
+        QVERIFY(actions.copyPath != nullptr);
+        QVERIFY(actions.stage != nullptr);
+
+        QStringList labels;
+        for (QAction *action : menu.actions()) {
+            labels << (action->isSeparator() ? QStringLiteral("-") : action->text());
+        }
+        QCOMPARE(labels, QStringList({QStringLiteral("Show in Explorer"), QStringLiteral("Copy Path"),
+                                      QStringLiteral("-"), QStringLiteral("Stage for Deletion")}));
+    }
+
+    void stagingFailsCleanlyWithoutAService()
+    {
+        EntryActionHub *hub = EntryActionHub::instance();
+        hub->setTrashService(nullptr);
+        QVERIFY(!hub->isAvailable());
+
+        QString error;
+        TreeEntry entry;
+        entry.path = QStringLiteral("C:/somewhere/file.bin");
+        entry.size = 1024;
+        QVERIFY(!hub->stage(entry, &error));
+        QVERIFY(!error.isEmpty());
+    }
+
+    void everythingMetadataIsAvailable()
+    {
+        QCOMPARE(EverythingClient::downloadUrl(), QStringLiteral("https://www.voidtools.com/downloads/"));
+        // Detection must never throw and must return either an existing file or nothing.
+        const QString detected = EverythingClient::detectInstalledExecutable();
+        QVERIFY(detected.isEmpty() || QFileInfo::exists(detected));
+    }
+};
+
 int main(int argc, char *argv[])
 {
     // QApplication (not QCoreApplication): the table item suites create real widgets.
@@ -486,6 +536,7 @@ int main(int argc, char *argv[])
         {new TestLedger, "ledger"},
         {new TestTheme, "theme"},
         {new TestTableItems, "tableitems"},
+        {new TestEntryActions, "entryactions"},
     };
 
     int status = 0;

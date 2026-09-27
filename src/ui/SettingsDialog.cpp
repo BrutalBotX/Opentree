@@ -2,6 +2,7 @@
 
 #include <QCheckBox>
 #include <QComboBox>
+#include <QDesktopServices>
 #include <QDialogButtonBox>
 #include <QDoubleSpinBox>
 #include <QFileDialog>
@@ -14,6 +15,7 @@
 #include <QSpinBox>
 #include <QTabWidget>
 #include <QTimeEdit>
+#include <QUrl>
 #include <QVBoxLayout>
 
 #include "integrations/EverythingClient.h"
@@ -249,15 +251,29 @@ void SettingsDialog::testEverythingConnection()
         return;
     }
 
-    const QString executable = m_everythingPathEdit->text().trimmed();
-    if (!executable.isEmpty() && client.ensureEverythingRunning(executable, &error)) {
-        QMessageBox::information(this, QStringLiteral("Everything"),
-                                 QStringLiteral("Everything was started and is now available."));
+    // Installed but not running: offer to start it, otherwise offer the download page.
+    const QString installed = EverythingClient::detectInstalledExecutable(m_everythingPathEdit->text().trimmed());
+    if (!installed.isEmpty()
+        && QMessageBox::question(this, QStringLiteral("Everything"),
+                                 QStringLiteral("Everything is installed at %1 but is not running.\n\nStart it now?")
+                                     .arg(installed),
+                                 QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes) {
+        QString startError;
+        if (EverythingClient::startEverything(installed, &startError)) {
+            QMessageBox::information(this, QStringLiteral("Everything"),
+                                     QStringLiteral("Everything is starting. Scans will use its index once it is up."));
+            return;
+        }
+        QMessageBox::warning(this, QStringLiteral("Everything"), startError);
         return;
     }
 
-    QMessageBox::warning(this, QStringLiteral("Everything"),
-                         error.isEmpty() ? QStringLiteral("Everything is not reachable.") : error);
+    if (QMessageBox::question(this, QStringLiteral("Everything"),
+                              QStringLiteral("Everything is not running, so OpenTree uses its filesystem scan.\n\n"
+                                             "Open the Everything download page?"),
+                              QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes) == QMessageBox::Yes) {
+        QDesktopServices::openUrl(QUrl(EverythingClient::downloadUrl()));
+    }
 }
 
 }
