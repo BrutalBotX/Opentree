@@ -18,11 +18,9 @@ struct ThemeDefinition {
 
 class ThemeManager {
 public:
+    static QMap<QString, ThemeDefinition> builtInThemes();
     static QMap<QString, ThemeDefinition> loadThemes(const QString &themesDirectory);
     static bool applyTheme(QApplication &app, const ThemeDefinition &theme);
-
-private:
-    static QMap<QString, ThemeDefinition> builtInThemes();
 };
 
 }

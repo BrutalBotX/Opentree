@@ -34,6 +34,12 @@ struct JunkGroup {
     QStringList examples;
 };
 
+struct JunkFile {
+    QString path;
+    qint64 size = 0;
+    QString category;
+};
+
 struct InsightsResult {
     DiskForecast forecast;
     QVector<StaleFile> staleFiles;
@@ -58,6 +64,9 @@ public:
 
     // Pattern-based junk detection using the scan's own sizes (no extra IO).
     QVector<JunkGroup> junkFiles(const ScanResult &result) const;
+
+    // Every junk file with its category (same matcher as junkFiles), used for staging.
+    QVector<JunkFile> junkFileList(const ScanResult &result) const;
 
     static constexpr int StaleStatBudget = 800;
 

@@ -13,7 +13,7 @@ namespace opentree {
 class VirtualTrashService;
 
 // Review pane for staged deletions. Nothing here touches the file system until the user
-// explicitly confirms moving the staged items to the Windows Recycle Bin.
+// reviews the item list and confirms moving the staged items to the Windows Recycle Bin.
 class TrashPanel : public QWidget {
     Q_OBJECT
 
@@ -31,6 +31,7 @@ private:
 
     VirtualTrashService *m_trashService;
     QLabel *m_summaryLabel;
+    QLabel *m_statusLabel;
     QPushButton *m_stageButton;
     QPushButton *m_unstageButton;
     QPushButton *m_clearButton;
@@ -39,4 +40,4 @@ private:
     TreeEntry m_selection;
 };
 
-}
+} // namespace opentree

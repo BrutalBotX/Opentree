@@ -36,6 +36,16 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
 
+### 0.6.1 follow-up (same night)
+
+- One global accent-frame rule for every button plus clearer focus/hover outlines.
+- Sorting fixed in the Insights and Trash tables (numeric for size/age/count/delta, and the
+  sort survives a refresh); Timeline, Extensions and Heatmap tables now share the same
+  table conventions (no row gutter, alternating rows, sortable headers).
+- Staging review: a single window lists the items before confirming, and the redundant
+  follow-up popup was replaced by in-panel/status-bar feedback.
+- Level-ed buttons and group box titles normalised to Title Case.
+
 ### Next phase focus
 
 - Address bar autocomplete using scanned paths

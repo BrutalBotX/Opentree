@@ -44,6 +44,7 @@
 #include "ui/TimelinePanel.h"
 #include "ui/TreePanel.h"
 #include "utils/Logger.h"
+#include "utils/SizeFormatter.h"
 #include "utils/TaskSchedulerUtils.h"
 #include "utils/PathUtils.h"
 
@@ -246,6 +247,16 @@ void AppController::attachWindow(MainWindow *window)
     }
     m_insightsPanel = new InsightsPanel(m_analysisService, m_trashService, m_window);
     m_window->setInsightsPanel(m_insightsPanel);
+    connect(m_insightsPanel, &InsightsPanel::itemsStaged, this, [this](int count, qint64 bytes) {
+        if (m_trashPanel) {
+            m_trashPanel->refresh();
+        }
+        if (m_window) {
+            m_window->setStatusText(QStringLiteral("Staged %1 item(s) (%2) in the virtual trash")
+                                        .arg(count)
+                                        .arg(SizeFormatter::formatBytes(bytes)));
+        }
+    });
     connect(m_window->driveSelector(), &DriveSelector::driveActivated, this, &AppController::handleRecentRootRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryOpenRequested, this, &AppController::handleChartOpenRequested);
     connect(m_window->chartPanel(), &ChartPanel::entryShowInExplorerRequested, this, &AppController::handleChartShowInExplorerRequested);

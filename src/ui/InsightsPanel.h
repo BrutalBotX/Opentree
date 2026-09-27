@@ -14,7 +14,7 @@ namespace opentree {
 class AnalysisService;
 class VirtualTrashService;
 
-// Timeline/cleanup analytics: disk-full forecast, stale files and junk groups.
+// Timeline/cleanup analytics: disk-full forecast, stale files and junk candidates.
 class InsightsPanel : public QWidget {
     Q_OBJECT
 
@@ -25,12 +25,16 @@ public:
     void setScanResult(const ScanResult &result);
     void refresh();
 
+signals:
+    void itemsStaged(int count, qint64 bytes);
+
 private:
     void stageJunk();
 
     AnalysisService *m_analysisService;
     VirtualTrashService *m_trashService;
     QLabel *m_forecastLabel;
+    QLabel *m_statusLabel;
     QPushButton *m_refreshButton;
     QSpinBox *m_staleDaysSpin;
     QTableWidget *m_staleTable;
@@ -40,4 +44,4 @@ private:
     qint64 m_junkBytes = 0;
 };
 
-}
+} // namespace opentree

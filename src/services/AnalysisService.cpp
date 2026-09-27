@@ -55,6 +55,36 @@ const QVector<JunkPattern> &junkPatterns()
     return patterns;
 }
 
+// Returns the junk category for a file, or an empty string when it is not junk.
+QString junkCategoryFor(const FileEntry &file)
+{
+    const QString path = file.path.toLower();
+    const QString name = file.name.toLower();
+    const QString suffix = QFileInfo(name).suffix();
+
+    for (const JunkPattern &pattern : junkPatterns()) {
+        bool match = false;
+        if (!pattern.suffixes.isEmpty() && pattern.suffixes.contains(suffix)) {
+            match = true;
+        }
+        if (!match) {
+            for (const QString &fragment : pattern.fragments) {
+                if (path.contains(fragment)) {
+                    match = true;
+                    break;
+                }
+            }
+        }
+        if (!match && !pattern.names.isEmpty() && pattern.names.contains(name)) {
+            match = true;
+        }
+        if (match) {
+            return QString::fromLatin1(pattern.category);
+        }
+    }
+    return QString();
+}
+
 } // namespace
 
 AnalysisService::AnalysisService(QSqlDatabase database)
@@ -178,6 +208,23 @@ QVector<StaleFile> AnalysisService::staleFiles(const ScanResult &result, int old
     return stale;
 }
 
+QVector<JunkFile> AnalysisService::junkFileList(const ScanResult &result) const
+{
+    QVector<JunkFile> files;
+    for (const FileEntry &file : result.files) {
+        const QString category = junkCategoryFor(file);
+        if (category.isEmpty()) {
+            continue;
+        }
+        JunkFile junk;
+        junk.path = file.path;
+        junk.size = file.size;
+        junk.category = category;
+        files.push_back(junk);
+    }
+    return files;
+}
+
 QVector<JunkGroup> AnalysisService::junkFiles(const ScanResult &result) const
 {
     QHash<QString, JunkGroup> groups;
@@ -188,39 +235,12 @@ QVector<JunkGroup> AnalysisService::junkFiles(const ScanResult &result) const
         groups.insert(group.category, group);
     }
 
-    for (const FileEntry &file : result.files) {
-        const QString path = file.path.toLower();
-        const QString name = file.name.toLower();
-        const QString suffix = QFileInfo(name).suffix();
-
-        for (const JunkPattern &pattern : junkPatterns()) {
-            bool match = false;
-            if (!pattern.suffixes.isEmpty() && pattern.suffixes.contains(suffix)) {
-                match = true;
-            }
-            if (!match) {
-                for (const QString &fragment : pattern.fragments) {
-                    if (path.contains(fragment)) {
-                        match = true;
-                        break;
-                    }
-                }
-            }
-            if (!match && !pattern.names.isEmpty() && pattern.names.contains(name)) {
-                match = true;
-            }
-            if (!match) {
-                continue;
-            }
-
-            const QString key = QString::fromLatin1(pattern.category);
-            JunkGroup &group = groups[key];
-            group.size += file.size;
-            group.count += 1;
-            if (group.examples.size() < 5) {
-                group.examples << file.path;
-            }
-            break;
+    for (const JunkFile &file : junkFileList(result)) {
+        JunkGroup &group = groups[file.category];
+        group.size += file.size;
+        group.count += 1;
+        if (group.examples.size() < 5) {
+            group.examples << file.path;
         }
     }
 

@@ -23,6 +23,10 @@ SnapshotManagerDialog::SnapshotManagerDialog(SnapshotService *snapshotService, Q
     setWindowTitle(QStringLiteral("Snapshot Manager"));
     resize(720, 460);
 
+    // Deleting a snapshot drops its recorded history, so the button uses the destructive style.
+    m_deleteButton->setObjectName(QStringLiteral("destructiveButton"));
+    m_deleteButton->setToolTip(QStringLiteral("Delete the selected snapshot and its recorded changes from the database."));
+
     auto *layout = new QVBoxLayout(this);
     auto *title = new QLabel(QStringLiteral("Manage snapshots stored in the database."), this);
     title->setWordWrap(true);

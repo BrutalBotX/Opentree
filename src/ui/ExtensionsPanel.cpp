@@ -12,6 +12,7 @@
 
 #include <algorithm>
 
+#include "ui/TableItems.h"
 #include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 
@@ -82,23 +83,6 @@ const QStringList &fontExtensions()
     return list;
 }
 
-class NumericTableWidgetItem : public QTableWidgetItem {
-public:
-    explicit NumericTableWidgetItem(double sortValue, const QString &text)
-        : QTableWidgetItem(text)
-        , m_sortValue(sortValue)
-    {
-    }
-
-    bool operator<(const QTableWidgetItem &other) const override
-    {
-        const auto *otherItem = dynamic_cast<const NumericTableWidgetItem *>(&other);
-        return otherItem ? (m_sortValue < otherItem->m_sortValue) : QTableWidgetItem::operator<(other);
-    }
-
-    double m_sortValue = 0.0;
-};
-
 } // namespace
 
 QString ExtensionsPanel::categoryForExtension(const QString &extension)
@@ -153,9 +137,7 @@ ExtensionsPanel::ExtensionsPanel(QWidget *parent)
     m_table->setColumnWidth(1, 120);
     m_table->setColumnWidth(2, 80);
     m_table->setColumnWidth(3, 90);
-    m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_table->setSortingEnabled(true);
+    configureStandardTable(m_table);
 
     auto *topRow = new QHBoxLayout;
     topRow->setContentsMargins(0, 0, 0, 0);
@@ -199,7 +181,6 @@ void ExtensionsPanel::setViewMetric(ViewMetric metric)
 
 void ExtensionsPanel::rebuild()
 {
-    m_table->setSortingEnabled(false);
     m_table->clearContents();
 
     if (m_activeFolderPath.isEmpty()) {
@@ -250,17 +231,19 @@ void ExtensionsPanel::rebuild()
         rows.resize(100);
     }
 
-    m_table->setRowCount(rows.size());
-    for (int rowIndex = 0; rowIndex < rows.size(); ++rowIndex) {
-        const ExtensionRow &row = rows[rowIndex];
-        const double percent = totalSize <= 0 ? 0.0 : (100.0 * double(row.size) / double(totalSize));
-        m_table->setItem(rowIndex, 0, new QTableWidgetItem(row.group));
-        m_table->setItem(rowIndex, 1, new NumericTableWidgetItem(double(row.size), SizeFormatter::formatBytes(row.size)));
-        m_table->setItem(rowIndex, 2, new NumericTableWidgetItem(double(row.count), QString::number(row.count)));
-        m_table->setItem(rowIndex, 3, new NumericTableWidgetItem(percent, QString::number(percent, 'f', 1) + "%"));
+    {
+        TableSortGuard sortGuard(m_table);
+        m_table->setRowCount(rows.size());
+        for (int rowIndex = 0; rowIndex < rows.size(); ++rowIndex) {
+            const ExtensionRow &row = rows[rowIndex];
+            const double percent = totalSize <= 0 ? 0.0 : (100.0 * double(row.size) / double(totalSize));
+            m_table->setItem(rowIndex, 0, makeTextItem(row.group));
+            m_table->setItem(rowIndex, 1, makeNumberItem(SizeFormatter::formatBytes(row.size), row.size));
+            m_table->setItem(rowIndex, 2, makeNumberItem(QString::number(row.count), row.count));
+            m_table->setItem(rowIndex, 3, makePercentItem(percent));
+        }
     }
 
-    m_table->setSortingEnabled(true);
     if (m_viewMetric == ViewMetric::Files) {
         m_table->sortByColumn(2, Qt::DescendingOrder);
     } else if (m_viewMetric == ViewMetric::Size) {

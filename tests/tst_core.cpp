@@ -11,6 +11,7 @@
 #include "services/DedupService.h"
 #include "services/ReportService.h"
 #include "services/SnapshotService.h"
+#include "ui/ThemeManager.h"
 #include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 
@@ -376,6 +377,43 @@ private slots:
     }
 };
 
+class TestTheme : public QObject {
+    Q_OBJECT
+
+private slots:
+    void builtInThemesResolveEveryPlaceholder()
+    {
+        const QMap<QString, ThemeDefinition> themes = ThemeManager::builtInThemes();
+        QCOMPARE(themes.size(), 2);
+        QVERIFY(themes.contains(QStringLiteral("dark")));
+        QVERIFY(themes.contains(QStringLiteral("light")));
+
+        for (auto it = themes.cbegin(); it != themes.cend(); ++it) {
+            const QString &styleSheet = it.value().styleSheet;
+            QVERIFY2(!styleSheet.isEmpty(), qPrintable(it.key()));
+            for (int placeholder = 1; placeholder <= 9; ++placeholder) {
+                const QString token = QStringLiteral("%%1").arg(placeholder);
+                QVERIFY2(!styleSheet.contains(token), qPrintable(QStringLiteral("%1 leaves %2 unresolved").arg(it.key(), token)));
+            }
+        }
+    }
+
+    void buttonsAndInputsCarryTheAccentFrame()
+    {
+        const QMap<QString, ThemeDefinition> themes = ThemeManager::builtInThemes();
+        for (auto it = themes.cbegin(); it != themes.cend(); ++it) {
+            const QString &styleSheet = it.value().styleSheet;
+            // The accent frame must be global: buttons in the toolbar, panels, dialogs and
+            // message boxes all rely on the same unscoped rule.
+            QVERIFY(styleSheet.contains(QStringLiteral("QPushButton, QToolButton {")));
+            QVERIFY(styleSheet.contains(QStringLiteral("QPushButton:focus, QToolButton:focus")));
+            QVERIFY(styleSheet.contains(QStringLiteral("QComboBox:focus, QSpinBox:focus")));
+            QVERIFY(!styleSheet.contains(QStringLiteral("QDialog QPushButton")));
+            QVERIFY(!styleSheet.contains(QStringLiteral("QMessageBox QPushButton")));
+        }
+    }
+};
+
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
@@ -393,6 +431,7 @@ int main(int argc, char *argv[])
         {new TestAnalysis, "analysis"},
         {new TestReport, "report"},
         {new TestLedger, "ledger"},
+        {new TestTheme, "theme"},
     };
 
     int status = 0;

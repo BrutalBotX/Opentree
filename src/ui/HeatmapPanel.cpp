@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdlib>
 
+#include "ui/TableItems.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
@@ -21,23 +22,6 @@ bool samePath(const QString &left, const QString &right)
 {
     return left.compare(right, Qt::CaseInsensitive) == 0;
 }
-
-class NumericTableWidgetItem : public QTableWidgetItem {
-public:
-    explicit NumericTableWidgetItem(double sortValue, const QString &text)
-        : QTableWidgetItem(text)
-        , m_sortValue(sortValue)
-    {
-    }
-
-    bool operator<(const QTableWidgetItem &other) const override
-    {
-        const auto *otherItem = dynamic_cast<const NumericTableWidgetItem *>(&other);
-        return otherItem ? (m_sortValue < otherItem->m_sortValue) : QTableWidgetItem::operator<(other);
-    }
-
-    double m_sortValue = 0.0;
-};
 
 // Blue heat scale by share of the parent folder; growth/shrink override it so the
 // delta is readable at a glance.
@@ -82,9 +66,7 @@ HeatmapPanel::HeatmapPanel(QWidget *parent)
     m_table->setColumnWidth(2, 120);
     m_table->setColumnWidth(3, 80);
     m_table->setColumnWidth(4, 110);
-    m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_table->setSortingEnabled(true);
+    configureStandardTable(m_table);
     layout->addWidget(m_summaryLabel);
     layout->addWidget(m_table, 1);
 
@@ -158,23 +140,23 @@ void HeatmapPanel::rebuild()
     }
 
     const qint64 denominator = parentSize > 0 ? parentSize : childrenSize;
-    m_table->setSortingEnabled(false);
+    {
+    TableSortGuard sortGuard(m_table);
     m_table->setRowCount(children.size());
     for (int rowIndex = 0; rowIndex < children.size(); ++rowIndex) {
         const TreeEntry &entry = children[rowIndex];
         const qint64 delta = deltaByPath.value(entry.path, 0);
         const double percent = denominator <= 0 ? 0.0 : (100.0 * double(entry.size) / double(denominator));
 
-        auto *nameItem = new QTableWidgetItem(entry.name.isEmpty() ? entry.path : entry.name);
-        nameItem->setToolTip(entry.path);
-        auto *percentItem = new NumericTableWidgetItem(percent, QString::number(percent, 'f', 1) + "%");
-        auto *sizeItem = new NumericTableWidgetItem(double(entry.size), SizeFormatter::formatBytes(entry.size));
-        auto *filesItem = new NumericTableWidgetItem(double(entry.fileCount), QString::number(entry.fileCount));
-        auto *deltaItem = new NumericTableWidgetItem(
-            double(delta),
+        QTableWidgetItem *nameItem = makeTextItem(entry.name.isEmpty() ? entry.path : entry.name, entry.path);
+        QTableWidgetItem *percentItem = makePercentItem(percent);
+        QTableWidgetItem *sizeItem = makeNumberItem(SizeFormatter::formatBytes(entry.size), entry.size);
+        QTableWidgetItem *filesItem = makeNumberItem(QString::number(entry.fileCount), entry.fileCount);
+        QTableWidgetItem *deltaItem = makeNumberItem(
             delta == 0 ? QStringLiteral("-")
                        : QStringLiteral("%1%2").arg(delta > 0 ? QStringLiteral("+") : QStringLiteral("-"),
-                                                   SizeFormatter::formatBytes(std::abs(delta))));
+                                                   SizeFormatter::formatBytes(std::abs(delta))),
+            delta);
 
         // Shade the whole row so the table reads like a heat map.
         const QColor tint = heatColor(percent, delta);
@@ -195,7 +177,7 @@ void HeatmapPanel::rebuild()
         m_table->setItem(rowIndex, 4, deltaItem);
     }
 
-    m_table->setSortingEnabled(true);
+    }
     if (m_viewMetric == ViewMetric::Files) {
         m_table->sortByColumn(3, Qt::DescendingOrder);
     } else if (m_viewMetric == ViewMetric::Size) {

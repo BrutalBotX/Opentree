@@ -4,6 +4,35 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.6.1] - 2026-09-27
+
+### Fixed
+
+- Theme: the accent frame around buttons now comes from one global rule, so it looks the
+  same in toolbars, panels, dialogs and message boxes instead of only in some contexts.
+  Hover and focus states use a brighter accent colour, and focused buttons, inputs, combos
+  and spin boxes are clearly outlined.
+- Insights and Trash tables sort when a header is clicked. Size, age, count and delta
+  columns sort numerically (formatted values such as "1.22 MB" or "400 days" used to sort
+  alphabetically), and the chosen sort survives a refresh.
+- Staging items opens one review window that lists exactly what will be staged or moved to
+  the Recycle Bin, and confirms once. The extra "staged N items" popup is gone; the result
+  is reported in the panel and the status bar instead.
+- The MSVC build no longer links a console subsystem executable, so launching OpenTree.exe
+  no longer opens a console window next to the app. The app targets are now finalised
+  explicitly (GUI subsystem) and the test binaries stay console executables.
+
+### Changed
+
+- UI consistency: every table hides the row-number gutter, uses alternating rows, read-only
+  whole-row selection and sortable headers (Insights, Trash, Timeline folder history and
+  compare, Extensions, Heatmap and the new staging review dialog).
+- Consistent Title Case for button labels and group box titles, the snapshot delete button
+  now uses the destructive style, and the duplicate tree uses alternating rows.
+- Removed the duplicated per-panel numeric table item classes in favour of the shared
+  `TableItems.h` helpers.
+- Version bumped to 0.6.1.
+
 ## [0.6.0] - 2026-09-27
 
 ### Added

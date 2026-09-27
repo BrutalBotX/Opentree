@@ -23,7 +23,7 @@ DuplicatesPanel::DuplicatesPanel(ConfigService *configService, QWidget *parent)
     , m_summaryLabel(new QLabel(this))
     , m_minSizeSpin(new QSpinBox(this))
     , m_skipSystemCheck(new QCheckBox(QStringLiteral("Skip system folders"), this))
-    , m_scanButton(new QPushButton(QStringLiteral("Find duplicates"), this))
+    , m_scanButton(new QPushButton(QStringLiteral("Find Duplicates"), this))
     , m_tree(new QTreeWidget(this))
 {
     auto *layout = new QVBoxLayout(this);
@@ -60,6 +60,7 @@ DuplicatesPanel::DuplicatesPanel(ConfigService *configService, QWidget *parent)
     m_tree->setColumnWidth(2, 320);
     m_tree->setRootIsDecorated(true);
     m_tree->setUniformRowHeights(true);
+    m_tree->setAlternatingRowColors(true);
     m_tree->setSortingEnabled(false);
     m_tree->setEditTriggers(QAbstractItemView::NoEditTriggers);
     connect(m_tree, &QTreeWidget::itemActivated, this, &DuplicatesPanel::handleItemActivated);

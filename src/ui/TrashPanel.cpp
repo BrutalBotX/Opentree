@@ -6,10 +6,11 @@
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTableWidget>
-#include <QTableWidgetItem>
 #include <QVBoxLayout>
 
 #include "services/VirtualTrashService.h"
+#include "ui/StagingReviewDialog.h"
+#include "ui/TableItems.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
@@ -18,9 +19,10 @@ TrashPanel::TrashPanel(VirtualTrashService *trashService, QWidget *parent)
     : QWidget(parent)
     , m_trashService(trashService)
     , m_summaryLabel(new QLabel(this))
-    , m_stageButton(new QPushButton(QStringLiteral("Stage current selection"), this))
-    , m_unstageButton(new QPushButton(QStringLiteral("Remove from list"), this))
-    , m_clearButton(new QPushButton(QStringLiteral("Clear list"), this))
+    , m_statusLabel(new QLabel(this))
+    , m_stageButton(new QPushButton(QStringLiteral("Stage Current Selection"), this))
+    , m_unstageButton(new QPushButton(QStringLiteral("Remove from List"), this))
+    , m_clearButton(new QPushButton(QStringLiteral("Clear List"), this))
     , m_recycleButton(new QPushButton(QStringLiteral("Move to Recycle Bin..."), this))
     , m_table(new QTableWidget(this))
 {
@@ -29,27 +31,29 @@ TrashPanel::TrashPanel(VirtualTrashService *trashService, QWidget *parent)
     layout->setSpacing(10);
 
     m_summaryLabel->setWordWrap(true);
+    m_statusLabel->setWordWrap(true);
+    m_statusLabel->setVisible(false);
 
     m_table->setColumnCount(5);
     m_table->setHorizontalHeaderLabels({QStringLiteral("Item"), QStringLiteral("Size"),
                                         QStringLiteral("Kind"), QStringLiteral("Staged"),
                                         QStringLiteral("Reason")});
+    configureStandardTable(m_table);
     m_table->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
     for (int column = 1; column < 5; ++column) {
         m_table->horizontalHeader()->setSectionResizeMode(column, QHeaderView::Interactive);
     }
-    m_table->setColumnWidth(1, 110);
-    m_table->setColumnWidth(2, 80);
-    m_table->setColumnWidth(3, 150);
+    m_table->setColumnWidth(1, 120);
+    m_table->setColumnWidth(2, 90);
+    m_table->setColumnWidth(3, 160);
     m_table->setColumnWidth(4, 200);
-    m_table->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_table->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_table->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_table->sortItems(1, Qt::DescendingOrder); // largest first by default
 
-    m_stageButton->setToolTip(QStringLiteral("Add the item selected in the tree to the staged list.\nThis only records the intent; nothing is deleted."));
+    m_stageButton->setToolTip(QStringLiteral("Add the item selected in the tree to the staged list.\n"
+                                             "This only records the intent; nothing is deleted."));
     m_unstageButton->setToolTip(QStringLiteral("Remove the selected row from the staged list."));
     m_clearButton->setToolTip(QStringLiteral("Empty the staged list. Nothing on disk is affected."));
-    m_recycleButton->setToolTip(QStringLiteral("Move every staged item to the Windows Recycle Bin. Asks for confirmation first."));
+    m_recycleButton->setToolTip(QStringLiteral("Review the staged items, then move them to the Windows Recycle Bin."));
     m_recycleButton->setObjectName(QStringLiteral("destructiveButton"));
 
     auto *buttonRow = new QHBoxLayout;
@@ -61,6 +65,7 @@ TrashPanel::TrashPanel(VirtualTrashService *trashService, QWidget *parent)
     buttonRow->addWidget(m_recycleButton, 0);
 
     layout->addWidget(m_summaryLabel);
+    layout->addWidget(m_statusLabel);
     layout->addLayout(buttonRow);
     layout->addWidget(m_table, 1);
 
@@ -94,26 +99,24 @@ void TrashPanel::refresh()
         return;
     }
 
-    m_table->setRowCount(items.size());
     qint64 totalBytes = 0;
-    for (int row = 0; row < items.size(); ++row) {
-        const TrashItem &item = items[row];
-        totalBytes += item.size;
+    {
+        TableSortGuard guard(m_table);
+        m_table->setRowCount(items.size());
+        for (int row = 0; row < items.size(); ++row) {
+            const TrashItem &item = items[row];
+            totalBytes += item.size;
 
-        auto *pathItem = new QTableWidgetItem(item.path);
-        pathItem->setData(Qt::UserRole, item.id);
-        auto *sizeItem = new QTableWidgetItem(SizeFormatter::formatBytes(item.size));
-        auto *kindItem = new QTableWidgetItem(item.isFolder ? QStringLiteral("Folder") : QStringLiteral("File"));
-        auto *stagedItem = new QTableWidgetItem(item.stagedAt.isValid()
-            ? item.stagedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm"))
-            : QStringLiteral("-"));
-        auto *reasonItem = new QTableWidgetItem(item.reason);
-
-        m_table->setItem(row, 0, pathItem);
-        m_table->setItem(row, 1, sizeItem);
-        m_table->setItem(row, 2, kindItem);
-        m_table->setItem(row, 3, stagedItem);
-        m_table->setItem(row, 4, reasonItem);
+            auto *pathItem = makeTextItem(item.path, item.path);
+            pathItem->setData(Qt::UserRole, item.id);
+            m_table->setItem(row, 0, pathItem);
+            m_table->setItem(row, 1, makeNumberItem(SizeFormatter::formatBytes(item.size), item.size));
+            m_table->setItem(row, 2, makeTextItem(item.isFolder ? QStringLiteral("Folder") : QStringLiteral("File")));
+            m_table->setItem(row, 3, makeTextItem(item.stagedAt.isValid()
+                                                      ? item.stagedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm"))
+                                                      : QStringLiteral("-")));
+            m_table->setItem(row, 4, makeTextItem(item.reason));
+        }
     }
 
     const bool hasItems = !items.isEmpty();
@@ -126,7 +129,7 @@ void TrashPanel::refresh()
               .arg(items.size())
               .arg(items.size() == 1 ? QString() : QStringLiteral("s"))
               .arg(SizeFormatter::formatBytes(totalBytes))
-        : QStringLiteral("Trash: nothing staged. Select an item in the tree and press \"Stage current selection\"."));
+        : QStringLiteral("Trash: nothing staged. Select an item in the tree and press \"Stage Current Selection\"."));
 }
 
 void TrashPanel::stageSelection()
@@ -145,6 +148,9 @@ void TrashPanel::stageSelection()
         return;
     }
 
+    m_statusLabel->setText(QStringLiteral("Staged %1. Review it below, then move it to the Recycle Bin when ready.")
+                               .arg(m_selection.path));
+    m_statusLabel->setVisible(true);
     refresh();
 }
 
@@ -191,6 +197,7 @@ void TrashPanel::clearStaged()
         return;
     }
 
+    m_statusLabel->setVisible(false);
     refresh();
 }
 
@@ -206,62 +213,66 @@ void TrashPanel::moveStagedToRecycleBin()
         return;
     }
 
-    qint64 totalBytes = 0;
-    QStringList blocked;
+    QVector<StagingCandidate> candidates;
+    candidates.reserve(items.size());
+    QStringList skipped;
     for (const TrashItem &item : items) {
-        totalBytes += item.size;
         QString reason;
         if (!VirtualTrashService::canMoveToRecycleBin(item.path, &reason)) {
-            blocked << QStringLiteral("%1 (%2)").arg(item.path, reason);
+            skipped << QStringLiteral("%1 (%2)").arg(item.path, reason);
+            continue;
         }
+        StagingCandidate candidate;
+        candidate.path = item.path;
+        candidate.size = item.size;
+        candidate.isFolder = item.isFolder;
+        candidates.push_back(candidate);
     }
 
-    QMessageBox box(this);
-    box.setIcon(QMessageBox::Critical);
-    box.setWindowTitle(QStringLiteral("Move to Recycle Bin"));
-    box.setText(QStringLiteral("Move %1 staged item(s) to the Windows Recycle Bin?").arg(items.size()));
-    QString informative = QStringLiteral("This removes %1 from disk.\n\n"
-                                         "The items go to the Recycle Bin, so they can still be restored from there, "
-                                         "but OpenTree cannot undo this action.")
-                              .arg(SizeFormatter::formatBytes(totalBytes));
-    if (!blocked.isEmpty()) {
-        informative += QStringLiteral("\n\n%1 item(s) will be skipped because they are not safe to remove:\n%2")
-                           .arg(blocked.size())
-                           .arg(blocked.mid(0, 8).join(QStringLiteral("\n")));
+    if (candidates.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Move to Recycle Bin"),
+                             QStringLiteral("None of the staged items can be moved to the Recycle Bin:\n\n%1")
+                                 .arg(skipped.mid(0, 8).join(QStringLiteral("\n"))));
+        return;
     }
-    box.setInformativeText(informative);
-    QPushButton *confirmButton = box.addButton(QStringLiteral("Move to Recycle Bin"), QMessageBox::DestructiveRole);
-    QPushButton *cancelButton = box.addButton(QStringLiteral("Cancel"), QMessageBox::RejectRole);
-    box.setDefaultButton(cancelButton);
-    box.exec();
-    if (box.clickedButton() != confirmButton) {
+
+    // One review window listing exactly what leaves the disk, then one confirmation.
+    StagingReviewDialog dialog(StagingReviewDialog::Action::MoveToRecycleBin, candidates, skipped, this);
+    if (dialog.exec() != QDialog::Accepted) {
         return;
     }
 
     int removed = 0;
+    qint64 removedBytes = 0;
     QStringList failures;
-    for (const TrashItem &item : items) {
+    for (const StagingCandidate &candidate : candidates) {
         QString moveError;
-        if (!VirtualTrashService::moveToRecycleBin(item.path, &moveError)) {
+        if (!VirtualTrashService::moveToRecycleBin(candidate.path, &moveError)) {
             failures << moveError;
             continue;
         }
-        m_trashService->unstage(item.id);
+        for (const TrashItem &item : items) {
+            if (item.path.compare(candidate.path, Qt::CaseInsensitive) == 0) {
+                m_trashService->unstage(item.id);
+                break;
+            }
+        }
         ++removed;
+        removedBytes += candidate.size;
     }
 
     refresh();
 
-    if (failures.isEmpty()) {
-        QMessageBox::information(this, QStringLiteral("Move to Recycle Bin"),
-                                 QStringLiteral("Moved %1 item(s) to the Recycle Bin.").arg(removed));
-    } else {
-        QMessageBox::warning(this, QStringLiteral("Move to Recycle Bin"),
-                             QStringLiteral("Moved %1 item(s). %2 failed:\n\n%3")
-                                 .arg(removed)
-                                 .arg(failures.size())
-                                 .arg(failures.mid(0, 8).join(QStringLiteral("\n"))));
+    QString status = QStringLiteral("Moved %1 (%2) to the Recycle Bin.")
+                         .arg(removed == 1 ? QStringLiteral("1 item") : QStringLiteral("%1 items").arg(removed),
+                              SizeFormatter::formatBytes(removedBytes));
+    if (!failures.isEmpty()) {
+        status += QStringLiteral(" %1 failed: %2")
+                      .arg(failures.size())
+                      .arg(failures.mid(0, 4).join(QStringLiteral("; ")));
     }
+    m_statusLabel->setText(status);
+    m_statusLabel->setVisible(true);
 }
 
-}
+} // namespace opentree

@@ -37,6 +37,7 @@
 #include "ui/DetailsTablePanel.h"
 #include "ui/DuplicatesPanel.h"
 #include "ui/SettingsDialog.h"
+#include "ui/StagingReviewDialog.h"
 #include "ui/ThemeManager.h"
 #include "ui/TreePanel.h"
 #include "utils/Logger.h"
@@ -798,6 +799,15 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
     loop.exec();
 
     window.setCurrentTabIndex(tabIndex);
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_THEME")) {
+        const QMap<QString, opentree::ThemeDefinition> themes =
+            opentree::ThemeManager::loadThemes(QStringLiteral("")); // built-ins only
+        const QString themeId = qEnvironmentVariable("OPENTREE_PREVIEW_THEME");
+        if (themes.contains(themeId)) {
+            opentree::ThemeManager::applyTheme(app, themes.value(themeId));
+            QCoreApplication::processEvents();
+        }
+    }
     if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_BUSY")) {
         window.setBusy(true);
         window.setProgress(65);
@@ -815,6 +825,27 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
         expandLoop.exec();
     }
     QCoreApplication::processEvents();
+
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_STAGING")) {
+        const bool recycle = qEnvironmentVariable("OPENTREE_PREVIEW_STAGING").compare(QStringLiteral("recycle"), Qt::CaseInsensitive) == 0;
+        QVector<opentree::StagingCandidate> items;
+        items.push_back({QStringLiteral("C:/Users/ndsga/junkfix/cache/data.cache"), 512000, false});
+        items.push_back({QStringLiteral("C:/Users/ndsga/junkfix/app.log"), 307200, false});
+        items.push_back({QStringLiteral("C:/Users/ndsga/junkfix/temp/scratch.tmp"), 204800, false});
+        items.push_back({QStringLiteral("C:/Users/ndsga/junkfix/Thumbs.db"), 102400, false});
+        items.push_back({QStringLiteral("C:/Users/ndsga/junkfix/old-backup"), 0, true});
+        QStringList skipped;
+        if (recycle) {
+            skipped << QStringLiteral("C:/Windows/System32/config (Refusing to remove a protected system location.)");
+        }
+        opentree::StagingReviewDialog dialog(recycle ? opentree::StagingReviewDialog::Action::MoveToRecycleBin
+                                                     : opentree::StagingReviewDialog::Action::Stage,
+                                             items, skipped, &window);
+        dialog.show();
+        QCoreApplication::processEvents();
+        dialog.grab().save(outputPath);
+        return 0;
+    }
 
     if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_SETTINGS")) {
         opentree::SettingsDialog dialog(&configService, window.availableThemes(), &window);
@@ -834,7 +865,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.6.0"));
+    QApplication::setApplicationVersion(QStringLiteral("0.6.1"));
 
     QString startupPath;
     QString scanTestPath;

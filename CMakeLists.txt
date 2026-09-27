@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.6.0 LANGUAGES CXX)
+project(OpenTree VERSION 0.6.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -16,7 +16,7 @@ find_package(Qt6 QUIET COMPONENTS PrintSupport)
 
 qt_standard_project_setup()
 
-qt_add_executable(OpenTree
+qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/main.cpp
     resources/opentree.rc
     src/app/MainWindow.h
@@ -76,6 +76,9 @@ qt_add_executable(OpenTree
     src/ui/DuplicatesPanel.cpp
     src/ui/TrashPanel.h
     src/ui/TrashPanel.cpp
+    src/ui/StagingReviewDialog.h
+    src/ui/StagingReviewDialog.cpp
+    src/ui/TableItems.h
     src/data/DatabaseManager.h
     src/data/DatabaseManager.cpp
     src/data/FolderRepository.h
@@ -126,13 +129,18 @@ else()
     message(STATUS "OpenTree: PDF report export disabled (Qt6::PrintSupport not found)")
 endif()
 
+# Windows GUI subsystem: without this the MSVC build links a console binary and Windows
+# opens a console window next to the app. Set before finalization so it always wins.
+set_target_properties(OpenTree PROPERTIES WIN32_EXECUTABLE TRUE)
+qt_finalize_executable(OpenTree)
+
 # ---------------------------------------------------------------------------
 # Core logic tests (path helpers, size formatting, dedup, analysis, reports, ledger)
 # ---------------------------------------------------------------------------
 find_package(Qt6 QUIET COMPONENTS Test)
 if (TARGET Qt6::Test)
     enable_testing()
-    qt_add_executable(OpenTreeTests
+    qt_add_executable(OpenTreeTests MANUAL_FINALIZATION
         tests/tst_core.cpp
         resources/resources.qrc
         src/utils/PathUtils.cpp
@@ -141,9 +149,10 @@ if (TARGET Qt6::Test)
         src/services/AnalysisService.cpp
         src/services/ReportService.cpp
         src/services/SnapshotService.cpp
+        src/ui/ThemeManager.cpp
     )
     target_include_directories(OpenTreeTests PRIVATE src third_party/include)
-    target_link_libraries(OpenTreeTests PRIVATE Qt6::Core Qt6::Sql Qt6::Test)
+    target_link_libraries(OpenTreeTests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Test)
     # Console subsystem so the test log is visible when run from a terminal.
     set_target_properties(OpenTreeTests PROPERTIES WIN32_EXECUTABLE FALSE)
     if (MINGW)
@@ -152,6 +161,7 @@ if (TARGET Qt6::Test)
         target_link_options(OpenTreeTests PRIVATE /SUBSYSTEM:CONSOLE)
     endif()
     add_test(NAME core COMMAND OpenTreeTests)
+    qt_finalize_executable(OpenTreeTests)
     message(STATUS "OpenTree: core tests enabled (OpenTreeTests)")
 else()
     message(STATUS "OpenTree: core tests disabled (Qt6::Test not found)")

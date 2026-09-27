@@ -19,6 +19,7 @@
 #include <cstdlib>
 
 #include "ui/SnapshotTrendWidget.h"
+#include "ui/TableItems.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
@@ -30,7 +31,7 @@ TimelinePanel::TimelinePanel(QWidget *parent)
     , m_bodySplitter(new QSplitter(Qt::Horizontal, this))
     , m_trendWidget(new SnapshotTrendWidget(this))
     , m_compareCard(new QGroupBox(QStringLiteral("Snapshot Compare"), this))
-    , m_folderHistoryCard(new QGroupBox(QStringLiteral("Folder history"), this))
+    , m_folderHistoryCard(new QGroupBox(QStringLiteral("Folder History"), this))
     , m_folderHistoryLabel(new QLabel(this))
     , m_folderHistoryTable(new QTableWidget(this))
     , m_scopeLabel(new QLabel(this))
@@ -91,10 +92,8 @@ TimelinePanel::TimelinePanel(QWidget *parent)
     compareLayout->addWidget(m_compareSummaryLabel);
 
     m_compareTable->setColumnCount(2);
-    m_compareTable->setHorizontalHeaderLabels({"Name", "Delta"});
-    m_compareTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_compareTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_compareTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    m_compareTable->setHorizontalHeaderLabels({QStringLiteral("Name"), QStringLiteral("Delta")});
+    configureStandardTable(m_compareTable);
     m_compareTable->horizontalHeader()->setStretchLastSection(true);
     m_compareTable->setMinimumHeight(120);
     compareLayout->addWidget(m_compareTable);
@@ -109,14 +108,12 @@ TimelinePanel::TimelinePanel(QWidget *parent)
 
     m_folderHistoryTable->setColumnCount(3);
     m_folderHistoryTable->setHorizontalHeaderLabels({QStringLiteral("Recorded"), QStringLiteral("Size"), QStringLiteral("Change")});
-    m_folderHistoryTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    m_folderHistoryTable->setSelectionBehavior(QAbstractItemView::SelectRows);
-    m_folderHistoryTable->setSelectionMode(QAbstractItemView::SingleSelection);
+    configureStandardTable(m_folderHistoryTable);
     m_folderHistoryTable->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Interactive);
     m_folderHistoryTable->horizontalHeader()->setSectionResizeMode(1, QHeaderView::Interactive);
     m_folderHistoryTable->horizontalHeader()->setSectionResizeMode(2, QHeaderView::Stretch);
     m_folderHistoryTable->setColumnWidth(0, 150);
-    m_folderHistoryTable->setColumnWidth(1, 110);
+    m_folderHistoryTable->setColumnWidth(1, 120);
     m_folderHistoryTable->setMinimumHeight(110);
     folderHistoryLayout->addWidget(m_folderHistoryTable);
 
@@ -269,22 +266,26 @@ void TimelinePanel::setFolderHistory(const QString &folderPath, const QVector<Fo
         ? QStringLiteral("No ledger entries for %1 yet. Snapshots record a folder when its size changes.").arg(folderPath)
         : QStringLiteral("Recorded sizes for %1 (%2 entries)").arg(folderPath).arg(points.size()));
 
-    m_folderHistoryTable->setRowCount(points.size());
-    qint64 previous = 0;
-    for (int row = 0; row < points.size(); ++row) {
-        const FolderHistoryPoint &point = points[row];
-        m_folderHistoryTable->setItem(row, 0, new QTableWidgetItem(point.recordedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm"))));
-        m_folderHistoryTable->setItem(row, 1, new QTableWidgetItem(SizeFormatter::formatBytes(point.size)));
+    {
+        TableSortGuard guard(m_folderHistoryTable);
+        m_folderHistoryTable->setRowCount(points.size());
+        qint64 previous = 0;
+        for (int row = 0; row < points.size(); ++row) {
+            const FolderHistoryPoint &point = points[row];
+            m_folderHistoryTable->setItem(row, 0, makeTextItem(point.recordedAt.toString(QStringLiteral("yyyy-MM-dd HH:mm"))));
+            m_folderHistoryTable->setItem(row, 1, makeNumberItem(SizeFormatter::formatBytes(point.size), point.size));
 
-        QString change = QStringLiteral("-");
-        if (row > 0) {
-            const qint64 delta = point.size - previous;
-            change = QStringLiteral("%1%2")
-                         .arg(delta >= 0 ? QStringLiteral("+") : QStringLiteral("-"),
-                              SizeFormatter::formatBytes(std::abs(delta)));
+            QString change = QStringLiteral("-");
+            qint64 delta = 0;
+            if (row > 0) {
+                delta = point.size - previous;
+                change = QStringLiteral("%1%2")
+                             .arg(delta >= 0 ? QStringLiteral("+") : QStringLiteral("-"),
+                                  SizeFormatter::formatBytes(std::abs(delta)));
+            }
+            m_folderHistoryTable->setItem(row, 2, makeNumberItem(change, delta));
+            previous = point.size;
         }
-        m_folderHistoryTable->setItem(row, 2, new QTableWidgetItem(change));
-        previous = point.size;
     }
 }
 
@@ -358,23 +359,26 @@ void TimelinePanel::setCompareResult(const SnapshotCompareResult &summary, const
         return std::abs(left.deltaBytes) > std::abs(right.deltaBytes);
     });
     const qsizetype rowCount = std::min<qsizetype>(12, sortedRows.size());
-    m_compareTable->setRowCount(rowCount);
-    for (int i = 0; i < rowCount; ++i) {
-        const SnapshotCompareRow &row = sortedRows[i];
-        const QString name = QFileInfo(row.path).fileName().isEmpty() ? row.path : QFileInfo(row.path).fileName();
-        auto *nameItem = new QTableWidgetItem(name);
-        nameItem->setToolTip(row.path);
-        auto *deltaItem = new QTableWidgetItem(QStringLiteral("%1%2")
-            .arg(row.deltaBytes >= 0 ? QStringLiteral("+") : QStringLiteral("-"))
-            .arg(SizeFormatter::formatAdaptiveBytes(std::llabs(row.deltaBytes))));
-        deltaItem->setToolTip(row.path);
-        if (row.deltaBytes > 0) {
-            deltaItem->setForeground(QBrush(QColor(76, 217, 100)));
-        } else if (row.deltaBytes < 0) {
-            deltaItem->setForeground(QBrush(QColor(255, 107, 107)));
+    {
+        TableSortGuard guard(m_compareTable);
+        m_compareTable->setRowCount(rowCount);
+        for (int i = 0; i < rowCount; ++i) {
+            const SnapshotCompareRow &row = sortedRows[i];
+            const QString name = QFileInfo(row.path).fileName().isEmpty() ? row.path : QFileInfo(row.path).fileName();
+            auto *nameItem = makeTextItem(name, row.path);
+            auto *deltaItem = makeNumberItem(QStringLiteral("%1%2")
+                                                 .arg(row.deltaBytes >= 0 ? QStringLiteral("+") : QStringLiteral("-"))
+                                                 .arg(SizeFormatter::formatAdaptiveBytes(std::llabs(row.deltaBytes))),
+                                             row.deltaBytes);
+            deltaItem->setToolTip(row.path);
+            if (row.deltaBytes > 0) {
+                deltaItem->setForeground(QBrush(QColor(76, 217, 100)));
+            } else if (row.deltaBytes < 0) {
+                deltaItem->setForeground(QBrush(QColor(255, 107, 107)));
+            }
+            m_compareTable->setItem(i, 0, nameItem);
+            m_compareTable->setItem(i, 1, deltaItem);
         }
-        m_compareTable->setItem(i, 0, nameItem);
-        m_compareTable->setItem(i, 1, deltaItem);
     }
 }
 

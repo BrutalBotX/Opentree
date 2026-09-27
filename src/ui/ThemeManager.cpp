@@ -37,6 +37,9 @@ ThemeDefinition makeTheme(const QString &id, const QString &name, const QString 
     palette.setColor(QPalette::ToolTipText, text);
     palette.setColor(QPalette::BrightText, text);
     theme.palette = palette;
+    // Focus/hover accent: a brighter blue on dark themes and a deeper blue on light ones so
+    // focused controls stay clearly outlined against the surrounding frame.
+    const QColor accent = window.lightness() < 128 ? highlight.lighter(135) : highlight.darker(120);
     theme.styleSheet = QStringLiteral(
         "QMenuBar { background: %1; color: %2; }"
         "QMenuBar::item { background: transparent; color: %2; padding: 6px 10px; }"
@@ -48,26 +51,31 @@ ThemeDefinition makeTheme(const QString &id, const QString &name, const QString 
         "QDialog QLabel { color: %2; }"
         "QMessageBox { background: %1; color: %2; }"
         "QMessageBox QLabel { color: %2; }"
-        "QMessageBox QPushButton { background: %5; color: %2; border: 1px solid %3; padding: 6px 10px; }"
         "QGroupBox { color: %2; border: 1px solid %3; margin-top: 12px; padding-top: 8px; }"
         "QGroupBox::title { color: %2; subcontrol-origin: margin; left: 10px; padding: 0 4px; }"
-        "QDialog QPushButton, QWidget QPushButton, QToolButton { background: %5; color: %2; border: 1px solid %3; padding: 6px 10px; }"
-        "QDialog QPushButton:hover, QWidget QPushButton:hover, QToolButton:hover { background: %3; color: %4; }"
-        "QDialog QPushButton:pressed, QWidget QPushButton:pressed, QToolButton:pressed { background: %3; color: %4; }"
-        "QPushButton:disabled, QToolButton:disabled { color: rgba(255,255,255,0.45); }"
+        // One global rule for every push/tool button, so the accent frame appears in the
+        // toolbar, panels, dialogs and message boxes alike.
+        "QPushButton, QToolButton { background: %5; color: %2; border: 1px solid %3; padding: 6px 10px; }"
+        "QPushButton:hover, QToolButton:hover { background: %3; color: %4; border: 1px solid %7; }"
+        "QPushButton:pressed, QToolButton:pressed { background: %3; color: %4; }"
+        "QPushButton:focus, QToolButton:focus { border: 1px solid %7; }"
+        "QPushButton:disabled, QToolButton:disabled { color: rgba(255,255,255,0.45); border-color: %6; }"
         "QPushButton#destructiveButton { color: #FF8A80; border: 1px solid #B0392F; }"
-        "QPushButton#destructiveButton:hover { background: #B0392F; color: #FFFFFF; }"
+        "QPushButton#destructiveButton:hover { background: #B0392F; color: #FFFFFF; border: 1px solid #FF8A80; }"
+        "QPushButton#destructiveButton:focus { border: 1px solid #FF8A80; }"
         "QPushButton#destructiveButton:disabled { color: rgba(255,138,128,0.4); border-color: rgba(176,57,47,0.4); }"
         "QLineEdit { background: %5; color: %2; border: 1px solid %3; padding: 6px 8px; selection-background-color: %3; selection-color: %4; }"
-        "QLineEdit:focus { border: 1px solid %4; }"
-        "QComboBox, QSpinBox, QTimeEdit, QPlainTextEdit { background: %5; color: %2; border: 1px solid %3; selection-background-color: %3; selection-color: %4; }"
+        "QLineEdit:focus { border: 1px solid %7; }"
+        "QComboBox, QSpinBox, QTimeEdit, QPlainTextEdit, QTextEdit { background: %5; color: %2; border: 1px solid %3; selection-background-color: %3; selection-color: %4; }"
+        "QComboBox:focus, QSpinBox:focus, QTimeEdit:focus, QPlainTextEdit:focus, QTextEdit:focus { border: 1px solid %7; }"
+        "QPlainTextEdit, QTextEdit { padding: 4px 6px; }"
         "QComboBox { padding: 6px 24px 6px 8px; }"
         "QSpinBox, QTimeEdit { padding: 6px 20px 6px 8px; }"
         "QComboBox::drop-down { border-left: 1px solid %3; width: 22px; }"
         "QComboBox QAbstractItemView, QTableView, QTableWidget, QListWidget { background: %1; color: %2; selection-background-color: %3; selection-color: %4; }"
         "QCheckBox { color: %2; spacing: 6px; }"
         "QCheckBox::indicator { width: 16px; height: 16px; border: 1px solid %3; border-radius: 4px; background: %5; }"
-        "QCheckBox::indicator:hover { border: 1px solid %4; }"
+        "QCheckBox::indicator:hover { border: 1px solid %7; }"
         "QCheckBox::indicator:checked { background: %3; border: 1px solid %4; image: url(:/icons/check.png); }"
         "QCheckBox::indicator:disabled { border-color: %3; background: %6; }"
         "QToolTip { color: %2; background-color: %5; border: 1px solid %3; }"
@@ -96,7 +104,8 @@ ThemeDefinition makeTheme(const QString &id, const QString &name, const QString 
         "QScrollBar::handle:horizontal:hover { background: %4; }"
         "QScrollBar::add-line:horizontal, QScrollBar::sub-line:horizontal { width: 0; }"
         "QScrollBar::add-page:horizontal, QScrollBar::sub-page:horizontal { background: %1; }"
-    ).arg(window.name(), text.name(), highlight.name(), highlightedText.name(), button.name(), base.name());
+    ).arg(window.name(), text.name(), highlight.name(), highlightedText.name(), button.name(), base.name(),
+          accent.name());
     return theme;
 }
 
