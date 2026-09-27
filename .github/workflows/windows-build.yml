@@ -29,14 +29,14 @@ jobs:
           host: 'windows'
           target: 'desktop'
           arch: 'win64_msvc2022_64'
-          modules: 'qtwebengine qtwebchannel'
 
-      - name: Install the WebEngine modules explicitly
+      # The graph needs WebEngine, which aqt does not install with the base kit. WebEngineCore
+      # also depends on the optional Positioning module: without it the Qt6WebEngineWidgets
+      # CMake package refuses to load and the build would silently produce a graph-less app.
+      - name: Install the WebEngine modules
         shell: pwsh
         run: |
           python -m pip install --quiet aqtinstall
-          # WebEngine needs its optional dependencies too: WebEngineCore requires Positioning
-          # (and WebChannel/Qml), so a kit with only qtwebengine leaves the graph disabled.
           python -m aqt install-qt windows desktop 6.8.0 win64_msvc2022_64 --modules qtwebengine qtwebchannel qtpositioning --outputdir "$env:QT_ROOT_DIR\..\.."
           if ($LASTEXITCODE -ne 0) { throw "aqt failed to install the WebEngine modules (exit $LASTEXITCODE)" }
 
@@ -89,15 +89,16 @@ jobs:
           $qtBin = (Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'bin') -Filter 'Qt6Web*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
           $qtCmake = (Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'lib\cmake') -Filter 'Qt6Web*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
           $probe = (& cmake -S probe -B probe-build -DCMAKE_PREFIX_PATH="$env:QT_ROOT_DIR" 2>&1 | Out-String)
-          @(
+          $listing = @(
             "QT_ROOT_DIR: $env:QT_ROOT_DIR",
             "bin: $qtBin",
             "lib/cmake: $qtCmake",
             "",
             "--- cmake probe output ---",
             $probe
-          ) | Set-Content -Path ci-diagnostics.txt -Encoding utf8
-          Write-Host $probe
+          ) -join "`n"
+          $listing | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Write-Host $listing
 
       - name: Configure
         shell: pwsh
@@ -112,38 +113,23 @@ jobs:
       - name: Check that the build really has the graph
         shell: pwsh
         run: |
-          $dumpbin = (Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
-          $imports = (& $dumpbin /dependents build-msvc\OpenTree.exe) -join "`n"
-          $engineLinked = $imports -match 'Qt6WebEngineWidgets.dll'
+          # The import table lists the DLLs as plain strings, so check the file contents
+          # instead of calling dumpbin: its path moves between Visual Studio versions on the
+          # runners (the image ships VS 2026, not 2022).
+          $bytes = [System.IO.File]::ReadAllBytes('build-msvc\OpenTree.exe')
+          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
+          $engineLinked = $text.Contains('Qt6WebEngineWidgets.dll')
           $processDeployed = Test-Path 'build-msvc\QtWebEngineProcess.exe'
-          $configureLines = ((Select-String -Path build-msvc\configure.log -Pattern 'OpenTree:|WebEngine|WebChannel' -ErrorAction SilentlyContinue |
-            Select-Object -First 8 | ForEach-Object { $_.Line.Trim() }) -join "`n")
-          $cacheLines = ((Select-String -Path build-msvc\CMakeCache.txt -Pattern 'WebEngine|WebChannel|QT_ADDITIONAL|Qt6_DIR' -ErrorAction SilentlyContinue |
-            Select-Object -First 8 | ForEach-Object { $_.Line.Trim() }) -join "`n")
-          $diagnostics = @(
+          $graphLine = ((Select-String -Path build-msvc\configure.log -Pattern 'Graph tab' -ErrorAction SilentlyContinue |
+            Select-Object -First 1 | ForEach-Object { $_.Line.Trim() }) -join '')
+          $summary = @(
             "links Qt6WebEngineWidgets: $engineLinked",
             "QtWebEngineProcess deployed: $processDeployed",
-            "QT_ROOT_DIR: $env:QT_ROOT_DIR",
-            "",
-            "--- configure log (OpenTree/WebEngine lines) ---",
-            $configureLines,
-            "",
-            "--- CMakeCache ---",
-            $cacheLines,
-            "",
-            "--- OpenTree.exe imports (Qt) ---",
-            (($imports -split "`n") | Where-Object { $_ -match 'Qt6' } | ForEach-Object { $_.Trim() }) -join ", "
+            "configure said: $graphLine"
           ) -join "`n"
-          # The step summary shows up as the check run's output text, which the API serves
-          # without authentication - unlike the job log.
-          $diagnostics | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
-          Write-Host $diagnostics
+          $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Write-Host $summary
           if (-not $engineLinked -or -not $processDeployed) {
-            $graphLine = ((Select-String -Path build-msvc\configure.log -Pattern 'Graph tab' -ErrorAction SilentlyContinue |
-              Select-Object -First 1 | ForEach-Object { $_.Line.Trim() }) -join '')
-            $positioning = Test-Path (Join-Path $env:QT_ROOT_DIR 'lib\cmake\Qt6Positioning\Qt6PositioningConfig.cmake')
-            $webchannel = Test-Path (Join-Path $env:QT_ROOT_DIR 'lib\cmake\Qt6WebChannel\Qt6WebChannelConfig.cmake')
-            Write-Output ("::error title=Graph diagnostics::$graphLine | positioning=$positioning webchannel=$webchannel links=$engineLinked process=$processDeployed")
             throw "build-msvc\OpenTree.exe does not use WebEngine - the installed app would have no graph."
           }
           Write-Host "Graph support verified in build-msvc\OpenTree.exe"
@@ -172,7 +158,11 @@ jobs:
       - name: Build installer
         shell: pwsh
         run: |
-          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=${{ steps.version.outputs.value }}" "installer\OpenTree.iss"
+          # build_installer.bat stages a clean runtime folder first (installer\stage) and then
+          # runs ISCC, so build intermediates never end up in the installed copy.
+          & ".\installer\build_installer.bat" "${{ steps.version.outputs.value }}"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          Get-ChildItem "installer\output\OpenTree-Setup-*.exe" | Select-Object Name, Length
 
       - name: Upload installer
         uses: actions/upload-artifact@v4
@@ -180,67 +170,6 @@ jobs:
           name: OpenTree-Setup-${{ steps.version.outputs.value }}
           path: installer/output/OpenTree-Setup-*.exe
           if-no-files-found: error
-
-      - name: Publish CI diagnostics
-        if: always()
-        shell: pwsh
-        continue-on-error: true
-        run: |
-          # A readable channel for CI-only problems (job logs need authentication, the
-          # diagnostics branch does not). Read it from the ci-diagnostics branch.
-          $lines = @()
-          if (Test-Path ci-diagnostics.txt) { $lines += (Get-Content ci-diagnostics.txt) }
-          $lines += ""
-          $lines += "--- configure log (WebEngine lines) ---"
-          if (Test-Path build-msvc\configure.log) {
-            $lines += (Select-String -Path build-msvc\configure.log -Pattern 'OpenTree:|WebEngine|WebChannel' -ErrorAction SilentlyContinue |
-              Select-Object -First 12 | ForEach-Object { $_.Line.Trim() })
-          }
-          $lines += ""
-          $lines += "--- build without the graph? ---"
-          if (Test-Path build-msvc\OpenTree.exe) {
-            $dumpbin = (Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
-            $imports = (& $dumpbin /dependents build-msvc\OpenTree.exe) -join "`n"
-            $lines += "links Qt6WebEngineWidgets: $($imports -match 'Qt6WebEngineWidgets.dll')"
-            $lines += "QtWebEngineProcess deployed: $(Test-Path 'build-msvc\QtWebEngineProcess.exe')"
-          } else {
-            $lines += "no OpenTree.exe was produced"
-          }
-          $lines | Set-Content -Path ci-diagnostics.txt -Encoding utf8
-
-          git config user.email "ci@opentree.invalid"
-          git config user.name "OpenTree CI"
-          git checkout --orphan ci-diagnostics
-          git rm -r --cached . 2>$null | Out-Null
-          git add -f ci-diagnostics.txt
-          git commit -m "CI diagnostics for $env:GITHUB_SHA"
-          git push -f origin ci-diagnostics
-
-      - name: Publish diagnostics (temporary)
-        if: always()
-        shell: pwsh
-        run: |
-          $lines = @()
-          $lines += "sha: $env:GITHUB_SHA"
-          $lines += "QT_ROOT_DIR: $env:QT_ROOT_DIR"
-          $lines += ""
-          $lines += "--- configure log (last 80 lines) ---"
-          if (Test-Path build-msvc\configure.log) { $lines += (Get-Content build-msvc\configure.log -Tail 80) } else { $lines += "no configure.log" }
-          $lines += ""
-          $lines += "--- exe imports ---"
-          if (Test-Path build-msvc\OpenTree.exe) {
-            $dumpbin = (Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
-            $lines += ((& $dumpbin /dependents build-msvc\OpenTree.exe) | Where-Object { $_ -match 'Qt6' } | ForEach-Object { $_.Trim() })
-          } else { $lines += "no OpenTree.exe" }
-          $lines -join "`n" | Set-Content -Path ci-diagnostics.txt -Encoding utf8
-
-          # Publish on a throw-away branch: the job log needs authentication, this does not.
-          git config user.email "ci@opentree.invalid"
-          git config user.name "OpenTree CI"
-          git add -f ci-diagnostics.txt
-          git commit -m "ci diagnostics for $env:GITHUB_SHA [skip ci]"
-          git push -f origin HEAD:ci-diagnostics
-          if ($LASTEXITCODE -ne 0) { throw "could not publish the diagnostics branch" }
 
       - name: Attach installer to the release
         if: startsWith(github.ref, 'refs/tags/')
