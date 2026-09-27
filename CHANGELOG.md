@@ -4,6 +4,34 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.13.0] - 2026-09-27
+
+### Added
+
+- A proper **About OpenTree** dialog (Help menu), written the way a person would write it:
+  what the app does, "Made by BrutalBot, with Qt 6", the exact version and build (Qt, compiler,
+  architecture), the project link, and buttons for the project page and for getting Everything.
+- **Check for Updates**, in the About dialog and as Help > "Check for Updates...". It asks
+  GitHub for the newest release (falling back to tags, since this repo has no releases yet),
+  compares it with the running version and, when something newer exists, opens the GitHub
+  downloads page. Nothing is downloaded or installed automatically.
+- A quiet startup check: at most once a day, and it only speaks up when a newer version is
+  found. "Later" keeps quiet for that session, "Skip This Version" remembers the version.
+- The installer is now built in CI: every build produces `OpenTree-Setup-<version>.exe` as an
+  artifact, and pushing a `v*` tag publishes a release with the installer attached.
+  `installer/build_installer.bat` also works locally (it finds Inno Setup in either location and
+  reads the version from CMakeLists, or takes one as an argument).
+
+### Changed
+
+- Installer metadata updated: publisher BrutalBot, project/issue/update links to the GitHub
+  repository, versioned output file name, README and CHANGELOG shipped next to the app.
+
+### Fixed
+
+- `--smoke-menu` and the graph smoke tests still pass after the About/update work; the version
+  comparison logic is covered by unit tests (10 cases, including tag prefixes and suffixes).
+
 ## [0.12.1] - 2026-09-27
 
 ### Fixed

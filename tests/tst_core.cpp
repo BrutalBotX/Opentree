@@ -13,6 +13,7 @@
 #include "services/DedupService.h"
 #include "services/ReportService.h"
 #include "services/SnapshotService.h"
+#include "services/UpdateChecker.h"
 #include "integrations/EverythingClient.h"
 #include "ui/EntryActions.h"
 #include "ui/TableItems.h"
@@ -588,6 +589,44 @@ private slots:
     }
 };
 
+class TestUpdateChecker : public QObject {
+    Q_OBJECT
+
+private slots:
+    void comparesVersions_data()
+    {
+        QTest::addColumn<QString>("candidate");
+        QTest::addColumn<QString>("current");
+        QTest::addColumn<bool>("newer");
+
+        QTest::newRow("same") << "0.12.1" << "0.12.1" << false;
+        QTest::newRow("patch bump") << "0.12.2" << "0.12.1" << true;
+        QTest::newRow("minor bump") << "0.13.0" << "0.12.9" << true;
+        QTest::newRow("major bump") << "1.0.0" << "0.99.9" << true;
+        QTest::newRow("double digit minor") << "0.10.0" << "0.9.0" << true;
+        QTest::newRow("older") << "0.11.9" << "0.12.0" << false;
+        QTest::newRow("tag prefix") << "v0.13.0" << "0.12.1" << true;
+        QTest::newRow("suffix ignored") << "0.13.0-beta" << "0.12.1" << true;
+        QTest::newRow("shorter current means newer") << "0.12.1" << "0.12" << true;
+        QTest::newRow("shorter candidate is older") << "0.12" << "0.12.1" << false;
+        QTest::newRow("alpha tag is not newer") << "v0.1.0-alpha" << "0.12.1" << false;
+    }
+
+    void comparesVersions()
+    {
+        QFETCH(QString, candidate);
+        QFETCH(QString, current);
+        QFETCH(bool, newer);
+        QCOMPARE(UpdateChecker::isNewerVersion(candidate, current), newer);
+    }
+
+    void exposesTheRepositoryPages()
+    {
+        QVERIFY(UpdateChecker::repositoryUrl().startsWith(QStringLiteral("https://github.com/")));
+        QVERIFY(UpdateChecker::releasesPageUrl().endsWith(QStringLiteral("/releases")));
+    }
+};
+
 int main(int argc, char *argv[])
 {
     // QApplication (not QCoreApplication): the table item suites create real widgets.
@@ -609,6 +648,7 @@ int main(int argc, char *argv[])
         {new TestTheme, "theme"},
         {new TestTableItems, "tableitems"},
         {new TestEntryActions, "entryactions"},
+        {new TestUpdateChecker, "updatechecker"},
     };
 
     int status = 0;

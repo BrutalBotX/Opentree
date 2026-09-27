@@ -85,6 +85,8 @@ private:
     void handleSettingsRequest(int initialTab = 0);
     void handleTestEverythingRequest();
     void handleEverythingSettingsRequest();
+    void handleAboutRequest(bool checkForUpdates);
+    void maybeCheckForUpdates();
     void handleOpenDataFolderRequest();
     void handleSnapshotSettingsRequest();
     void handleSnapshotManagementRequest();

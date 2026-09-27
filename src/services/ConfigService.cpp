@@ -244,6 +244,28 @@ void ConfigService::setEverythingPromptShown(bool shown)
     m_settings.sync();
 }
 
+QDateTime ConfigService::lastUpdateCheck() const
+{
+    return QDateTime::fromString(m_settings.value("Updates/LastCheck").toString(), Qt::ISODate);
+}
+
+void ConfigService::setLastUpdateCheck(const QDateTime &stamp)
+{
+    m_settings.setValue("Updates/LastCheck", stamp.toString(Qt::ISODate));
+    m_settings.sync();
+}
+
+QString ConfigService::skippedUpdateVersion() const
+{
+    return m_settings.value("Updates/SkippedVersion").toString();
+}
+
+void ConfigService::setSkippedUpdateVersion(const QString &version)
+{
+    m_settings.setValue("Updates/SkippedVersion", version);
+    m_settings.sync();
+}
+
 bool ConfigService::everythingPromptSuppressed() const
 {
     return m_settings.value("Scanning/EverythingPromptSuppressed", false).toBool();

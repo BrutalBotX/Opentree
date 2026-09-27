@@ -1,54 +1,74 @@
-; OpenTree Windows installer scaffold for Inno Setup 6
+; OpenTree Windows installer (Inno Setup 6)
+;
+; Build with:
+;   "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer\OpenTree.iss
+; or pass a version explicitly (used by CI on tags):
+;   ISCC.exe /DMyAppVersion=0.13.0 installer\OpenTree.iss
+
+#ifndef MyAppVersion
+  #define MyAppVersion "0.13.0"
+#endif
 
 #define MyAppName "OpenTree"
-#define MyAppVersion "0.12.1"
-#define MyAppPublisher "OpenTree Contributors"
+#define MyAppPublisher "BrutalBot"
+#define MyAppURL "https://github.com/BrutalBotX/Opentree"
 #define MyAppExeName "OpenTree.exe"
-#define MyBuildDir "..\..\build-msvc"
+#define MyBuildDir "..\build-msvc"
 #define MyIconFile "..\assets\opentree.ico"
 
 [Setup]
 AppId={{6B4FEC08-8A44-4B93-9A7F-20F6D8D6B44A}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
+AppVerName={#MyAppName} {#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL=https://github.com/
-AppSupportURL=https://github.com/
-AppUpdatesURL=https://github.com/
+AppPublisherURL={#MyAppURL}
+AppSupportURL={#MyAppURL}/issues
+AppUpdatesURL={#MyAppURL}/releases
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=output
-OutputBaseFilename=OpenTree-Setup
-Compression=lzma
+OutputBaseFilename=OpenTree-Setup-{#MyAppVersion}
+Compression=lzma2/max
 SolidCompression=yes
 WizardStyle=modern
 ArchitecturesInstallIn64BitMode=x64compatible
 SetupIconFile={#MyIconFile}
 UninstallDisplayIcon={app}\{#MyAppExeName}
 PrivilegesRequired=lowest
+PrivilegesRequiredOverridesAllowed=dialog
 ChangesAssociations=no
 DisableDirPage=no
 DisableReadyMemo=no
 LicenseFile=..\LICENSE
 VersionInfoVersion={#MyAppVersion}
-VersionInfoDescription={#MyAppName} Installer
+VersionInfoDescription={#MyAppName} installer
 VersionInfoCompany={#MyAppPublisher}
 VersionInfoProductName={#MyAppName}
+VersionInfoProductVersion={#MyAppVersion}
 WizardImageStretch=no
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [Tasks]
-Name: "desktopicon"; Description: "Create a desktop icon"; GroupDescription: "Additional icons:"; Flags: unchecked
+Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
+; The whole deployed build folder: OpenTree.exe plus the Qt runtime and the Everything SDK.
 Source: "{#MyBuildDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\README.md"; DestDir: "{app}"; Flags: ignoreversion
+Source: "..\CHANGELOG.md"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{autoprograms}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; IconFilename: "{app}\{#MyAppExeName}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon; IconFilename: "{app}\{#MyAppExeName}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
+Name: "{group}\{cm:UninstallProgram,{#MyAppName}}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "{cm:LaunchProgram,{#StringChange(MyAppName, '&', '&&')}}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; QtWebEngine writes its cache next to the executable.
+Type: filesandordirs; Name: "{app}\QtWebEngine"

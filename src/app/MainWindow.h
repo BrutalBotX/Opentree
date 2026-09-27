@@ -93,6 +93,8 @@ signals:
     void exportDetailsCsvRequested();
     void exportReportRequested(const QString &format);
     void everythingSettingsRequested();
+    void aboutRequested();
+    void checkForUpdatesRequested();
     void snapshotSettingsRequested();
     void othersThresholdRequested();
     void rescanCurrentRootRequested();
@@ -171,6 +173,8 @@ private:
     bool m_closeToTrayEnabled = false;
     bool m_quitRequested = false;
     QAction *m_everythingIndexAction;
+    QAction *m_aboutAction;
+    QAction *m_checkUpdatesAction;
     QAction *m_exportReportHtmlAction;
     QAction *m_exportReportPdfAction;
     QAction *m_snapshotSettingsAction;

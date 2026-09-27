@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.12.1 LANGUAGES CXX)
+project(OpenTree VERSION 0.13.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -10,7 +10,7 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
-find_package(Qt6 REQUIRED COMPONENTS Widgets Sql Concurrent)
+find_package(Qt6 REQUIRED COMPONENTS Widgets Sql Concurrent Network)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebChannel)
 
 qt_standard_project_setup()
@@ -71,6 +71,10 @@ qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/services/PdfReportWriter.cpp
     src/services/AnalysisService.h
     src/services/AnalysisService.cpp
+    src/services/UpdateChecker.h
+    src/services/UpdateChecker.cpp
+    src/ui/AboutDialog.h
+    src/ui/AboutDialog.cpp
     src/ui/EntryActions.h
     src/ui/EntryActions.cpp
     src/ui/RobustMenuBar.h
@@ -123,6 +127,7 @@ target_link_libraries(OpenTree PRIVATE
     Qt6::Widgets
     Qt6::Sql
     Qt6::Concurrent
+    Qt6::Network
 )
 
 if (Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND)
@@ -151,6 +156,7 @@ if (TARGET Qt6::Test)
         src/services/ReportService.cpp
         src/services/PdfReportWriter.cpp
         src/services/SnapshotService.cpp
+        src/services/UpdateChecker.cpp
         src/services/VirtualTrashService.cpp
         src/integrations/EverythingClient.cpp
         src/ui/EntryActions.cpp
@@ -158,7 +164,7 @@ if (TARGET Qt6::Test)
         src/utils/Logger.cpp
     )
     target_include_directories(OpenTreeTests PRIVATE src third_party/include)
-    target_link_libraries(OpenTreeTests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Test)
+    target_link_libraries(OpenTreeTests PRIVATE Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Sql Qt6::Network Qt6::Test)
     # Console subsystem so the test log is visible when run from a terminal.
     set_target_properties(OpenTreeTests PROPERTIES WIN32_EXECUTABLE FALSE)
     if (MINGW)

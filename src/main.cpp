@@ -39,6 +39,7 @@
 #include "ui/ChartPanel.h"
 #include "ui/DetailsTablePanel.h"
 #include "ui/DuplicatesPanel.h"
+#include "ui/AboutDialog.h"
 #include "ui/EntryActions.h"
 #include "ui/GraphPanel.h"
 #include "ui/SettingsDialog.h"
@@ -1116,6 +1117,20 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
     }
     QCoreApplication::processEvents();
 
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_ABOUT")) {
+        opentree::AboutDialog dialog(&window);
+        if (qEnvironmentVariable("OPENTREE_PREVIEW_ABOUT").compare(QStringLiteral("check"), Qt::CaseInsensitive) == 0) {
+            dialog.checkForUpdates();
+            QEventLoop waitLoop;
+            QTimer::singleShot(4000, &waitLoop, &QEventLoop::quit);
+            waitLoop.exec();
+        }
+        dialog.show();
+        QCoreApplication::processEvents();
+        dialog.grab().save(outputPath);
+        return 0;
+    }
+
     if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_MENU")) {
         QMenu menu;
         menu.addAction(QStringLiteral("Open"));
@@ -1203,7 +1218,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.12.1"));
+    QApplication::setApplicationVersion(QStringLiteral("0.13.0"));
 
     QString startupPath;
     QString scanTestPath;

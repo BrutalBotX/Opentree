@@ -36,6 +36,14 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
 
+### 0.13.0 follow-up (same night)
+
+- About OpenTree dialog (casual, credits BrutalBot, shows version/build) with Check for
+  Updates: GitHub releases then tags, compares versions, offers the downloads page. Quiet
+  once-a-day startup check with Later / Skip This Version.
+- Installer built in CI (`OpenTree-Setup-<version>.exe` artifact, attached to a GitHub release
+  on `v*` tags); installer metadata and local script updated.
+
 ### 0.12.1 follow-up (same night)
 
 - Graph colours restored for the neutral themes (muted five-hue ramp for the size tiers); the

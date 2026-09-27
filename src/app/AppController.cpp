@@ -25,6 +25,7 @@
 #include "services/ScanService.h"
 #include "services/SnapshotService.h"
 #include "services/ReportService.h"
+#include "services/UpdateChecker.h"
 #include "services/AnalysisService.h"
 #include "services/VirtualTrashService.h"
 #include "ui/DetailsPanel.h"
@@ -37,6 +38,7 @@
 #include "ui/ExtensionsPanel.h"
 #include "ui/InsightsPanel.h"
 #include "ui/TrashPanel.h"
+#include "ui/AboutDialog.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
 #include "ui/SnapshotSettingsDialog.h"
@@ -169,6 +171,12 @@ void AppController::attachWindow(MainWindow *window)
     });
     connect(m_window, &MainWindow::settingsRequested, this, [this]() {
         handleSettingsRequest();
+    });
+    connect(m_window, &MainWindow::aboutRequested, this, [this]() {
+        handleAboutRequest(false);
+    });
+    connect(m_window, &MainWindow::checkForUpdatesRequested, this, [this]() {
+        handleAboutRequest(true);
     });
     connect(m_window, &MainWindow::everythingSettingsRequested, this, [this]() {
         handleEverythingSettingsRequest();
@@ -334,6 +342,9 @@ void AppController::attachWindow(MainWindow *window)
 
     // First-run offer to use the Everything index. Delayed so the window is fully up.
     QTimer::singleShot(1200, this, [this]() { maybeShowEverythingPrompt(); });
+
+    // Quiet update check, at most once a day; a newer version just offers the download page.
+    QTimer::singleShot(4000, this, [this]() { maybeCheckForUpdates(); });
 }
 
 void AppController::handleScanRequest()
@@ -1472,6 +1483,68 @@ void AppController::handleExportReportRequest(const QString &format)
         QMessageBox::warning(m_window, QStringLiteral("Export report"),
                              error.isEmpty() ? QStringLiteral("Export failed.") : error);
     }
+}
+
+void AppController::handleAboutRequest(bool checkForUpdates)
+{
+    if (!m_window) {
+        return;
+    }
+
+    AboutDialog dialog(m_window);
+    if (checkForUpdates) {
+        // The dialog is modal; the check finishes while it is open.
+        dialog.checkForUpdates();
+    }
+    dialog.exec();
+}
+
+void AppController::maybeCheckForUpdates()
+{
+    if (!m_window || !m_configService) {
+        return;
+    }
+    // Headless previews must not hit the network.
+    if (qEnvironmentVariableIsSet("OPENTREE_PREVIEW_MODE")) {
+        return;
+    }
+
+    const QDateTime lastCheck = m_configService->lastUpdateCheck();
+    if (lastCheck.isValid() && lastCheck.secsTo(QDateTime::currentDateTime()) < 24 * 60 * 60) {
+        return;
+    }
+    m_configService->setLastUpdateCheck(QDateTime::currentDateTime());
+
+    auto *checker = new UpdateChecker(this);
+    connect(checker, &UpdateChecker::finished, this, [this, checker](const UpdateCheckResult &result) {
+        checker->deleteLater();
+        if (!m_window || result.status != UpdateCheckResult::Status::UpdateAvailable) {
+            return;
+        }
+        if (m_configService->skippedUpdateVersion() == result.latestVersion) {
+            return; // the user already said "not now" for this version
+        }
+
+        QMessageBox box(m_window);
+        box.setIcon(QMessageBox::Information);
+        box.setWindowTitle(QStringLiteral("OpenTree update"));
+        box.setText(QStringLiteral("OpenTree %1 is available.").arg(result.latestVersion));
+        box.setInformativeText(QStringLiteral("You are running %1.\n\nOpen the download page?")
+                                   .arg(QCoreApplication::applicationVersion()));
+        QPushButton *downloadButton = box.addButton(QStringLiteral("Open Download Page"), QMessageBox::AcceptRole);
+        QPushButton *laterButton = box.addButton(QStringLiteral("Later"), QMessageBox::RejectRole);
+        QPushButton *skipButton = box.addButton(QStringLiteral("Skip This Version"), QMessageBox::DestructiveRole);
+        box.setDefaultButton(laterButton);
+        box.exec();
+
+        if (box.clickedButton() == downloadButton) {
+            QDesktopServices::openUrl(QUrl(result.releasesUrl.isEmpty() ? UpdateChecker::releasesPageUrl()
+                                                                        : result.releasesUrl));
+        } else if (box.clickedButton() == skipButton) {
+            m_configService->setSkippedUpdateVersion(result.latestVersion);
+        }
+    });
+    checker->check();
 }
 
 void AppController::handleSettingsRequest(int initialTab)

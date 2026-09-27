@@ -59,6 +59,11 @@ public:
     void setEverythingPromptShown(bool shown);
     bool everythingPromptSuppressed() const;
     void setEverythingPromptSuppressed(bool suppressed);
+    // Update check bookkeeping: at most one check a day, and a version the user skipped.
+    QDateTime lastUpdateCheck() const;
+    void setLastUpdateCheck(const QDateTime &stamp);
+    QString skippedUpdateVersion() const;
+    void setSkippedUpdateVersion(const QString &version);
     bool snapshotScheduleEnabled() const;
     void setSnapshotScheduleEnabled(bool enabled);
     SnapshotScheduleMode snapshotScheduleMode() const;

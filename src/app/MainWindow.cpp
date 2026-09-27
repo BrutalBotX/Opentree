@@ -241,14 +241,10 @@ MainWindow::MainWindow(QWidget *parent)
     m_themeMenu->addAction(m_reloadThemesAction);
 
     auto *helpMenu = menuBar()->addMenu("Help");
-    helpMenu->addAction("About OpenTree", this, [this]() {
-        QMessageBox::about(this, "About OpenTree",
-            QStringLiteral("<b>OpenTree</b> %1<br>Disk usage explorer with snapshots and analysis views."
-                           "<br><br>Qt %2<br>Built %3")
-                .arg(QApplication::applicationVersion().isEmpty() ? QStringLiteral("dev") : QApplication::applicationVersion(),
-                     QString::fromLatin1(qVersion()),
-                     QStringLiteral(__DATE__)));
-    });
+    m_aboutAction = new QAction("About OpenTree", this);
+    m_checkUpdatesAction = new QAction("Check for Updates...", this);
+    helpMenu->addAction(m_aboutAction);
+    helpMenu->addAction(m_checkUpdatesAction);
 
     Logger::info("main-window-debug ctor: menus wired");
 
@@ -274,6 +270,8 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_openCurrentInExplorerAction, &QAction::triggered, this, &MainWindow::openCurrentInExplorerRequested);
     connect(m_openTerminalHereAction, &QAction::triggered, this, &MainWindow::openTerminalHereRequested);
     connect(m_copyCurrentPathAction, &QAction::triggered, this, &MainWindow::copyCurrentPathRequested);
+    connect(m_aboutAction, &QAction::triggered, this, &MainWindow::aboutRequested);
+    connect(m_checkUpdatesAction, &QAction::triggered, this, &MainWindow::checkForUpdatesRequested);
     connect(m_openConfigFolderAction, &QAction::triggered, this, &MainWindow::openConfigFolderRequested);
     connect(m_openDataFolderAction, &QAction::triggered, this, &MainWindow::openDataFolderRequested);
     connect(m_openLogFileAction, &QAction::triggered, this, &MainWindow::openLogFileRequested);

@@ -3,6 +3,7 @@ name: Windows Build
 on:
   push:
     branches: [ main ]
+    tags: [ 'v*' ]
   pull_request:
     branches: [ main ]
 
@@ -34,3 +35,40 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build-msvc -R core --output-on-failure
+
+      - name: Install Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: Work out the version
+        id: version
+        shell: pwsh
+        run: |
+          $version = ''
+          if ($env:GITHUB_REF -like 'refs/tags/*') {
+            $version = ($env:GITHUB_REF -replace 'refs/tags/v?', '')
+          }
+          if (-not $version) {
+            $match = Select-String -Path CMakeLists.txt -Pattern 'project\(OpenTree VERSION ([0-9.]+)' | Select-Object -First 1
+            if ($match) { $version = $match.Matches[0].Groups[1].Value }
+          }
+          "value=$version" >> $env:GITHUB_OUTPUT
+          Write-Host "Installer version: $version"
+
+      - name: Build installer
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "/DMyAppVersion=${{ steps.version.outputs.value }}" "installer\OpenTree.iss"
+
+      - name: Upload installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenTree-Setup-${{ steps.version.outputs.value }}
+          path: installer/output/OpenTree-Setup-*.exe
+          if-no-files-found: error
+
+      - name: Attach installer to the release
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: installer/output/OpenTree-Setup-*.exe
+          generate_release_notes: true

@@ -110,6 +110,24 @@ A theme can be described in a folder next to the settings file (`themes/<name>/t
 optional `theme.qss`, and `graphStyle: "planets"` if you want the planet nodes). Reload Themes in
 the View menu picks up changes without restarting.
 
+## Installer
+
+`installer\build_installer.bat` packages the deployed `build-msvc` folder with Inno Setup 6
+(`winget install JRSoftware.InnoSetup` if you don't have it). It writes
+`installer\output\OpenTree-Setup-<version>.exe`, and you can pass a version as an argument:
+`build_installer.bat 0.13.0`.
+
+CI builds the installer on every push and uploads it as an artifact. Pushing a tag like
+`v0.13.0` publishes a GitHub release with the installer attached, which is the easiest way to
+ship a build.
+
+## Updates
+
+Help > "Check for Updates..." (also in the About dialog) asks GitHub for the newest release or
+tag and compares it with the version you are running. If something newer exists it opens the
+downloads page; nothing is downloaded or installed behind your back. The app also does a quiet
+check once a day on startup and only says something when there is a newer version.
+
 ## Where things live
 
 | What | Where |
