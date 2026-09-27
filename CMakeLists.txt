@@ -214,7 +214,7 @@ if (WIN32)
         # the WebEngine build: Qt6WebEngineWidgets.dll itself imports Qt6PrintSupport.dll, so
         # it must stay deployed there or the app cannot start.
         set(OPENTREE_WINDEPLOYQT_EXTRA_FLAGS "")
-        if (NOT (Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND))
+        if (NOT TARGET Qt6::WebEngineWidgets)
             list(APPEND OPENTREE_WINDEPLOYQT_EXTRA_FLAGS --no-printsupport)
         endif()
 
