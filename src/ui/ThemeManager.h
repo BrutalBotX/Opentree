@@ -14,6 +14,8 @@ struct ThemeDefinition {
     QString author;
     QPalette palette;
     QString styleSheet;
+    // How the graph draws folder nodes: "neutral" (plain discs) or "planets".
+    QString graphStyle = QStringLiteral("neutral");
 };
 
 class ThemeManager {

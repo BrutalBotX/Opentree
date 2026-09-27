@@ -648,6 +648,21 @@ void GraphPanel::setThemePalette(const QPalette &palette)
     }
 }
 
+void GraphPanel::setGraphStyle(const QString &style)
+{
+    const QString normalized = style.compare(QStringLiteral("planets"), Qt::CaseInsensitive) == 0
+        ? QStringLiteral("planets")
+        : QStringLiteral("neutral");
+    if (normalized == m_graphStyle) {
+        return;
+    }
+    m_graphStyle = normalized;
+    if (m_view) {
+        m_renderDirty = true;
+        renderGraph();
+    }
+}
+
 QString GraphPanel::debugHtml() const
 {
     QString html = buildHtml();
@@ -826,6 +841,9 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
     QStringList edgeJson;
     QSet<QString> allowedPaths;
 
+    // Planets only in the space theme; every other theme draws plain discs.
+    const bool spaceStyle = m_graphStyle.compare(QStringLiteral("planets"), Qt::CaseInsensitive) == 0;
+
     QVector<TreeEntry> keptDirectFolders;
     qint64 otherFolderBytes = 0;
     for (const TreeEntry &entry : directFolders) {
@@ -884,42 +902,87 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         }
     }
 
-    // ponytail: inline SVG planet data URIs with style variations
-    auto makePlanet = [](const QString &light, const QString &dark, bool ringed, int style) -> QString {
-        const int c = ringed ? 28 : 24;
-        QString vs = QString::number(c * 2);
-        QPointF sp(c - 6, c - 8);
+    // Inline SVG planets: three-stop limb darkening, an atmosphere rim, a soft terminator
+    // crescent and a specular highlight, so the nodes read as lit spheres instead of flat
+    // circles. `style` picks the surface detail (bands, continents, craters, ring).
+    auto makePlanet = [](const QString &light, const QString &mid, const QString &dark, bool ringed, int style) -> QString {
+        const int canvas = ringed ? 30 : 26;
+        const double radius = ringed ? 19.0 : 21.0;
+        const double cx = canvas;
+        const double cy = canvas;
+        const QString vs = QString::number(canvas * 2);
+        const QString cxs = QString::number(cx, 'f', 1);
+
         QString s = QStringLiteral(
             "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 %1 %1'>"
-            "<defs><radialGradient id='g' cx='35%' cy='30%' r='60%'>"
+            "<defs>"
+            "<radialGradient id='b' cx='33%' cy='28%' r='80%'>"
             "<stop offset='0%' stop-color='%2'/>"
-            "<stop offset='100%' stop-color='%3'/>"
-            "</radialGradient></defs>"
-            "<circle cx='%4' cy='%4' r='20' fill='url(#g)'/>"
-            "<ellipse cx='%5' cy='%6' rx='7' ry='4' fill='rgba(255,255,255,0.22)' transform='rotate(-25 %5 %6)'/>"
-        ).arg(vs, light, dark).arg(c).arg(sp.x()).arg(sp.y());
+            "<stop offset='58%' stop-color='%3'/>"
+            "<stop offset='100%' stop-color='%4'/>"
+            "</radialGradient>"
+            "<radialGradient id='r' cx='50%' cy='50%' r='50%'>"
+            "<stop offset='80%' stop-color='rgba(255,255,255,0)'/>"
+            "<stop offset='97%' stop-color='rgba(255,255,255,0.10)'/>"
+            "<stop offset='100%' stop-color='rgba(255,255,255,0.32)'/>"
+            "</radialGradient>"
+            "</defs>"
+            "<circle cx='%5' cy='%5' r='%6' fill='url(#b)'/>"
+        ).arg(vs, light, mid, dark, cxs, QString::number(radius, 'f', 1));
+
+        s += QStringLiteral("<g>");
         if (style == 2) {
-            for (int y = -10; y <= 10; y += 5)
-                s += QStringLiteral("<ellipse cx='%1' cy='%2' rx='19' ry='1.5' fill='rgba(255,255,255,0.1)'/>")
-                    .arg(c).arg(c + y);
+            // Bands are clipped analytically: half-width follows the disc outline, so no
+            // clipPath (which some renderers refuse) is needed.
+            for (double offset = -radius + 4.0; offset < radius - 2.0; offset += 4.5) {
+                const double halfWidth = std::sqrt(std::max(0.0, radius * radius - offset * offset)) - 1.0;
+                if (halfWidth <= 1.0) {
+                    continue;
+                }
+                s += QStringLiteral("<rect x='%1' y='%2' width='%3' height='2.2' rx='1.1' fill='rgba(255,255,255,0.10)'/>")
+                         .arg(QString::number(cx - halfWidth, 'f', 1),
+                              QString::number(cy + offset - 1.1, 'f', 1),
+                              QString::number(halfWidth * 2.0, 'f', 1));
+            }
+        } else if (style == 3) {
+            s += QStringLiteral("<path d='M%1 %2 q%3 %4 %5 %6 q%7 %8 %9 %10 z' fill='rgba(70,180,90,0.30)'/>")
+                     .arg(QString::number(cx - radius * 0.55, 'f', 1), QString::number(cy - radius * 0.25, 'f', 1),
+                          QString::number(radius * 0.35, 'f', 1), QString::number(-radius * 0.30, 'f', 1),
+                          QString::number(radius * 0.55, 'f', 1), QString::number(radius * 0.05, 'f', 1),
+                          QString::number(radius * 0.10, 'f', 1), QString::number(radius * 0.35, 'f', 1),
+                          QString::number(-radius * 0.50, 'f', 1), QString::number(radius * 0.20, 'f', 1));
+            s += QStringLiteral("<path d='M%1 %2 q%3 %4 %5 %6 q%7 %8 %9 %10 z' fill='rgba(70,180,90,0.22)'/>")
+                     .arg(QString::number(cx + radius * 0.05, 'f', 1), QString::number(cy + radius * 0.30, 'f', 1),
+                          QString::number(radius * 0.30, 'f', 1), QString::number(radius * 0.20, 'f', 1),
+                          QString::number(radius * 0.42, 'f', 1), QString::number(-radius * 0.08, 'f', 1),
+                          QString::number(-radius * 0.15, 'f', 1), QString::number(-radius * 0.35, 'f', 1),
+                          QString::number(-radius * 0.45, 'f', 1), QString::number(-radius * 0.10, 'f', 1));
+        } else if (style == 4) {
+            const double craters[4][3] = {
+                {-0.35, -0.40, 0.26}, {0.42, 0.18, 0.20}, {-0.10, 0.48, 0.16}, {0.20, -0.52, 0.12},
+            };
+            for (const auto &crater : craters) {
+                s += QStringLiteral("<circle cx='%1' cy='%2' r='%3' fill='rgba(0,0,0,0.16)'/>")
+                         .arg(QString::number(cx + crater[0] * radius, 'f', 1),
+                              QString::number(cy + crater[1] * radius, 'f', 1),
+                              QString::number(crater[2] * radius, 'f', 1));
+            }
         }
-        if (style == 3) {
-            s += QStringLiteral("<path d='M%1 %2 Q%3 %4 %5 %6 Q%7 %8 %9 %10 Z' fill='rgba(60,200,60,0.2)'/>")
-                .arg(c - 12).arg(c - 4).arg(c - 8).arg(c - 10).arg(c - 4).arg(c - 8)
-                .arg(c).arg(c - 6).arg(c - 10).arg(c - 2);
-            s += QStringLiteral("<path d='M%1 %2 Q%3 %4 %5 %6 Q%7 %8 %9 %10 Z' fill='rgba(60,200,60,0.15)'/>")
-                .arg(c + 2).arg(c - 10).arg(c + 6).arg(c - 14).arg(c + 8).arg(c - 10)
-                .arg(c + 6).arg(c - 6).arg(c + 2).arg(c - 8);
-        }
-        if (style == 4) {
-            s += QStringLiteral("<circle cx='%1' cy='%2' r='6' fill='rgba(0,0,0,0.15)'/>").arg(c - 6).arg(c - 8);
-            s += QStringLiteral("<circle cx='%1' cy='%2' r='4' fill='rgba(0,0,0,0.12)'/>").arg(c + 8).arg(c + 4);
-            s += QStringLiteral("<circle cx='%1' cy='%2' r='3' fill='rgba(0,0,0,0.1)'/>").arg(c - 2).arg(c + 10);
-            s += QStringLiteral("<circle cx='%1' cy='%2' r='2' fill='rgba(0,0,0,0.08)'/>").arg(c + 4).arg(c - 12);
-        }
+        // Terminator: crescent shadow on the lower right, as if lit from the upper left.
+        s += QStringLiteral("<path d='M%1 %2 A%3 %3 0 0 0 %4 %2 A%5 %5 0 0 1 %1 %2 Z' fill='rgba(0,0,0,0.28)'/>")
+                 .arg(QString::number(cx - radius, 'f', 1), QString::number(cy, 'f', 1),
+                      QString::number(radius, 'f', 1), QString::number(cx + radius, 'f', 1),
+                      QString::number(radius * 0.92, 'f', 1));
+        s += QStringLiteral("</g>");
+        s += QStringLiteral("<circle cx='%1' cy='%1' r='%2' fill='url(#r)'/>")
+                 .arg(cxs, QString::number(radius, 'f', 1));
+        s += QStringLiteral("<ellipse cx='%1' cy='%2' rx='%3' ry='%4' fill='rgba(255,255,255,0.42)' transform='rotate(-28 %5 %6)'/>")
+                 .arg(QString::number(cx - radius * 0.34, 'f', 1), QString::number(cy - radius * 0.38, 'f', 1),
+                      QString::number(radius * 0.26, 'f', 1), QString::number(radius * 0.16, 'f', 1),
+                      QString::number(cx - radius * 0.34, 'f', 1), QString::number(cy - radius * 0.38, 'f', 1));
         if (ringed) {
-            s += QStringLiteral("<ellipse cx='%1' cy='%1' rx='26' ry='6' fill='none' stroke='rgba(255,255,255,0.3)' stroke-width='1.5' transform='rotate(-15 %1 %1)'/>")
-                .arg(c);
+            s += QStringLiteral("<ellipse cx='%1' cy='%1' rx='%2' ry='%3' fill='none' stroke='rgba(255,255,255,0.38)' stroke-width='1.6' transform='rotate(-16 %1 %1)'/>")
+                     .arg(cxs, QString::number(radius * 1.34, 'f', 1), QString::number(radius * 0.30, 'f', 1));
         }
         s += QStringLiteral("</svg>");
         return QStringLiteral("data:image/svg+xml;base64,") + QString::fromLatin1(s.toUtf8().toBase64());
@@ -966,8 +1029,9 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         }
     }
 
-    static const QString styleLight[] = { QStringLiteral("#8890A0"), QStringLiteral("#E07060"), QStringLiteral("#59A14F"), QStringLiteral("#00D4FF"), QStringLiteral("#FFD700") };
-    static const QString styleDark[]  = { QStringLiteral("#505868"), QStringLiteral("#802030"), QStringLiteral("#207030"), QStringLiteral("#0066AA"), QStringLiteral("#E87D00") };
+    static const QString styleLight[] = { QStringLiteral("#B8C0CC"), QStringLiteral("#F08A72"), QStringLiteral("#7CC46F"), QStringLiteral("#66D9F2"), QStringLiteral("#FFD971") };
+    static const QString styleMid[]   = { QStringLiteral("#8890A0"), QStringLiteral("#D25844"), QStringLiteral("#59A14F"), QStringLiteral("#22A7D0"), QStringLiteral("#F2B21B") };
+    static const QString styleDark[]  = { QStringLiteral("#464E5C"), QStringLiteral("#6E1B22"), QStringLiteral("#1D5C2A"), QStringLiteral("#0B4C7A"), QStringLiteral("#94530A") };
     static const bool styleRing[]     = { false, false, false, false, true };
 
     // Only the largest folders keep a permanent label; the rest reveal their name on
@@ -1000,19 +1064,31 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
 
         const double sizeMetric = nodeMetric(entry, NodeSizeMode::Size);
         const int pStyle = sizePlanetStyle(sizeMetrics, sizeMetric);
-        QString planetImg = makePlanet(styleLight[pStyle], styleDark[pStyle], styleRing[pStyle], pStyle);
+        QString planetImg = makePlanet(styleLight[pStyle], styleMid[pStyle], styleDark[pStyle], styleRing[pStyle], pStyle);
 
         QString color, borderColor;
-        if (sel) {
-            color = "#FFD700"; borderColor = "#FFE066";
+        if (spaceStyle) {
+            if (sel) {
+                color = "#FFD700"; borderColor = "#FFE066";
+            } else if (anc) {
+                color = "#B388FF"; borderColor = "#CCAAFF";
+            } else if (delta > 0) {
+                color = "#FF4081"; borderColor = "#FF80AB";
+            } else if (delta < 0) {
+                color = "#39FF14"; borderColor = "#80FF60";
+            } else {
+                color = styleLight[pStyle]; borderColor = styleDark[pStyle];
+            }
+        } else if (sel) {
+            color = "#C9A227"; borderColor = "#E4C765";
         } else if (anc) {
-            color = "#B388FF"; borderColor = "#CCAAFF";
+            color = "#6F639E"; borderColor = "#9D92CC";
         } else if (delta > 0) {
-            color = "#FF4081"; borderColor = "#FF80AB";
+            color = "#B4645E"; borderColor = "#D68F89";
         } else if (delta < 0) {
-            color = "#39FF14"; borderColor = "#80FF60";
+            color = "#5E9A6C"; borderColor = "#8CC29A";
         } else {
-            color = styleLight[pStyle]; borderColor = styleDark[pStyle];
+            color = "#5A6472"; borderColor = "#8A94A3";
         }
 
         const double size = normalizedNodeSize(nodeMetric(entry, m_nodeSizeMode), minMetric, maxMetric);
@@ -1022,15 +1098,27 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
                                                         .arg(entry.path, SizeFormatter::formatBytes(entry.size), QString::number(delta)));
         const QString escapedImg = escapeJsString(planetImg);
         const QString shownLabel = labeledPaths.contains(entry.path) ? escapedName : QString();
-        nodeJson << QStringLiteral("{id:%1,label:'%2',name:'%3',title:%4,size:%5,borderWidth:%6,shape:'circularImage',image:'%7',color:{background:%8,border:%9}}")
-                        .arg(QStringLiteral("'%1'").arg(escapedPath))
-                        .arg(shownLabel, escapedName)
-                        .arg(QStringLiteral("'%1'").arg(escapedTitle))
-                        .arg(size)
-                        .arg(sel ? QStringLiteral("3") : QStringLiteral("1.5"))
-                        .arg(escapedImg)
-                        .arg(QStringLiteral("'%1'").arg(color))
-                        .arg(QStringLiteral("'%1'").arg(borderColor));
+        if (spaceStyle) {
+            nodeJson << QStringLiteral("{id:%1,label:'%2',name:'%3',title:%4,size:%5,borderWidth:%6,shape:'circularImage',image:'%7',color:{background:%8,border:%9}}")
+                            .arg(QStringLiteral("'%1'").arg(escapedPath))
+                            .arg(shownLabel, escapedName)
+                            .arg(QStringLiteral("'%1'").arg(escapedTitle))
+                            .arg(size)
+                            .arg(sel ? QStringLiteral("3") : QStringLiteral("1.5"))
+                            .arg(escapedImg)
+                            .arg(QStringLiteral("'%1'").arg(color))
+                            .arg(QStringLiteral("'%1'").arg(borderColor));
+        } else {
+            // Neutral themes use plain discs: no planet art, colour carries the state.
+            nodeJson << QStringLiteral("{id:%1,label:'%2',name:'%3',title:%4,size:%5,borderWidth:%6,shape:'dot',color:{background:%7,border:%8}}")
+                            .arg(QStringLiteral("'%1'").arg(escapedPath))
+                            .arg(shownLabel, escapedName)
+                            .arg(QStringLiteral("'%1'").arg(escapedTitle))
+                            .arg(size)
+                            .arg(sel ? QStringLiteral("3") : QStringLiteral("1.5"))
+                            .arg(QStringLiteral("'%1'").arg(color))
+                            .arg(QStringLiteral("'%1'").arg(borderColor));
+        }
 
         if (!entry.parentPath.isEmpty() && allowedPaths.contains(entry.parentPath)) {
             edgeJson << QStringLiteral("{from:%1,to:%2}")
@@ -1044,14 +1132,17 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         const bool sel = !m_selectedPath.isEmpty() && entry.path.compare(m_selectedPath, Qt::CaseInsensitive) == 0;
         const double size = normalizedNodeSize(entry.size / (1024.0 * 1024.0), minFileMetric, maxFileMetric);
 
-        QString color = QStringLiteral("#4DD0E1");
-        QString borderColor = QStringLiteral("#80DEEA");
+        QString color = spaceStyle ? QStringLiteral("#4DD0E1") : QStringLiteral("#78828F");
+        QString borderColor = spaceStyle ? QStringLiteral("#80DEEA") : QStringLiteral("#A6AFBA");
         if (sel) {
-            color = QStringLiteral("#FFD700"); borderColor = QStringLiteral("#FFE066");
+            color = spaceStyle ? QStringLiteral("#FFD700") : QStringLiteral("#C9A227");
+            borderColor = spaceStyle ? QStringLiteral("#FFE066") : QStringLiteral("#E4C765");
         } else if (delta > 0) {
-            color = QStringLiteral("#FF4081"); borderColor = QStringLiteral("#FF80AB");
+            color = spaceStyle ? QStringLiteral("#FF4081") : QStringLiteral("#B4645E");
+            borderColor = spaceStyle ? QStringLiteral("#FF80AB") : QStringLiteral("#D68F89");
         } else if (delta < 0) {
-            color = QStringLiteral("#39FF14"); borderColor = QStringLiteral("#80FF60");
+            color = spaceStyle ? QStringLiteral("#39FF14") : QStringLiteral("#5E9A6C");
+            borderColor = spaceStyle ? QStringLiteral("#80FF60") : QStringLiteral("#8CC29A");
         }
 
         const QString escapedPath = escapeJsString(entry.path);
@@ -1081,7 +1172,9 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
             "</svg>"
         );
         const QString asteroidImg = escapeJsString(QStringLiteral("data:image/svg+xml;base64,") + QString::fromLatin1(asteroidSvg.toUtf8().toBase64()));
-        nodeJson << QStringLiteral("{id:'__other_folders__',label:'Other folders',name:'Other folders',title:%1,size:20,shape:'circularImage',image:'%2',borderWidth:1.5,color:{background:'#3A4A5A',border:'#6A8AAA'}}")
+        nodeJson << (spaceStyle
+            ? QStringLiteral("{id:'__other_folders__',label:'Other folders',name:'Other folders',title:%1,size:20,shape:'circularImage',image:'%2',borderWidth:1.5,color:{background:'#3A4A5A',border:'#6A8AAA'}}")
+            : QStringLiteral("{id:'__other_folders__',label:'Other folders',name:'Other folders',title:%1,size:20,shape:'dot',borderWidth:1.5,color:{background:'#6B7480',border:'#98A2AF'}}"))
                         .arg(QStringLiteral("'%1'").arg(escapeJsString(QStringLiteral("Other direct folders under %1\nSize: %2").arg(rootPath, SizeFormatter::formatBytes(otherFolderBytes)))))
                         .arg(asteroidImg);
         edgeJson << QStringLiteral("{from:%1,to:'__other_folders__',dashes:true}")

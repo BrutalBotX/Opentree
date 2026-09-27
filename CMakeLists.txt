@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.11.0 LANGUAGES CXX)
+project(OpenTree VERSION 0.12.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -73,6 +73,8 @@ qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/services/AnalysisService.cpp
     src/ui/EntryActions.h
     src/ui/EntryActions.cpp
+    src/ui/RobustMenuBar.h
+    src/ui/RobustMenuBar.cpp
     src/ui/EverythingPromptDialog.h
     src/ui/EverythingPromptDialog.cpp
     src/utils/ProcessUtils.h

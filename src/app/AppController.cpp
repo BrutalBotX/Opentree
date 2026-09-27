@@ -1108,6 +1108,7 @@ void AppController::applyThemeToGraphPanel(GraphPanel *graph)
     }
     const ThemeDefinition theme = m_themes.value(m_configService->themeId(), m_themes.value("dark"));
     graph->setThemePalette(theme.palette);
+    graph->setGraphStyle(theme.graphStyle);
 }
 
 void AppController::applyViewMetric(ViewMetric metric)

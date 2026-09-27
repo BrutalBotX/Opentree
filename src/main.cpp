@@ -837,6 +837,25 @@ int runMenuSmokeMode()
                           .arg(size.width())
                           .arg(size.height());
 
+            // Simulate the reported failure: the drop-down never appeared (or was torn down
+            // without Qt's bookkeeping). The next click must still open it.
+            if (menu->isVisible()) {
+                menu->hide();
+            } else if (menu->parentWidget()) {
+                // Nothing opened: leave Qt's state as-is, which is exactly the broken case.
+            }
+            pump(60);
+
+            QApplication::sendEvent(bar, &press);
+            QApplication::sendEvent(bar, &release);
+            pump(160);
+            const bool openedAfterAbort = menu->isVisible();
+            report << QStringLiteral("        after an aborted open: %1")
+                          .arg(openedAfterAbort ? QStringLiteral("open") : QStringLiteral("CLOSED"));
+            if (!openedAfterAbort) {
+                allGood = false;
+            }
+
             // While a menu is open (popup mode), moving onto the next item must switch to it.
             if (openedByClick && menus.size() > 1 && action != menus.last()) {
                 QAction *next = menus.at(menus.indexOf(action) + 1);
@@ -935,6 +954,12 @@ int runDumpGraphHtmlMode(const QString &path, const QString &outputPath)
 
     opentree::GraphPanel panel;
     panel.resize(1500, 900);
+    // Mirror the application: the graph takes its colours and node style from the theme.
+    const QMap<QString, opentree::ThemeDefinition> themes =
+        opentree::ThemeManager::loadThemes(configService.themesDirectory());
+    const opentree::ThemeDefinition theme = themes.value(configService.themeId(), themes.value("dark"));
+    panel.setThemePalette(theme.palette);
+    panel.setGraphStyle(theme.graphStyle);
     panel.setGraphData(scan.rootPath, scan.treeEntries, {});
     panel.setVisiblePaths({});
     panel.setGraphRootPath(scan.rootPath);
@@ -1178,7 +1203,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.11.0"));
+    QApplication::setApplicationVersion(QStringLiteral("0.12.0"));
 
     QString startupPath;
     QString scanTestPath;

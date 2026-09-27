@@ -31,6 +31,7 @@
 #include "ui/DuplicatesPanel.h"
 #include "ui/ExtensionsPanel.h"
 #include "ui/InsightsPanel.h"
+#include "ui/RobustMenuBar.h"
 #include "ui/TrashPanel.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
@@ -174,6 +175,10 @@ MainWindow::MainWindow(QWidget *parent)
 
     Logger::info("main-window-debug ctor: window basics configured");
 
+    // Replace the default menu bar before any menu is added: this subclass keeps the
+    // drop-downs working even when an interaction leaves Qt's menu-bar state stuck.
+    setMenuBar(new RobustMenuBar(this));
+
     auto *fileMenu = menuBar()->addMenu("File");
     fileMenu->addAction(m_scanAction);
     m_recentRootsMenu = fileMenu->addMenu("Recent Roots");
@@ -197,9 +202,10 @@ MainWindow::MainWindow(QWidget *parent)
     toolsMenu->addAction(m_settingsAction);
     toolsMenu->addAction(m_everythingIndexAction);
     toolsMenu->addSeparator();
-    toolsMenu->addAction(m_openCurrentInExplorerAction);
+    // "Open in Explorer" and "Copy Current Path" live in the details pane and in every
+    // context menu, so they are not repeated here. Copy Current Path keeps its Ctrl+C
+    // shortcut through the window action below.
     toolsMenu->addAction(m_openTerminalHereAction);
-    toolsMenu->addAction(m_copyCurrentPathAction);
     toolsMenu->addSeparator();
     toolsMenu->addAction(m_openConfigFolderAction);
     toolsMenu->addAction(m_openDataFolderAction);
@@ -324,6 +330,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_scanAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+O")));
     m_refreshAction->setShortcut(QKeySequence(Qt::Key_F5));
     m_copyCurrentPathAction->setShortcut(QKeySequence::Copy);
+    // Keep the shortcut alive even though the action is no longer in the Tools menu.
+    addAction(m_copyCurrentPathAction);
     m_showGraphTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+1")));
     m_showChartTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+2")));
     m_showExtensionsTabAction->setShortcut(QKeySequence(QStringLiteral("Ctrl+3")));

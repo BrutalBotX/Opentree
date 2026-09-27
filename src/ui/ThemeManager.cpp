@@ -18,12 +18,13 @@ QColor colorValue(const QJsonObject &object, const char *key, const QColor &fall
 ThemeDefinition makeTheme(const QString &id, const QString &name, const QString &author,
                           const QColor &window, const QColor &base, const QColor &text,
                           const QColor &button, const QColor &highlight, const QColor &highlightedText,
-                          const QColor &border)
+                          const QColor &border, const QString &graphStyle = QStringLiteral("neutral"))
 {
     ThemeDefinition theme;
     theme.id = id;
     theme.name = name;
     theme.author = author;
+    theme.graphStyle = graphStyle;
     QPalette palette;
     palette.setColor(QPalette::Window, window);
     palette.setColor(QPalette::WindowText, text);
@@ -130,6 +131,7 @@ ThemeDefinition themeFromJson(const QString &id, const QString &path, const Them
     theme.id = root.value("id").toString(id);
     theme.name = root.value("name").toString(id);
     theme.author = root.value("author").toString();
+    theme.graphStyle = root.value("graphStyle").toString(fallback.graphStyle);
     theme.palette = fallback.palette;
     theme.palette.setColor(QPalette::Window, colorValue(paletteObject, "window", fallback.palette.color(QPalette::Window)));
     theme.palette.setColor(QPalette::WindowText, colorValue(paletteObject, "windowText", fallback.palette.color(QPalette::WindowText)));
@@ -157,7 +159,7 @@ QMap<QString, ThemeDefinition> ThemeManager::builtInThemes()
     QMap<QString, ThemeDefinition> themes;
     // Neutral graphite palette for now: structure comes from the greys and colour is
     // reserved for selection/state, so the UI reads calmly. Richer themes come later.
-    themes.insert("dark", makeTheme("dark", "OpenTree Dark", "Built-in",
+    themes.insert("dark", makeTheme("dark", "Graphite", "Built-in",
                                     QColor("#1e1f22"), QColor("#26272b"), QColor("#e6e6e8"),
                                     QColor("#2f3034"), QColor("#4c5d73"), QColor("#ffffff"),
                                     QColor("#3a3c42")));
@@ -165,6 +167,16 @@ QMap<QString, ThemeDefinition> ThemeManager::builtInThemes()
                                      QColor("#f4f4f5"), QColor("#ffffff"), QColor("#1f1f23"),
                                      QColor("#e7e7ea"), QColor("#5a6b80"), QColor("#ffffff"),
                                      QColor("#d4d4d8")));
+    // Cool steel-blue dark theme: same neutral discs, a bluer cast than Graphite.
+    themes.insert("blueprint", makeTheme("blueprint", "Blueprint", "Built-in",
+                                         QColor("#10161d"), QColor("#16202a"), QColor("#cfe3f2"),
+                                         QColor("#1b2733"), QColor("#2e6f8e"), QColor("#ffffff"),
+                                         QColor("#24323f")));
+    // The space theme: deep navy chrome and the lit planet nodes.
+    themes.insert("planets", makeTheme("planets", "Planets", "Built-in",
+                                       QColor("#0a0d16"), QColor("#111827"), QColor("#d6dff2"),
+                                       QColor("#17213a"), QColor("#3b6ea5"), QColor("#ffffff"),
+                                       QColor("#22304d"), QStringLiteral("planets")));
     return themes;
 }
 

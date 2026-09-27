@@ -83,6 +83,8 @@ public:
     void endBatchUpdate();
     // Applies the application theme to the graph page (chrome colours, labels, edges).
     void setThemePalette(const QPalette &palette);
+    // "neutral" (plain discs, the default) or "planets" (the space theme's spheres).
+    void setGraphStyle(const QString &style);
     // Full graph page (HTML + payload); used by renderGraph and the --dump-graph-html tool.
     QString debugHtml() const;
 
@@ -155,6 +157,7 @@ private:
     QColor m_themeText = QColor("#e6e6e8");
     QColor m_themeAccent = QColor("#4c5d73");
     QColor m_themeBorder = QColor("#3a3c42");
+    QString m_graphStyle = QStringLiteral("neutral");
     double m_otherThresholdPercent = 1.0;
 };
 

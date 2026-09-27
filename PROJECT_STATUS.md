@@ -2,7 +2,7 @@
 
 ## Current Phase
 
-Phase: 0.6.0 Ã¢â‚¬â€ storage intelligence (ledger, insights, trash, reports, settings)
+Phase: 0.6.0 ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â storage intelligence (ledger, insights, trash, reports, settings)
 
 This file tracks what is done, what is intentionally deferred, and what the next phase should focus on.
 
@@ -35,6 +35,16 @@ This file tracks what is done, what is intentionally deferred, and what the next
   formatting, staged-hash duplicate detection, analysis, reports and the snapshot ledger.
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
+
+### 0.12.0 follow-up (same night)
+
+- Menu bar fixed for real: `RobustMenuBar` clears Qt's stale action state so an aborted open
+  cannot leave an item unresponsive; `--smoke-menu` now reproduces that case and passes.
+- Themes: added Blueprint and Planets; graph folder nodes are plain discs in neutral themes
+  and use the revised planet art only in the Planets theme (limb darkening, rim, terminator,
+  highlight, bands/continents/craters/ring).
+- Tools menu de-duplicated (Open in Explorer / Copy Current Path live in the details pane and
+  context menus; Ctrl+C still copies).
 
 ### 0.11.0 follow-up (same night)
 
@@ -95,7 +105,7 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 - Address bar autocomplete using scanned paths
 - Scheduled automatic duplicate/junk sweeps built on the virtual trash staging flow
-- Database maintenance action (VACUUM + retention pruning) Ã¢â‚¬â€ the local database can grow to
+- Database maintenance action (VACUUM + retention pruning) ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â the local database can grow to
   several hundred MB on heavily snapshotted roots
 - Cached-root fast reload polish for very large roots
 - Installer/release pipeline: versioned artifacts, clean-machine validation, titlebar icon
@@ -231,7 +241,7 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - Treemap honours "Include free space" with a free-space tile at drive roots
 - Graph defaults to the hierarchical Tree layout for more than ten nodes, pins the root in
   Force mode, and uses tuned force/tree spacing to keep edges from crossing
-- New Duplicates tab (staged size Ã¢â€ â€™ partial hash Ã¢â€ â€™ full hash duplicate finder) with a
+- New Duplicates tab (staged size ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ partial hash ÃƒÂ¢Ã¢â‚¬Â Ã¢â‚¬â„¢ full hash duplicate finder) with a
   minimum-size filter and reclaimable-space summary; `--find-duplicates <path> [minMB]`
   diagnostic
 - Duplicates "Skip system folders" toggle skips Windows/Program Files/ProgramData/WinSxS,

@@ -4,6 +4,34 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.12.0] - 2026-09-27
+
+### Fixed
+
+- **Menu bar could stay dead after an aborted open.** Qt keeps its "current action" even when
+  the drop-down never appeared, so the next click *toggled* into a closed state and the item
+  stopped responding until the app restarted. `RobustMenuBar` now clears that stale state on
+  press/release/leave and, if Qt still does not show the menu, opens it itself. The
+  `--smoke-menu` test reproduces the exact failure (click, abort the drop-down, click again)
+  and passes; on the plain `QMenuBar` the same test fails, so the regression is covered.
+
+### Added
+
+- Two more themes, and the graph follows them:
+  - **Blueprint** — cool steel-blue dark theme with the same neutral discs.
+  - **Planets** — the space theme, now with much better node art: three-stop limb darkening,
+    an atmosphere rim, a soft terminator crescent, a specular highlight and surface details
+    (cloud bands, continents, craters and a ring).
+- The graph draws plain discs for folders in every neutral theme; only themes that ask for it
+  (`graphStyle: "planets"`, also readable from external themes) use the planet art. Files stay
+  diamonds, with muted state colours (selected/ancestor/grew/shrank) instead of neon.
+- The theme list is now Graphite (default), Light, Blueprint, Planets.
+
+### Changed
+
+- The Tools menu no longer repeats "Open in Explorer" and "Copy Current Path" (the details pane
+  and every context menu already offer them); Copy Current Path keeps working through Ctrl+C.
+
 ## [0.11.0] - 2026-09-27
 
 ### Added

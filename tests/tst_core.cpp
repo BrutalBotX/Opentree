@@ -437,9 +437,11 @@ private slots:
     void builtInThemesResolveEveryPlaceholder()
     {
         const QMap<QString, ThemeDefinition> themes = ThemeManager::builtInThemes();
-        QCOMPARE(themes.size(), 2);
+        QCOMPARE(themes.size(), 4);
         QVERIFY(themes.contains(QStringLiteral("dark")));
         QVERIFY(themes.contains(QStringLiteral("light")));
+        QVERIFY(themes.contains(QStringLiteral("blueprint")));
+        QVERIFY(themes.contains(QStringLiteral("planets")));
 
         for (auto it = themes.cbegin(); it != themes.cend(); ++it) {
             const QString &styleSheet = it.value().styleSheet;
@@ -473,10 +475,19 @@ private slots:
             QVERIFY2(gridlineMatch.hasMatch(), qPrintable(it.key()));
             const QColor gridline(gridlineMatch.captured(1));
             QVERIFY(gridline.isValid());
+            // Only the neutral themes must keep structure grey; Blueprint and Planets are
+            // deliberately tinted.
+            const bool neutralTheme = it.key() == QStringLiteral("dark") || it.key() == QStringLiteral("light");
+            if (neutralTheme) {
+                QVERIFY2(gridline.hsvSaturationF() < 0.25f,
+                         qPrintable(QStringLiteral("%1 grid lines are not neutral: %2").arg(it.key(), gridline.name())));
+            }
             QVERIFY2(gridline != it.value().palette.color(QPalette::Highlight),
                      qPrintable(QStringLiteral("%1 still draws structure with the selection colour").arg(it.key())));
-            QVERIFY2(gridline.hsvSaturationF() < 0.25f,
-                     qPrintable(QStringLiteral("%1 grid lines are not neutral: %2").arg(it.key(), gridline.name())));
+
+            // The graph node style travels with the theme.
+            QCOMPARE(it.value().graphStyle,
+                     it.key() == QStringLiteral("planets") ? QStringLiteral("planets") : QStringLiteral("neutral"));
         }
     }
 };
