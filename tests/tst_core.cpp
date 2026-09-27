@@ -11,6 +11,7 @@
 #include "services/DedupService.h"
 #include "services/ReportService.h"
 #include "services/SnapshotService.h"
+#include "ui/TableItems.h"
 #include "ui/ThemeManager.h"
 #include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
@@ -414,9 +415,61 @@ private slots:
     }
 };
 
+class TestTableItems : public QObject {
+    Q_OBJECT
+
+private slots:
+    void numericColumnsSortByValueNotText()
+    {
+        QTableWidget table;
+        table.setColumnCount(2);
+        table.setSortingEnabled(false);
+        table.setRowCount(3);
+        table.setItem(0, 0, makeTextItem(QStringLiteral("big")));
+        table.setItem(0, 1, makeNumberItem(QStringLiteral("2.00 MB"), 2 * 1024 * 1024));
+        table.setItem(1, 0, makeTextItem(QStringLiteral("small")));
+        table.setItem(1, 1, makeNumberItem(QStringLiteral("512 B"), 512));
+        table.setItem(2, 0, makeTextItem(QStringLiteral("medium")));
+        table.setItem(2, 1, makeNumberItem(QStringLiteral("400 days"), 400));
+        table.setSortingEnabled(true);
+
+        // Text sorting would order "2.00 MB" < "400 days" < "512 B"; numeric sorting must
+        // give 400 (medium) < 512 (small) < 2 MB (big).
+        table.sortItems(1, Qt::AscendingOrder);
+        QCOMPARE(table.item(0, 0)->text(), QStringLiteral("medium"));
+        QCOMPARE(table.item(1, 0)->text(), QStringLiteral("small"));
+        QCOMPARE(table.item(2, 0)->text(), QStringLiteral("big"));
+
+        table.sortItems(1, Qt::DescendingOrder);
+        QCOMPARE(table.item(0, 0)->text(), QStringLiteral("big"));
+    }
+
+    void percentAndSortGuardBehave()
+    {
+        QTableWidget table;
+        table.setColumnCount(2);
+        table.setSortingEnabled(false);
+        table.setRowCount(2);
+        table.setItem(0, 0, makeTextItem(QStringLiteral("nine")));
+        table.setItem(0, 1, makePercentItem(9.5));
+        table.setItem(1, 0, makeTextItem(QStringLiteral("forty")));
+        table.setItem(1, 1, makePercentItem(42.7));
+
+        // Repopulating under a guard must keep the user's sort selection.
+        table.sortItems(1, Qt::DescendingOrder);
+        {
+            TableSortGuard guard(&table);
+            table.setItem(0, 0, makeTextItem(QStringLiteral("replaced")));
+        }
+        QCOMPARE(table.item(0, 0)->text(), QStringLiteral("replaced"));
+        QCOMPARE(table.item(0, 1)->text(), QStringLiteral("42.7%"));
+    }
+};
+
 int main(int argc, char *argv[])
 {
-    QCoreApplication app(argc, argv);
+    // QApplication (not QCoreApplication): the table item suites create real widgets.
+    QApplication app(argc, argv);
 
     // Every suite gets its own report file, so one run keeps all of the results even when
     // the executable is built for the Windows GUI subsystem.
@@ -432,6 +485,7 @@ int main(int argc, char *argv[])
         {new TestReport, "report"},
         {new TestLedger, "ledger"},
         {new TestTheme, "theme"},
+        {new TestTableItems, "tableitems"},
     };
 
     int status = 0;

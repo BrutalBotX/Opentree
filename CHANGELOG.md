@@ -31,6 +31,8 @@ The format is loosely based on Keep a Changelog.
   now uses the destructive style, and the duplicate tree uses alternating rows.
 - Removed the duplicated per-panel numeric table item classes in favour of the shared
   `TableItems.h` helpers.
+- Core tests extended with theme checks (every placeholder resolved, accent rules unscoped)
+  and table sorting regressions: 8 suites, 40 assertions, passing on MinGW and MSVC.
 - Version bumped to 0.6.1.
 
 ## [0.6.0] - 2026-09-27
