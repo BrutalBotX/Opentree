@@ -139,6 +139,11 @@ jobs:
           $diagnostics | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           Write-Host $diagnostics
           if (-not $engineLinked -or -not $processDeployed) {
+            $graphLine = ((Select-String -Path build-msvc\configure.log -Pattern 'Graph tab' -ErrorAction SilentlyContinue |
+              Select-Object -First 1 | ForEach-Object { $_.Line.Trim() }) -join '')
+            $positioning = Test-Path (Join-Path $env:QT_ROOT_DIR 'lib\cmake\Qt6Positioning\Qt6PositioningConfig.cmake')
+            $webchannel = Test-Path (Join-Path $env:QT_ROOT_DIR 'lib\cmake\Qt6WebChannel\Qt6WebChannelConfig.cmake')
+            Write-Output ("::error title=Graph diagnostics::$graphLine | positioning=$positioning webchannel=$webchannel links=$engineLinked process=$processDeployed")
             throw "build-msvc\OpenTree.exe does not use WebEngine - the installed app would have no graph."
           }
           Write-Host "Graph support verified in build-msvc\OpenTree.exe"
