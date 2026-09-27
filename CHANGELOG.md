@@ -9,10 +9,16 @@ The format is loosely based on Keep a Changelog.
 ### Fixed
 
 - **The 0.13.0 installer shipped without the graph.** The release was built by CI from a Qt kit
-  that had no WebEngine, and because the graph is optional at configure time the build quietly
-  produced a graph-less executable; the installer then packaged that. The CI workflow now
-  refuses to continue when the Qt kit lacks WebEngine or when the freshly built exe does not
-  link `Qt6WebEngineWidgets.dll`, so a build like that can no longer be published.
+  that was missing the optional Qt Positioning module, which `Qt6WebEngineCore` depends on:
+  without it the `Qt6WebEngineWidgets` CMake package refuses to load, and because the graph is
+  optional at configure time the build quietly produced a graph-less executable that the
+  installer then packaged. CI now installs `qtwebengine`, `qtwebchannel` and `qtpositioning`
+  explicitly, checks the kit, and refuses to publish when the freshly built exe does not link
+  `Qt6WebEngineWidgets.dll`.
+- The CI verification step itself was broken too: it called `dumpbin` through a hardcoded
+  `Visual Studio\2022\` path, while the runners ship Visual Studio 2026, so it reported "no
+  graph" for correct builds. It now scans the executable for the imported DLL name and works
+  on any runner image.
 - The installer no longer packages build intermediates. `installer/stage_runtime.ps1` stages
   the deployed runtime (exe, Qt DLLs and plugins, WebEngine runtime, Everything SDK) into a
   clean folder first, so `CMakeFiles`, autogen output, `Makefile`, `CMakeCache.txt`,
