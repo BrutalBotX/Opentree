@@ -130,7 +130,11 @@ target_link_libraries(OpenTree PRIVATE
     Qt6::Network
 )
 
-if (Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND)
+# Optional: the Graph tab needs WebEngine. Check for the imported targets, not the
+# Qt6WebEngineWidgets_FOUND variables, which are not set reliably across kits (same trap as
+# Qt6::PrintSupport below).
+find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebChannel)
+if (TARGET Qt6::WebEngineWidgets AND TARGET Qt6::WebChannel)
     target_link_libraries(OpenTree PRIVATE Qt6::WebEngineWidgets Qt6::WebChannel)
     target_compile_definitions(OpenTree PRIVATE OPENTREE_HAVE_WEBENGINE=1)
     message(STATUS "OpenTree: Graph tab enabled (Qt6::WebEngineWidgets found)")

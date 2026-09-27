@@ -65,7 +65,11 @@ jobs:
           Write-Host "WebEngine present in $env:QT_ROOT_DIR"
 
       - name: Configure
-        run: cmake -S . -B build-msvc -G "NMake Makefiles" -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" -DCMAKE_BUILD_TYPE=Release
+        shell: pwsh
+        run: |
+          cmake -S . -B build-msvc -G "NMake Makefiles" -DCMAKE_PREFIX_PATH="${{ env.QT_ROOT_DIR }}" -DCMAKE_BUILD_TYPE=Release 2>&1 |
+            Tee-Object -FilePath build-msvc\configure.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Build
         run: cmake --build build-msvc --config Release
@@ -78,9 +82,12 @@ jobs:
           $engineLinked = $imports -match 'Qt6WebEngineWidgets.dll'
           $processDeployed = Test-Path 'build-msvc\QtWebEngineProcess.exe'
           if (-not $engineLinked -or -not $processDeployed) {
-            $cmakeCache = Select-String -Path build-msvc\CMakeCache.txt -Pattern 'WebEngine' | Select-Object -First 5 | ForEach-Object { $_.Line }
-            $cmakeLines = ($cmakeCache -join ' | ')
-            Write-Error ("::error title=Build without the graph::links Qt6WebEngineWidgets=" + $engineLinked + ", QtWebEngineProcess deployed=" + $processDeployed + " | cmake cache: $cmakeLines")
+            $configureLines = (Select-String -Path build-msvc\configure.log -Pattern 'OpenTree: Graph tab|WebEngine' -ErrorAction SilentlyContinue |
+              Select-Object -First 4 | ForEach-Object { $_.Line.Trim() }) -join ' | '
+            $cacheLines = (Select-String -Path build-msvc\CMakeCache.txt -Pattern 'WebEngine|WebChannel' -ErrorAction SilentlyContinue |
+              Select-Object -First 4 | ForEach-Object { $_.Line.Trim() }) -join ' | '
+            Write-Host ("::error title=Build without the graph::links=$engineLinked process=$processDeployed | configure: " +
+              "$configureLines | cache: $cacheLines | qt=$env:QT_ROOT_DIR")
             throw "build-msvc\OpenTree.exe does not use WebEngine - the installed app would have no graph."
           }
           Write-Host "Graph support verified in build-msvc\OpenTree.exe"
