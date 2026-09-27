@@ -7,6 +7,10 @@ on:
   pull_request:
     branches: [ main ]
 
+# The release job attaches the installer to a GitHub release, which needs write access.
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
