@@ -57,23 +57,23 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 
 ```text
 OpenTree/                     <- repository root (this folder is the working tree)
-â”œâ”€â”€ CMakeLists.txt
-â”œâ”€â”€ build_msvc.bat            <- MSVC 2022 + Qt WebEngine build
-â”œâ”€â”€ build_mingw.bat           <- MinGW build (no WebEngine, graph falls back to text)
-â”œâ”€â”€ src/
-â”œâ”€â”€ resources/
-â”œâ”€â”€ tests/                    <- core test suite (OpenTreeTests)
-â”œâ”€â”€ assets/
-â”œâ”€â”€ docs/
-â”œâ”€â”€ installer/
-â”œâ”€â”€ third_party/
-â”‚   â”œâ”€â”€ include/
-â”‚   â”œâ”€â”€ dll/
-â”‚   â””â”€â”€ lib/
-â”œâ”€â”€ CHANGELOG.md
-â”œâ”€â”€ README.md
-â”œâ”€â”€ TIMELINE_PLAN.md
-â””â”€â”€ PROJECT_STATUS.md
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ CMakeLists.txt
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ build_msvc.bat            <- MSVC 2022 + Qt WebEngine build
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ build_mingw.bat           <- MinGW build (no WebEngine, graph falls back to text)
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ src/
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ resources/
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ tests/                    <- core test suite (OpenTreeTests)
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ assets/
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ docs/
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ installer/
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ third_party/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ include/
+Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ dll/
+Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ lib/
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ CHANGELOG.md
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ README.md
+Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ TIMELINE_PLAN.md
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ PROJECT_STATUS.md
 ```
 
 `github/` is the legacy export bundle from before the repository root became the working
@@ -101,8 +101,10 @@ Optional but recommended for full Graph view:
 - `Qt6 WebEngineWidgets`
 - `Qt6 WebChannel`
 
-No other modules are needed: PDF export, HTML export and CSV export all use QtGui/QtCore
-(`QPdfWriter` is part of QtGui), so Qt PrintSupport is **not** required.
+No other modules are needed. Note that Qt PrintSupport is **not** required by OpenTree's own
+code (the PDF report uses `QPdfWriter` from QtGui and there is no `QPrinter` usage), but the
+WebEngine build does need it at runtime because `Qt6WebEngineWidgets.dll` imports it, so
+`windeployqt` keeps deploying it there.
 
 ## Build Instructions
 
@@ -120,6 +122,10 @@ That script:
 2. configures CMake into `build-msvc/`
 3. builds the app
 4. runs `windeployqt` through CMake post-build deployment
+
+Always check a fresh build by launching the produced exe with only the system directories on
+`PATH` (`set "PATH=C:\Windows\system32;C:\Windows"`): that is what double-clicking from
+Explorer does, and it catches missing deployed DLLs that a developer shell hides.
 
 Expected output:
 
@@ -219,9 +225,9 @@ Expected shape:
 
 ```text
 themes/
-â””â”€â”€ my-theme/
-    â”œâ”€â”€ theme.json
-    â””â”€â”€ theme.qss
+Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ my-theme/
+    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ theme.json
+    Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ theme.qss
 ```
 
 ## Notes
@@ -245,7 +251,7 @@ themes/
 - Multi-root tree browsing is supported, but right-side panels still follow one active root context at a time.
 - Graph view remains dependent on Qt WebEngine for full functionality.
 - Cached reload currently prioritizes fast folder-tree display; the background refresh still does a full filesystem scan.
-- App icon may not render on titlebar in some Windows configurations â€” shell cache or `.ico` format compatibility.
+- App icon may not render on titlebar in some Windows configurations Ã¢â‚¬â€ shell cache or `.ico` format compatibility.
 
 ## Known Bugs / Rough Edges
 

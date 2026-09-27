@@ -997,7 +997,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.9.0"));
+    QApplication::setApplicationVersion(QStringLiteral("0.9.1"));
 
     QString startupPath;
     QString scanTestPath;

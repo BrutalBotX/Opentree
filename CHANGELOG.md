@@ -4,6 +4,28 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.9.1] - 2026-09-27
+
+### Fixed
+
+- **"Qt6PrintSupport.dll was not found" on startup (WebEngine build).** 0.8.0 told
+  `windeployqt` to skip PrintSupport because OpenTree's own code no longer needs it, but
+  `Qt6WebEngineWidgets.dll` itself imports `Qt6PrintSupport.dll`. The deployed folder was
+  therefore missing a DLL the app loads as soon as WebEngine initialises, and the app only
+  started when the Qt `bin` directory happened to be on `PATH` (which is the case in a
+  developer shell, but not when double-clicking the exe).
+  `--no-printsupport` is now only passed for builds **without** WebEngine; the WebEngine
+  build deploys PrintSupport again. Verified by launching both builds with `PATH` reduced to
+  `C:\Windows\system32;C:\Windows`, which is the double-click scenario.
+- Documentation corrected: PrintSupport is not needed by OpenTree's report code (the PDF uses
+  QPdfWriter from QtGui), but it is required by the WebEngine build through
+  `Qt6WebEngineWidgets.dll`.
+
+### Added
+
+- Note in the README build instructions: always verify a build by launching it with only the
+  system directories on `PATH`, because that is what double-clicking does.
+
 ## [0.9.0] - 2026-09-27
 
 ### Added

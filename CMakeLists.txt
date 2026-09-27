@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.9.0 LANGUAGES CXX)
+project(OpenTree VERSION 0.9.1 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -187,14 +187,20 @@ add_custom_command(TARGET OpenTree POST_BUILD
 if (WIN32)
     set(QT_WINDEPLOYQT_EXECUTABLE "${CMAKE_PREFIX_PATH}/bin/windeployqt.exe")
     if (EXISTS "${QT_WINDEPLOYQT_EXECUTABLE}")
+        # The PDF report uses QPdfWriter (QtGui), so PrintSupport is not needed... except in
+        # the WebEngine build: Qt6WebEngineWidgets.dll itself imports Qt6PrintSupport.dll, so
+        # it must stay deployed there or the app cannot start.
+        set(OPENTREE_WINDEPLOYQT_EXTRA_FLAGS "")
+        if (NOT (Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND))
+            list(APPEND OPENTREE_WINDEPLOYQT_EXTRA_FLAGS --no-printsupport)
+        endif()
+
         add_custom_command(TARGET OpenTree POST_BUILD
             COMMAND "${QT_WINDEPLOYQT_EXECUTABLE}"
                 --dir "$<TARGET_FILE_DIR:OpenTree>"
                 --no-translations
                 --no-opengl-sw
-                # windeployqt ships PrintSupport for every widgets app; the report PDF is
-                # written with QPdfWriter (QtGui), so that 0.4 MB DLL is not needed.
-                --no-printsupport
+                ${OPENTREE_WINDEPLOYQT_EXTRA_FLAGS}
                 "$<TARGET_FILE:OpenTree>"
             COMMENT "Deploying Qt runtime dependencies"
         )
