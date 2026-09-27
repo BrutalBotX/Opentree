@@ -432,6 +432,47 @@ void GraphPanel::openNode(const QString &path)
 
 namespace {
 
+// Colours for the graph. Every theme gets a real palette: the neutral one is muted but
+// clearly distinguishable (five hues for the folder size tiers), the space one keeps the
+// vivid set that goes with the planet art.
+struct GraphColours {
+    const char *ramp[5];
+    const char *file;
+    const char *selected;
+    const char *ancestor;
+    const char *grew;
+    const char *shrank;
+    const char *other;
+};
+
+const GraphColours &neutralGraphColours()
+{
+    static const GraphColours colours = {
+        {"#6B8CAE", "#5E9C93", "#7BA05B", "#C39B4A", "#9B6B9E"},
+        "#8C94A1",
+        "#E0B341",
+        "#8A7BBF",
+        "#C97A72",
+        "#6FA97C",
+        "#7A828E",
+    };
+    return colours;
+}
+
+const GraphColours &spaceGraphColours()
+{
+    static const GraphColours colours = {
+        {"#B8C0CC", "#F08A72", "#7CC46F", "#66D9F2", "#FFD971"},
+        "#4DD0E1",
+        "#FFD700",
+        "#B388FF",
+        "#FF4081",
+        "#39FF14",
+        "#6A8AAA",
+    };
+    return colours;
+}
+
 int sizePlanetStyle(const QVector<double> &sortedSizes, double metric)
 {
     if (sortedSizes.isEmpty()) {
@@ -682,6 +723,22 @@ QString GraphPanel::debugHtml() const
     html.replace("__THEME_ACCENT__", m_themeAccent.name());
     html.replace("__THEME_BORDER_RGB__", rgbTriplet(m_themeBorder));
     html.replace("__THEME_BORDER__", m_themeBorder.name());
+
+    // Legend swatches mirror the palette the nodes actually use.
+    const GraphColours &colours = m_graphStyle == QStringLiteral("planets") ? spaceGraphColours() : neutralGraphColours();
+    for (int tier = 0; tier < 5; ++tier) {
+        const QColor ramp(colours.ramp[tier]);
+        html.replace(QStringLiteral("__RAMP%1_BORDER__").arg(tier), ramp.lighter(132).name());
+        html.replace(QStringLiteral("__RAMP%1__").arg(tier), ramp.name());
+    }
+    const QColor fileColour(colours.file);
+    html.replace("__FILE_BORDER__", fileColour.lighter(135).name());
+    html.replace("__FILE_COLOR__", fileColour.name());
+    html.replace("__SEL_COLOR__", QString::fromLatin1(colours.selected));
+    html.replace("__ANC_COLOR__", QString::fromLatin1(colours.ancestor));
+    html.replace("__GROW_COLOR__", QString::fromLatin1(colours.grew));
+    html.replace("__SHRINK_COLOR__", QString::fromLatin1(colours.shrank));
+    html.replace("__OTHER_COLOR__", QString::fromLatin1(colours.other));
     return html;
 }
 
@@ -1066,29 +1123,21 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         const int pStyle = sizePlanetStyle(sizeMetrics, sizeMetric);
         QString planetImg = makePlanet(styleLight[pStyle], styleMid[pStyle], styleDark[pStyle], styleRing[pStyle], pStyle);
 
-        QString color, borderColor;
-        if (spaceStyle) {
-            if (sel) {
-                color = "#FFD700"; borderColor = "#FFE066";
-            } else if (anc) {
-                color = "#B388FF"; borderColor = "#CCAAFF";
-            } else if (delta > 0) {
-                color = "#FF4081"; borderColor = "#FF80AB";
-            } else if (delta < 0) {
-                color = "#39FF14"; borderColor = "#80FF60";
-            } else {
-                color = styleLight[pStyle]; borderColor = styleDark[pStyle];
-            }
-        } else if (sel) {
-            color = "#C9A227"; borderColor = "#E4C765";
+        const GraphColours &colours = spaceStyle ? spaceGraphColours() : neutralGraphColours();
+        QString color = spaceStyle ? styleLight[pStyle] : QString::fromLatin1(colours.ramp[pStyle]);
+        QString borderColor = spaceStyle ? styleDark[pStyle] : QColor(color).lighter(132).name();
+        if (sel) {
+            color = QString::fromLatin1(colours.selected);
+            borderColor = QColor(color).lighter(140).name();
         } else if (anc) {
-            color = "#6F639E"; borderColor = "#9D92CC";
+            color = QString::fromLatin1(colours.ancestor);
+            borderColor = QColor(color).lighter(140).name();
         } else if (delta > 0) {
-            color = "#B4645E"; borderColor = "#D68F89";
+            color = QString::fromLatin1(colours.grew);
+            borderColor = QColor(color).lighter(140).name();
         } else if (delta < 0) {
-            color = "#5E9A6C"; borderColor = "#8CC29A";
-        } else {
-            color = "#5A6472"; borderColor = "#8A94A3";
+            color = QString::fromLatin1(colours.shrank);
+            borderColor = QColor(color).lighter(140).name();
         }
 
         const double size = normalizedNodeSize(nodeMetric(entry, m_nodeSizeMode), minMetric, maxMetric);
@@ -1132,17 +1181,18 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         const bool sel = !m_selectedPath.isEmpty() && entry.path.compare(m_selectedPath, Qt::CaseInsensitive) == 0;
         const double size = normalizedNodeSize(entry.size / (1024.0 * 1024.0), minFileMetric, maxFileMetric);
 
-        QString color = spaceStyle ? QStringLiteral("#4DD0E1") : QStringLiteral("#78828F");
-        QString borderColor = spaceStyle ? QStringLiteral("#80DEEA") : QStringLiteral("#A6AFBA");
+        const GraphColours &fileColours = spaceStyle ? spaceGraphColours() : neutralGraphColours();
+        QString color = QString::fromLatin1(fileColours.file);
+        QString borderColor = QColor(color).lighter(135).name();
         if (sel) {
-            color = spaceStyle ? QStringLiteral("#FFD700") : QStringLiteral("#C9A227");
-            borderColor = spaceStyle ? QStringLiteral("#FFE066") : QStringLiteral("#E4C765");
+            color = QString::fromLatin1(fileColours.selected);
+            borderColor = QColor(color).lighter(140).name();
         } else if (delta > 0) {
-            color = spaceStyle ? QStringLiteral("#FF4081") : QStringLiteral("#B4645E");
-            borderColor = spaceStyle ? QStringLiteral("#FF80AB") : QStringLiteral("#D68F89");
+            color = QString::fromLatin1(fileColours.grew);
+            borderColor = QColor(color).lighter(140).name();
         } else if (delta < 0) {
-            color = spaceStyle ? QStringLiteral("#39FF14") : QStringLiteral("#5E9A6C");
-            borderColor = spaceStyle ? QStringLiteral("#80FF60") : QStringLiteral("#8CC29A");
+            color = QString::fromLatin1(fileColours.shrank);
+            borderColor = QColor(color).lighter(140).name();
         }
 
         const QString escapedPath = escapeJsString(entry.path);
@@ -1172,18 +1222,27 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
             "</svg>"
         );
         const QString asteroidImg = escapeJsString(QStringLiteral("data:image/svg+xml;base64,") + QString::fromLatin1(asteroidSvg.toUtf8().toBase64()));
-        nodeJson << (spaceStyle
-            ? QStringLiteral("{id:'__other_folders__',label:'Other folders',name:'Other folders',title:%1,size:20,shape:'circularImage',image:'%2',borderWidth:1.5,color:{background:'#3A4A5A',border:'#6A8AAA'}}")
-            : QStringLiteral("{id:'__other_folders__',label:'Other folders',name:'Other folders',title:%1,size:20,shape:'dot',borderWidth:1.5,color:{background:'#6B7480',border:'#98A2AF'}}"))
-                        .arg(QStringLiteral("'%1'").arg(escapeJsString(QStringLiteral("Other direct folders under %1\nSize: %2").arg(rootPath, SizeFormatter::formatBytes(otherFolderBytes)))))
-                        .arg(asteroidImg);
+        const QString otherFoldersColour = QString::fromLatin1(spaceStyle ? spaceGraphColours().other : neutralGraphColours().other);
+        const QString otherFoldersBorder = QColor(otherFoldersColour).lighter(130).name();
+        const QString otherFoldersTitle = QStringLiteral("'%1'").arg(escapeJsString(
+            QStringLiteral("Other direct folders under %1\nSize: %2").arg(rootPath, SizeFormatter::formatBytes(otherFolderBytes))));
+        if (spaceStyle) {
+            nodeJson << QStringLiteral("{id:'__other_folders__',label:'Other folders',name:'Other folders',title:%1,size:20,shape:'circularImage',image:'%2',borderWidth:1.5,color:{background:'%3',border:'%4'}}")
+                            .arg(otherFoldersTitle, asteroidImg, otherFoldersColour, otherFoldersBorder);
+        } else {
+            nodeJson << QStringLiteral("{id:'__other_folders__',label:'Other folders',name:'Other folders',title:%1,size:20,shape:'dot',borderWidth:1.5,color:{background:'%2',border:'%3'}}")
+                            .arg(otherFoldersTitle, otherFoldersColour, otherFoldersBorder);
+        }
         edgeJson << QStringLiteral("{from:%1,to:'__other_folders__',dashes:true}")
                         .arg(QStringLiteral("'%1'").arg(escapeJsString(rootPath)));
     }
 
     if (otherFileBytes > 0) {
-        nodeJson << QStringLiteral("{id:'__other_files__',label:'Other files',name:'Other files',title:%1,size:18,shape:'diamond',borderWidth:1.5,color:{background:'#455A64',border:'#90A4AE'}}")
-                        .arg(QStringLiteral("'%1'").arg(escapeJsString(QStringLiteral("Other direct files under %1\nSize: %2").arg(rootPath, SizeFormatter::formatBytes(otherFileBytes)))));
+        const QString otherFilesColour = QString::fromLatin1(spaceStyle ? spaceGraphColours().file : neutralGraphColours().file);
+        const QString otherFilesTitle = QStringLiteral("'%1'").arg(escapeJsString(
+            QStringLiteral("Other direct files under %1\nSize: %2").arg(rootPath, SizeFormatter::formatBytes(otherFileBytes))));
+        nodeJson << QStringLiteral("{id:'__other_files__',label:'Other files',name:'Other files',title:%1,size:18,shape:'diamond',borderWidth:1.5,color:{background:'%2',border:'%3'}}")
+                        .arg(otherFilesTitle, otherFilesColour, QColor(otherFilesColour).lighter(130).name());
         edgeJson << QStringLiteral("{from:%1,to:'__other_files__',dashes:true}")
                         .arg(QStringLiteral("'%1'").arg(escapeJsString(rootPath)));
     }
@@ -1265,6 +1324,9 @@ QString GraphPanel::buildHtml() const
   #legend .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
   #legend .swatch.diamond { border-radius: 2px; transform: rotate(45deg); }
   #legend .legendHint { margin-top: 7px; color: rgba(__THEME_TEXT_RGB__, 0.55); font-size: 11px; line-height: 1.35; }
+  #legend .legendRamp { margin-top: 7px; color: rgba(__THEME_TEXT_RGB__, 0.75); font-size: 11px; }
+  #legend .legendRamp i { display: inline-block; width: 16px; height: 10px; border-radius: 2px; margin: 0 2px; vertical-align: middle; }
+  #legend .legendRamp .rampHint { color: rgba(__THEME_TEXT_RGB__, 0.5); margin-left: 4px; }
   #legend.hidden { display: none; }
 </style>
 </head>
@@ -1287,13 +1349,17 @@ QString GraphPanel::buildHtml() const
   <div id="legend">
     <div class="legendHead">Legend</div>
     <div class="legendGrid">
-      <span class="swatch" style="background:#4A90D9;border:1px solid #7FB2E8;"></span><span>Folder &mdash; round planet, sized by <b>__GRAPH_METRIC__</b></span>
-      <span class="swatch diamond" style="background:#4DD0E1;border:1px solid #80DEEA;"></span><span>File &mdash; diamond, same size scale</span>
-      <span class="swatch" style="background:#FFD700;"></span><span>Selected node</span>
-      <span class="swatch" style="background:#B388FF;"></span><span>On the path to the selection</span>
-      <span class="swatch" style="background:#FF4081;"></span><span>Grew since the compared snapshot</span>
-      <span class="swatch" style="background:#39FF14;"></span><span>Shrank since the compared snapshot</span>
-      <span class="swatch" style="background:#6A8AAA;"></span><span>Other folders / files (grouped, below the cutoff)</span>
+      <span class="swatch" style="background:__RAMP2__;border:1px solid __RAMP2_BORDER__;"></span><span>Folder &mdash; sized by <b>__GRAPH_METRIC__</b></span>
+      <span class="swatch diamond" style="background:__FILE_COLOR__;border:1px solid __FILE_BORDER__;"></span><span>File &mdash; diamond, same size scale</span>
+      <span class="swatch" style="background:__SEL_COLOR__;"></span><span>Selected</span>
+      <span class="swatch" style="background:__ANC_COLOR__;"></span><span>On the path to the selection</span>
+      <span class="swatch" style="background:__GROW_COLOR__;"></span><span>Grew since the compared snapshot</span>
+      <span class="swatch" style="background:__SHRINK_COLOR__;"></span><span>Shrank since the compared snapshot</span>
+      <span class="swatch" style="background:__OTHER_COLOR__;"></span><span>Other folders / files (grouped, below the cutoff)</span>
+    </div>
+    <div class="legendRamp">Folder colour by size:
+      <i style="background:__RAMP0__"></i><i style="background:__RAMP1__"></i><i style="background:__RAMP2__"></i><i style="background:__RAMP3__"></i><i style="background:__RAMP4__"></i>
+      <span class="rampHint">small &rarr; large</span>
     </div>
     <div class="legendHint">An edge means "contains". Node size follows the current view metric (<b>__GRAPH_METRIC__</b>).<br>
       hover = focus &middot; click = select &middot; double-click = open folder &middot; right-click = more</div>
@@ -1524,19 +1590,24 @@ function setActiveLayoutButton() {
 }
 
 function settleView() {
-  if (dragInProgress()) {
-    // Never move the camera under the user's pointer; retry once the drag is over.
+  if (userIsBusy(600)) {
+    // Never move the camera while the user is working the graph; try again in a moment.
     window.setTimeout(settleView, 300);
     return;
   }
   network.fit({ animation: { duration: 250 } });
+  noteCameraMove();
   // Fitting hundreds of nodes makes them unreadable; clamp how far out we zoom and
   // re-center on the selected node (or the graph root) when that happens.
   window.setTimeout(() => {
+    if (userIsBusy(400)) {
+      return;
+    }
     if (network.getScale() < 0.5) {
       const target = (GRAPH_DATA.selected && nodes.get(GRAPH_DATA.selected)) ? GRAPH_DATA.selected : GRAPH_DATA.root;
       if (target && nodes.get(target)) {
         network.focus(target, { scale: 0.5, animation: { duration: 300 } });
+        noteCameraMove();
       }
     }
   }, 320);
@@ -1559,8 +1630,8 @@ function applyLayout(mode) {
 }
 
 document.getElementById('btnFit').addEventListener('click', settleView);
-document.getElementById('btnZoomIn').addEventListener('click', () => network.moveTo({ scale: network.getScale() * 1.25, animation: { duration: 160 } }));
-document.getElementById('btnZoomOut').addEventListener('click', () => network.moveTo({ scale: network.getScale() * 0.8, animation: { duration: 160 } }));
+document.getElementById('btnZoomIn').addEventListener('click', () => { network.moveTo({ scale: network.getScale() * 1.25, animation: { duration: 160 } }); noteCameraMove(); });
+document.getElementById('btnZoomOut').addEventListener('click', () => { network.moveTo({ scale: network.getScale() * 0.8, animation: { duration: 160 } }); noteCameraMove(); });
 document.getElementById('btnRelayout').addEventListener('click', () => applyLayout(currentLayout));
 const legendEl = document.getElementById('legend');
 const legendButton = document.getElementById('btnLegend');
@@ -1593,6 +1664,18 @@ let hoverHome = null;
 let hoverIntentTimer = null;
 let lastMouse = { x: -1000, y: -1000 };
 let lastFocusMouse = { x: -1000, y: -1000 };
+let lastUserInput = 0;
+
+// Every camera move we make ourselves has to be recorded, otherwise the hover logic cannot
+// tell "the pointer moved onto a node" from "the camera slid a node under a stationary
+// pointer" and zooms again and again (the focus glitch).
+function noteCameraMove() {
+  lastFocusMouse = { x: lastMouse.x, y: lastMouse.y };
+}
+
+function userIsBusy(milliseconds) {
+  return dragInProgress() || (performance.now() - lastUserInput) < milliseconds;
+}
 
 // vis' overlap avoidance is only a soft force, so after the layout settles the nodes are
 // nudged apart until no two circles intersect, then the view is refitted. This is cheap for
@@ -1653,6 +1736,7 @@ function separateOverlappingNodes() {
 
   nodes.update(ids.map(id => ({ id, x: positions[id].x, y: positions[id].y })));
   network.fit({ animation: { duration: 320 } });
+  noteCameraMove();
 }
 
 function cancelHoverIntent() {  if (hoverIntentTimer) {
@@ -1668,11 +1752,17 @@ function restoreHoverHome() {
       scale: hoverHome.scale,
       animation: { duration: 550, easingFunction: 'easeInOutCubic' },
     });
+    noteCameraMove();
     hoverHome = null;
   }
 }
 
-container.addEventListener('mousemove', e => { lastMouse = { x: e.clientX, y: e.clientY }; }, true);
+container.addEventListener('mousemove', e => {
+  lastMouse = { x: e.clientX, y: e.clientY };
+  lastUserInput = performance.now();
+}, true);
+container.addEventListener('mousedown', () => { lastUserInput = performance.now(); }, true);
+container.addEventListener('wheel', () => { lastUserInput = performance.now(); }, true);
 
 // Escape undoes the hover zoom (and fits the graph when there was nothing to undo).
 window.addEventListener('keydown', e => {
@@ -1682,6 +1772,7 @@ window.addEventListener('keydown', e => {
     restoreHoverHome();
   } else {
     network.fit({ animation: { duration: 300, easingFunction: 'easeInOutCubic' } });
+    noteCameraMove();
   }
 });
 
@@ -1698,7 +1789,7 @@ if (hoverFocusButton) {
 }
 
 network.on('hoverNode', p => {
-  if (dragInProgress()) return;
+  if (userIsBusy(250)) return;
 
   const meta = nodeMeta[p.node];
   if (meta && !meta.shown && meta.name) nodes.update({ id: p.node, label: meta.name });
@@ -1716,7 +1807,7 @@ network.on('hoverNode', p => {
   hoverIntentTimer = window.setTimeout(() => {
     hoverIntentTimer = null;
     if (!hoverHome) hoverHome = { position: network.getViewPosition(), scale: network.getScale() };
-    lastFocusMouse = { x: lastMouse.x, y: lastMouse.y };
+    noteCameraMove();
     const targetScale = Math.min(Math.max(network.getScale(), 0.9), 1.25);
     network.focus(p.node, {
       scale: targetScale,
@@ -1788,6 +1879,7 @@ network.on('doubleClick', params => {
   if (!params.nodes.length) { return; }
   const node = nodes.get(params.nodes[0]);
   if (!node) { return; }
+  noteCameraMove();
   network.focus(node.id, {
     scale: Math.max(network.getScale(), 1.1),
     animation: { duration: 300, easingFunction: 'easeInOutQuad' }

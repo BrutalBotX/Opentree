@@ -1203,7 +1203,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.12.0"));
+    QApplication::setApplicationVersion(QStringLiteral("0.12.1"));
 
     QString startupPath;
     QString scanTestPath;

@@ -4,6 +4,26 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.12.1] - 2026-09-27
+
+### Fixed
+
+- The neutral themes lost all colour in the graph: folder discs are coloured again, using a
+  muted five-hue ramp for the size tiers (dusty blue, teal, moss, amber, mauve) with the same
+  treatment for selection, ancestor and growth states. The Planets theme keeps its vivid set.
+- The legend now shows the colours the current theme actually draws (folder ramp, file colour
+  and every state colour) plus a small "folder colour by size" ramp, instead of the fixed
+  blue/teal swatches it had before.
+- Hover focus could still occasionally fight the camera. Every programmatic camera move (fit,
+  settle, zoom buttons, Escape, entry focus) now records the pointer position, so the hover
+  logic can tell a real hover from a node sliding under a stationary cursor. The settle pass
+  also waits while the user is moving the mouse or hovering.
+
+### Changed
+
+- README rewritten in plain language: what the app does, which tab is for what, how to build and
+  run, where the settings/database/log live, the command-line helpers and the known rough edges.
+
 ## [0.12.0] - 2026-09-27
 
 ### Fixed
