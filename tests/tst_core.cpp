@@ -262,12 +262,60 @@ private slots:
         root.size = 5 * 1024 * 1024 + 1024;
         result.treeEntries << root;
 
+        TreeEntry child;
+        child.kind = TreeEntryKind::Folder;
+        child.path = result.rootPath + "/media";
+        child.name = QStringLiteral("media");
+        child.parentPath = result.rootPath;
+        child.size = 5 * 1024 * 1024;
+        child.fileCount = 1;
+        result.treeEntries << child;
+
         const QString html = ReportService::buildHtmlReport(result);
         QVERIFY(html.contains(QStringLiteral("Largest files")));
+        QVERIFY(html.contains(QStringLiteral("Largest folders")));
         QVERIFY(html.contains(QStringLiteral("File types")));
         QVERIFY(html.contains(QStringLiteral("big.iso")));
         QVERIFY(html.contains(QStringLiteral("C:/report")));
-        QVERIFY(!html.contains(QStringLiteral("Largest folders")));
+        QVERIFY(html.contains(QStringLiteral("C:/report/media")));
+        // Charts: a CSS bar chart for the folders and a stacked bar with legend for types.
+        QVERIFY(html.contains(QStringLiteral("<h2>Charts</h2>")));
+        QVERIFY(html.contains(QStringLiteral("class='barrow'")));
+        QVERIFY(html.contains(QStringLiteral("class='stackseg'")));
+        QVERIFY(html.contains(QStringLiteral("class='legend'")));
+    }
+
+    void pdfReportIsWrittenWithTables()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString path = dir.filePath(QStringLiteral("report.pdf"));
+
+        ScanResult result;
+        result.rootPath = QStringLiteral("C:/pdfreport");
+        result.files << makeFile(result.rootPath + "/videos/movie.mkv", 40 * 1024 * 1024)
+                     << makeFile(result.rootPath + "/docs/manual.pdf", 2 * 1024 * 1024)
+                     << makeFile(result.rootPath + "/docs/notes.txt", 4096);
+        for (int index = 0; index < 12; ++index) {
+            TreeEntry folder;
+            folder.kind = TreeEntryKind::Folder;
+            folder.path = QStringLiteral("%1/folder-%2").arg(result.rootPath).arg(index);
+            folder.name = QStringLiteral("folder-%1").arg(index);
+            folder.parentPath = result.rootPath;
+            folder.size = (12 - index) * 1024 * 1024;
+            folder.fileCount = index + 1;
+            folder.folderCount = index % 3;
+            result.treeEntries << folder;
+        }
+
+        QString error;
+        QVERIFY2(ReportService::writePdfReport(path, result, {}, &error), qPrintable(error));
+
+        QFile file(path);
+        QVERIFY(file.open(QIODevice::ReadOnly));
+        const QByteArray payload = file.readAll();
+        QVERIFY(payload.size() > 5000);
+        QVERIFY(payload.startsWith("%PDF"));
     }
 
     void csvEscapesQuotes()

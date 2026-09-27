@@ -15,8 +15,8 @@ struct ReportOptions {
     int extensions = 25;
 };
 
-// Builds shareable reports from a scan result. HTML and CSV are always available; PDF is
-// compiled in when Qt PrintSupport is present.
+// Builds shareable reports from a scan result: a self-contained HTML file (with CSS charts),
+// CSV helpers and a laid-out PDF (tables + charts via QPdfWriter, no PrintSupport needed).
 class ReportService {
 public:
     static QString buildHtmlReport(const ScanResult &result, const ReportOptions &options = {});
@@ -25,11 +25,12 @@ public:
     static bool writeCsv(const QString &filePath, const QStringList &header,
                          const QVector<QStringList> &rows, QString *errorMessage = nullptr);
 
-    static bool printSupportAvailable();
+    // Always true: the PDF writer is part of QtGui.
+    static bool pdfReportAvailable();
 
-    // Renders the report into a PDF using Qt's rich text engine.
+    // Writes the report as a paginated PDF with charts and proper tables.
     static bool writePdfReport(const QString &filePath, const ScanResult &result,
                                const ReportOptions &options, QString *errorMessage = nullptr);
 };
 
-}
+} // namespace opentree

@@ -4,6 +4,23 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.8.0] - 2026-09-27
+
+### Changed
+
+- The PDF report is a real laid-out document instead of the rich-text approximation:
+  summary cards, a bar chart of the largest folders, a donut chart of the file-type
+  breakdown, proper tables (paginated with repeated headers, alternating rows, right-aligned
+  numbers, middle-elided paths) and a page footer. The HTML report gained matching CSS charts
+  (bars plus a stacked file-type bar with a legend).
+- The PDF is now drawn with `QPainter`/`QPdfWriter`, which lives in QtGui. **Qt PrintSupport
+  is no longer a dependency**: the 0.39 MB `Qt6PrintSupport.dll` (0.40 MB for MinGW) is no
+  longer deployed, and `windeployqt` does not copy it back. The PDF export stays available in
+  every build (there is no longer an "this build has no PDF support" case).
+- Report tables are built from one shared data pass, so the HTML, charts and tables always
+  agree on the numbers.
+- Version bumped to 0.8.0.
+
 ## [0.7.0] - 2026-09-27
 
 ### Added

@@ -27,7 +27,9 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 - Merkle-style structural ledger with three-tier resolution routing (high resolution, macro, blacklist)
 - Duplicates tab: staged size -> partial hash -> full hash duplicate detection with a skip-system-folders guard
 - Insights tab: disk-full forecast from the saved snapshot trend, stale-file detection, and junk candidates with one-click staging
-- Reports: export the current scan as HTML or PDF (root summary, largest folders, largest files, file-type breakdown)
+- Reports: export the current scan as HTML (with charts) or PDF (summary cards, folder bar
+  chart, file-type donut, paginated tables). The PDF is written with QtGui's QPdfWriter, so
+  no Qt PrintSupport dependency is needed.
 - Virtual trash: staging is an explicit "Stage for Deletion" action in every context menu
   (tree, details pane, charts, details table, heatmap, duplicates, graph). The Trash tab
   refreshes automatically and is review-only: nothing is deleted until the user confirms
@@ -99,9 +101,8 @@ Optional but recommended for full Graph view:
 - `Qt6 WebEngineWidgets`
 - `Qt6 WebChannel`
 
-Optional for PDF report export:
-
-- `Qt6 PrintSupport` (HTML/CSV export works without it)
+No other modules are needed: PDF export, HTML export and CSV export all use QtGui/QtCore
+(`QPdfWriter` is part of QtGui), so Qt PrintSupport is **not** required.
 
 ## Build Instructions
 

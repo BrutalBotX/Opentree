@@ -130,10 +130,6 @@ MainWindow::MainWindow(QWidget *parent)
     m_testEverythingAction = new QAction("Test Everything Connection", this);
     m_exportReportHtmlAction = new QAction("Export Report as HTML...", this);
     m_exportReportPdfAction = new QAction("Export Report as PDF...", this);
-#if !defined(OPENTREE_HAVE_PRINTSUPPORT)
-    m_exportReportPdfAction->setEnabled(false);
-    m_exportReportPdfAction->setToolTip("This build has no PDF support (Qt PrintSupport missing).");
-#endif
     m_snapshotSettingsAction = new QAction("Snapshot Settings", this);
     m_reloadThemesAction = new QAction("Reload Themes", this);
     m_statusLabel = new QLabel(this);

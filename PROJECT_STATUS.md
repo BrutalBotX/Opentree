@@ -36,6 +36,12 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
 
+### 0.8.0 follow-up (same night)
+
+- PDF report rebuilt with QPainter/QPdfWriter: summary cards, folder bar chart, file-type
+  donut, paginated tables with repeated headers and page footers; HTML report gained CSS
+  charts. Qt PrintSupport dropped, saving the 0.39/0.40 MB DLL from every deployment.
+
 ### 0.7.0 follow-up (same night)
 
 - Staging moved into the app-wide context menus ("Stage for Deletion") with a shared builder,

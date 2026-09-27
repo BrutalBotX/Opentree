@@ -626,7 +626,8 @@ int runInsightsMode(const QString &path, int staleDays)
 //   OpenTree.exe --export-report <scanPath> <outFile.html|outFile.pdf>
 int runExportReportMode(const QString &path, const QString &outputPath)
 {
-    // QPrinter/QTextDocument need a GUI application instance for font handling.
+    // The PDF report is drawn with QPainter/QPdfWriter, which need a GUI application for
+    // font handling and metrics.
     QApplication app(__argc, __argv);
     opentree::Logger::initialize();
 
@@ -644,7 +645,7 @@ int runExportReportMode(const QString &path, const QString &outputPath)
     report << QStringLiteral("Report %1: %2").arg(ok ? QStringLiteral("written") : QStringLiteral("FAILED"), outputPath);
     report << QStringLiteral("Root: %1").arg(normalized);
     report << QStringLiteral("Files: %1  Folders: %2").arg(scan.files.size()).arg(scan.folders.size());
-    report << QStringLiteral("PDF support: %1").arg(opentree::ReportService::printSupportAvailable() ? QStringLiteral("yes") : QStringLiteral("no"));
+    report << QStringLiteral("PDF support: %1").arg(opentree::ReportService::pdfReportAvailable() ? QStringLiteral("yes") : QStringLiteral("no"));
     if (!ok) {
         report << QStringLiteral("Error: %1").arg(error);
     }
@@ -918,7 +919,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.7.0"));
+    QApplication::setApplicationVersion(QStringLiteral("0.8.0"));
 
     QString startupPath;
     QString scanTestPath;

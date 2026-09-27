@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.7.0 LANGUAGES CXX)
+project(OpenTree VERSION 0.8.0 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,7 +12,6 @@ set(CMAKE_AUTOUIC ON)
 
 find_package(Qt6 REQUIRED COMPONENTS Widgets Sql Concurrent)
 find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebChannel)
-find_package(Qt6 QUIET COMPONENTS PrintSupport)
 
 qt_standard_project_setup()
 
@@ -68,6 +67,8 @@ qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/services/VirtualTrashService.cpp
     src/services/ReportService.h
     src/services/ReportService.cpp
+    src/services/PdfReportWriter.h
+    src/services/PdfReportWriter.cpp
     src/services/AnalysisService.h
     src/services/AnalysisService.cpp
     src/ui/EntryActions.h
@@ -127,14 +128,6 @@ if (Qt6WebEngineWidgets_FOUND AND Qt6WebChannel_FOUND)
     target_compile_definitions(OpenTree PRIVATE OPENTREE_HAVE_WEBENGINE=1)
 endif()
 
-if (TARGET Qt6::PrintSupport)
-    target_link_libraries(OpenTree PRIVATE Qt6::PrintSupport)
-    target_compile_definitions(OpenTree PRIVATE OPENTREE_HAVE_PRINTSUPPORT=1)
-    message(STATUS "OpenTree: PDF report export enabled (Qt6::PrintSupport found)")
-else()
-    message(STATUS "OpenTree: PDF report export disabled (Qt6::PrintSupport not found)")
-endif()
-
 # Windows GUI subsystem: without this the MSVC build links a console binary and Windows
 # opens a console window next to the app. Set before finalization so it always wins.
 set_target_properties(OpenTree PROPERTIES WIN32_EXECUTABLE TRUE)
@@ -154,6 +147,7 @@ if (TARGET Qt6::Test)
         src/services/DedupService.cpp
         src/services/AnalysisService.cpp
         src/services/ReportService.cpp
+        src/services/PdfReportWriter.cpp
         src/services/SnapshotService.cpp
         src/services/VirtualTrashService.cpp
         src/integrations/EverythingClient.cpp
@@ -198,6 +192,9 @@ if (WIN32)
                 --dir "$<TARGET_FILE_DIR:OpenTree>"
                 --no-translations
                 --no-opengl-sw
+                # windeployqt ships PrintSupport for every widgets app; the report PDF is
+                # written with QPdfWriter (QtGui), so that 0.4 MB DLL is not needed.
+                --no-printsupport
                 "$<TARGET_FILE:OpenTree>"
             COMMENT "Deploying Qt runtime dependencies"
         )
