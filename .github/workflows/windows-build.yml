@@ -31,17 +31,36 @@ jobs:
           arch: 'win64_msvc2022_64'
           modules: 'qtwebengine qtwebchannel'
 
+      - name: Install the WebEngine modules explicitly
+        shell: pwsh
+        run: |
+          python -m pip install --quiet aqtinstall
+          # The action's `modules` input did not leave a usable WebEngine CMake package behind,
+          # so install the modules again on top of the kit and check what actually landed.
+          python -m aqt install-qt windows desktop 6.8.0 win64_msvc2022_64 --modules qtwebengine qtwebchannel --outputdir "$env:QT_ROOT_DIR\..\.."
+          if ($LASTEXITCODE -ne 0) { throw "aqt failed to install the WebEngine modules (exit $LASTEXITCODE)" }
+
       - name: Check that the Qt kit has WebEngine
         shell: pwsh
         run: |
+          $required = @(
+            'bin\Qt6WebEngineWidgets.dll',
+            'bin\Qt6WebEngineCore.dll',
+            'bin\Qt6WebChannel.dll',
+            'lib\cmake\Qt6WebEngineWidgets\Qt6WebEngineWidgetsConfig.cmake',
+            'lib\cmake\Qt6WebChannel\Qt6WebChannelConfig.cmake'
+          )
           $missing = @()
-          foreach ($dll in @('Qt6WebEngineWidgets.dll', 'Qt6WebEngineCore.dll', 'Qt6WebChannel.dll')) {
-            if (-not (Test-Path (Join-Path $env:QT_ROOT_DIR "bin\$dll"))) { $missing += $dll }
+          foreach ($file in $required) {
+            if (-not (Test-Path (Join-Path $env:QT_ROOT_DIR $file))) { $missing += $file }
           }
           if ($missing.Count -gt 0) {
-            Write-Host "Qt kit at $env:QT_ROOT_DIR"
-            Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'bin') -Filter 'Qt6WebEngine*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name
-            throw "The Qt kit is missing WebEngine: $($missing -join ', '). The installer would ship a graph-less build."
+            $listing = (Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'bin') -Filter 'Qt6WebEngine*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
+            $cmakeListing = (Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'lib\cmake') -Filter 'Qt6Web*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
+            Write-Host "bin: $listing"
+            Write-Host "lib\cmake: $cmakeListing"
+            Write-Error ("::error title=WebEngine missing from the Qt kit::missing: " + ($missing -join ', ') + " | bin: $listing | cmake: $cmakeListing")
+            throw "The Qt kit is missing WebEngine: $($missing -join ', ')"
           }
           Write-Host "WebEngine present in $env:QT_ROOT_DIR"
 
@@ -55,12 +74,14 @@ jobs:
         shell: pwsh
         run: |
           $dumpbin = (Get-ChildItem "${env:ProgramFiles(x86)}\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1).FullName
-          $imports = & $dumpbin /dependents build-msvc\OpenTree.exe
-          if (-not ($imports -match 'Qt6WebEngineWidgets.dll')) {
-            throw "build-msvc\OpenTree.exe does not link Qt6WebEngineWidgets.dll - the graph would be missing."
-          }
-          if (-not (Test-Path 'build-msvc\QtWebEngineProcess.exe')) {
-            throw "build-msvc\QtWebEngineProcess.exe is missing - windeployqt did not deploy the WebEngine runtime."
+          $imports = (& $dumpbin /dependents build-msvc\OpenTree.exe) -join "`n"
+          $engineLinked = $imports -match 'Qt6WebEngineWidgets.dll'
+          $processDeployed = Test-Path 'build-msvc\QtWebEngineProcess.exe'
+          if (-not $engineLinked -or -not $processDeployed) {
+            $cmakeCache = Select-String -Path build-msvc\CMakeCache.txt -Pattern 'WebEngine' | Select-Object -First 5 | ForEach-Object { $_.Line }
+            $cmakeLines = ($cmakeCache -join ' | ')
+            Write-Error ("::error title=Build without the graph::links Qt6WebEngineWidgets=" + $engineLinked + ", QtWebEngineProcess deployed=" + $processDeployed + " | cmake cache: $cmakeLines")
+            throw "build-msvc\OpenTree.exe does not use WebEngine - the installed app would have no graph."
           }
           Write-Host "Graph support verified in build-msvc\OpenTree.exe"
 
