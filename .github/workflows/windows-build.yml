@@ -35,9 +35,9 @@ jobs:
         shell: pwsh
         run: |
           python -m pip install --quiet aqtinstall
-          # The action's `modules` input did not leave a usable WebEngine CMake package behind,
-          # so install the modules again on top of the kit and check what actually landed.
-          python -m aqt install-qt windows desktop 6.8.0 win64_msvc2022_64 --modules qtwebengine qtwebchannel --outputdir "$env:QT_ROOT_DIR\..\.."
+          # WebEngine needs its optional dependencies too: WebEngineCore requires Positioning
+          # (and WebChannel/Qml), so a kit with only qtwebengine leaves the graph disabled.
+          python -m aqt install-qt windows desktop 6.8.0 win64_msvc2022_64 --modules qtwebengine qtwebchannel qtpositioning --outputdir "$env:QT_ROOT_DIR\..\.."
           if ($LASTEXITCODE -ne 0) { throw "aqt failed to install the WebEngine modules (exit $LASTEXITCODE)" }
 
       - name: Check that the Qt kit has WebEngine
@@ -47,20 +47,21 @@ jobs:
             'bin\Qt6WebEngineWidgets.dll',
             'bin\Qt6WebEngineCore.dll',
             'bin\Qt6WebChannel.dll',
+            'bin\Qt6Positioning.dll',
             'lib\cmake\Qt6WebEngineWidgets\Qt6WebEngineWidgetsConfig.cmake',
-            'lib\cmake\Qt6WebChannel\Qt6WebChannelConfig.cmake'
+            'lib\cmake\Qt6WebEngineCore\Qt6WebEngineCoreConfig.cmake',
+            'lib\cmake\Qt6WebChannel\Qt6WebChannelConfig.cmake',
+            'lib\cmake\Qt6Positioning\Qt6PositioningConfig.cmake',
+            'lib\cmake\Qt6Quick\Qt6QuickConfig.cmake',
+            'lib\cmake\Qt6QuickWidgets\Qt6QuickWidgetsConfig.cmake'
           )
           $missing = @()
           foreach ($file in $required) {
             if (-not (Test-Path (Join-Path $env:QT_ROOT_DIR $file))) { $missing += $file }
           }
           if ($missing.Count -gt 0) {
-            $listing = (Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'bin') -Filter 'Qt6WebEngine*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
-            $cmakeListing = (Get-ChildItem (Join-Path $env:QT_ROOT_DIR 'lib\cmake') -Filter 'Qt6Web*' -ErrorAction SilentlyContinue | Select-Object -ExpandProperty Name) -join ', '
-            Write-Host "bin: $listing"
-            Write-Host "lib\cmake: $cmakeListing"
-            Write-Error ("::error title=WebEngine missing from the Qt kit::missing: " + ($missing -join ', ') + " | bin: $listing | cmake: $cmakeListing")
-            throw "The Qt kit is missing WebEngine: $($missing -join ', ')"
+            Write-Host "missing: $($missing -join ', ')"
+            throw "The Qt kit is missing WebEngine pieces: $($missing -join ', ')"
           }
           Write-Host "WebEngine present in $env:QT_ROOT_DIR"
 
