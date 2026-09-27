@@ -117,12 +117,13 @@ jobs:
           $engineLinked = $imports -match 'Qt6WebEngineWidgets.dll'
           $processDeployed = Test-Path 'build-msvc\QtWebEngineProcess.exe'
           if (-not $engineLinked -or -not $processDeployed) {
-            $configureLines = (Select-String -Path build-msvc\configure.log -Pattern 'OpenTree: Graph tab|WebEngine' -ErrorAction SilentlyContinue |
-              Select-Object -First 4 | ForEach-Object { $_.Line.Trim() }) -join ' | '
-            $cacheLines = (Select-String -Path build-msvc\CMakeCache.txt -Pattern 'WebEngine|WebChannel' -ErrorAction SilentlyContinue |
-              Select-Object -First 4 | ForEach-Object { $_.Line.Trim() }) -join ' | '
-            Write-Host ("::error title=Build without the graph::links=$engineLinked process=$processDeployed | configure: " +
-              "$configureLines | cache: $cacheLines | qt=$env:QT_ROOT_DIR")
+            $configureLines = ((Select-String -Path build-msvc\configure.log -Pattern 'OpenTree:|WebEngine|WebChannel' -ErrorAction SilentlyContinue |
+              Select-Object -First 6 | ForEach-Object { $_.Line.Trim() }) -join ' /// ')
+            $cacheLines = ((Select-String -Path build-msvc\CMakeCache.txt -Pattern 'WebEngine|WebChannel|QT_ADDITIONAL' -ErrorAction SilentlyContinue |
+              Select-Object -First 6 | ForEach-Object { $_.Line.Trim() }) -join ' /// ')
+            # ::error on stdout becomes a check-run annotation, which is readable without
+            # authentication (job logs are not).
+            Write-Output ("::error title=Build without the graph::links=$engineLinked process=$processDeployed || configure: $configureLines || cache: $cacheLines")
             throw "build-msvc\OpenTree.exe does not use WebEngine - the installed app would have no graph."
           }
           Write-Host "Graph support verified in build-msvc\OpenTree.exe"
