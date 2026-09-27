@@ -10,6 +10,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <numeric>
 
 #include "services/PdfReportWriter.h"
 #include "utils/SizeFormatter.h"
@@ -88,12 +89,25 @@ ReportData collectReportData(const ScanResult &result, const ReportOptions &opti
         data.folders.resize(options.topFolders);
     }
 
-    data.files = result.files;
-    std::sort(data.files.begin(), data.files.end(), [](const FileEntry &left, const FileEntry &right) {
-        return left.size > right.size;
-    });
-    if (data.files.size() > options.topFiles) {
-        data.files.resize(options.topFiles);
+    // Top-N without copying the whole file list: only an index vector (4 bytes per file)
+    // is materialised, which matters on a whole-drive scan where the list is huge.
+    const int fileLimit = std::max(1, options.topFiles);
+    if (!result.files.isEmpty()) {
+        QVector<int> order(result.files.size());
+        std::iota(order.begin(), order.end(), 0);
+        const int keep = std::min<int>(fileLimit, order.size());
+        std::nth_element(order.begin(), order.begin() + keep - 1, order.end(),
+                         [&result](int left, int right) {
+                             return result.files[left].size > result.files[right].size;
+                         });
+        order.resize(keep);
+        std::sort(order.begin(), order.end(), [&result](int left, int right) {
+            return result.files[left].size > result.files[right].size;
+        });
+        data.files.reserve(keep);
+        for (int index : order) {
+            data.files.push_back(result.files[index]);
+        }
     }
 
     return data;

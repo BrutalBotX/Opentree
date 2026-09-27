@@ -9,6 +9,7 @@
 #include <QLabel>
 #include <QProcess>
 #include <QMenu>
+#include <QPushButton>
 #include <QToolButton>
 #include <QDesktopServices>
 #include <QDir>
@@ -60,7 +61,7 @@ DetailsPanel::DetailsPanel(QWidget *parent)
     , m_openAction(new QAction("Open", this))
     , m_showInExplorerAction(new QAction("Show in Explorer", this))
     , m_copyPathAction(new QAction("Copy Path", this))
-    , m_stageAction(new QAction("Stage", this))
+    , m_stageButton(new QPushButton(QStringLiteral("Stage for Deletion"), this))
 {
     auto *outerLayout = new QVBoxLayout(this);
     outerLayout->setContentsMargins(12, 12, 12, 12);
@@ -84,7 +85,6 @@ DetailsPanel::DetailsPanel(QWidget *parent)
     actionRow->addWidget(makeToolButton(m_openAction));
     actionRow->addWidget(makeToolButton(m_showInExplorerAction));
     actionRow->addWidget(makeToolButton(m_copyPathAction));
-    actionRow->addWidget(makeToolButton(m_stageAction, QStringLiteral("destructiveButton")));
     actionRow->addStretch();
     outerLayout->addLayout(actionRow);
 
@@ -119,6 +119,18 @@ DetailsPanel::DetailsPanel(QWidget *parent)
 
     outerLayout->addStretch();
 
+    // Staging lives at the bottom: keeping it out of the tool row leaves "Show in Explorer"
+    // its full label at the usual pane width.
+    m_stageButton->setObjectName(QStringLiteral("destructiveButton"));
+    m_stageButton->setToolTip(QStringLiteral("Add this item to the virtual trash list. Nothing is deleted here; "
+                                             "the Trash tab moves items to the Recycle Bin."));
+    connect(m_stageButton, &QPushButton::clicked, this, [this]() {
+        if (!m_currentEntry.path.isEmpty()) {
+            stageEntry(this, m_currentEntry);
+        }
+    });
+    outerLayout->addWidget(m_stageButton);
+
     connect(m_openAction, &QAction::triggered, this, [this]() {
         if (!m_currentEntry.path.isEmpty()) {
             QDesktopServices::openUrl(QUrl::fromLocalFile(m_currentEntry.path));
@@ -137,14 +149,6 @@ DetailsPanel::DetailsPanel(QWidget *parent)
         if (!m_currentEntry.path.isEmpty()) {
             QGuiApplication::clipboard()->setText(m_currentEntry.path);
         }
-    });
-    m_stageAction->setToolTip(QStringLiteral("Stage for Deletion: add this item to the virtual trash list. "
-                                             "Nothing is deleted; the Trash tab moves items to the Recycle Bin."));
-    connect(m_stageAction, &QAction::triggered, this, [this]() {
-        if (m_currentEntry.path.isEmpty()) {
-            return;
-        }
-        stageEntry(this, m_currentEntry);
     });
 
     setContextMenuPolicy(Qt::CustomContextMenu);
@@ -172,7 +176,7 @@ void DetailsPanel::updateActionState()
     m_openAction->setEnabled(hasSelection);
     m_showInExplorerAction->setEnabled(hasSelection);
     m_copyPathAction->setEnabled(hasSelection);
-    m_stageAction->setEnabled(hasSelection && EntryActionHub::instance()->isAvailable());
+    m_stageButton->setEnabled(hasSelection && EntryActionHub::instance()->isAvailable());
 }
 
 void DetailsPanel::setEntry(const TreeEntry &entry)

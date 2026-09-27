@@ -540,7 +540,6 @@ bool ReportDocument::write(const ScanResult &result, const ReportOptions &option
                         m_writer.width() - kPageMarginLeft - kPageMarginRight,
                         m_writer.height() - kPageMarginTop - kPageMarginBottom);
     m_footerText = QStringLiteral("%1 | %2").arg(m_title, result.rootPath);
-
     qint64 totalBytes = 0;
     for (const FileEntry &file : result.files) {
         totalBytes += file.size;

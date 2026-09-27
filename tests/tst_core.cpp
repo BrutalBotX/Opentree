@@ -3,6 +3,7 @@
 #include <QtTest>
 #include <QDir>
 #include <QMenu>
+#include <QRegularExpression>
 #include <QSqlDatabase>
 #include <QSqlQuery>
 #include <QTemporaryDir>
@@ -464,6 +465,18 @@ private slots:
             QVERIFY(styleSheet.contains(QStringLiteral("QToolButton#destructiveButton")));
             QVERIFY(!styleSheet.contains(QStringLiteral("QDialog QPushButton")));
             QVERIFY(!styleSheet.contains(QStringLiteral("QMessageBox QPushButton")));
+            // Structural borders must use the neutral border token, not the selection colour:
+            // check the resolved grid-line colour is low-saturation and differs from the
+            // highlight.
+            const QRegularExpression gridlinePattern(QStringLiteral("gridline-color: (#[0-9a-fA-F]{6});"));
+            const QRegularExpressionMatch gridlineMatch = gridlinePattern.match(styleSheet);
+            QVERIFY2(gridlineMatch.hasMatch(), qPrintable(it.key()));
+            const QColor gridline(gridlineMatch.captured(1));
+            QVERIFY(gridline.isValid());
+            QVERIFY2(gridline != it.value().palette.color(QPalette::Highlight),
+                     qPrintable(QStringLiteral("%1 still draws structure with the selection colour").arg(it.key())));
+            QVERIFY2(gridline.hsvSaturationF() < 0.25f,
+                     qPrintable(QStringLiteral("%1 grid lines are not neutral: %2").arg(it.key(), gridline.name())));
         }
     }
 };

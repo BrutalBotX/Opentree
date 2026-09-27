@@ -36,7 +36,7 @@ bool FileRepository::replaceAll(const QVector<FileEntry> &files, const QString &
 
     QSqlQuery insertQuery(m_database);
     insertQuery.prepare(
-        "INSERT INTO files(root_path, path, parent_path, name, size) VALUES(?, ?, ?, ?, ?)");
+        "INSERT OR REPLACE INTO files(root_path, path, parent_path, name, size) VALUES(?, ?, ?, ?, ?)");
 
     for (const FileEntry &file : files) {
         insertQuery.addBindValue(normalizedRoot);
@@ -85,3 +85,4 @@ QVector<FileEntry> FileRepository::loadByRoot(const QString &rootPath, QString *
 }
 
 }
+

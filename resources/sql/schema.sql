@@ -1,20 +1,24 @@
 CREATE TABLE IF NOT EXISTS folders (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
-    path TEXT NOT NULL UNIQUE,
+    path TEXT NOT NULL,
     parent_path TEXT,
     name TEXT NOT NULL,
     total_size INTEGER NOT NULL DEFAULT 0,
     file_count INTEGER NOT NULL DEFAULT 0,
-    last_scan_root TEXT
+    last_scan_root TEXT,
+    -- Two scanned roots may overlap (a folder inside C:\ can also be its own root), so the
+    -- cache key is the root plus the path, never the path alone.
+    UNIQUE(last_scan_root, path)
 );
 
 CREATE TABLE IF NOT EXISTS files (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     root_path TEXT NOT NULL,
-    path TEXT NOT NULL UNIQUE,
+    path TEXT NOT NULL,
     parent_path TEXT NOT NULL,
     name TEXT NOT NULL,
-    size INTEGER NOT NULL DEFAULT 0
+    size INTEGER NOT NULL DEFAULT 0,
+    UNIQUE(root_path, path)
 );
 
 CREATE TABLE IF NOT EXISTS snapshots (

@@ -18,6 +18,110 @@ QString resolveDatabasePath()
     return dataDir + "/opentree.db";
 }
 
+QString tableSql(QSqlDatabase &db, const QString &table)
+{
+    QSqlQuery query(db);
+    query.prepare(QStringLiteral("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?"));
+    query.addBindValue(table);
+    if (query.exec() && query.next()) {
+        return query.value(0).toString();
+    }
+    return {};
+}
+
+bool execute(QSqlDatabase &db, const QString &statement, QString *errorMessage)
+{
+    QSqlQuery query(db);
+    if (!query.exec(statement)) {
+        if (errorMessage) {
+            *errorMessage = query.lastError().text();
+        }
+        return false;
+    }
+    return true;
+}
+
+// Older databases declared "path UNIQUE" on folders and files. That breaks as soon as two
+// scanned roots overlap (a folder inside C:\ also being scanned as its own root), because
+// the same path then belongs to two roots. The tables are rebuilt with a composite key
+// before the schema is applied.
+bool migrateLegacyPathUniqueness(QSqlDatabase &db, QString *errorMessage)
+{
+    const struct {
+        const char *table;
+        const char *createStatement;
+        const char *copyStatement;
+    } migrations[] = {
+        {"folders",
+         "CREATE TABLE folders ("
+         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+         "path TEXT NOT NULL,"
+         "parent_path TEXT,"
+         "name TEXT NOT NULL,"
+         "total_size INTEGER NOT NULL DEFAULT 0,"
+         "file_count INTEGER NOT NULL DEFAULT 0,"
+         "last_scan_root TEXT,"
+         "UNIQUE(last_scan_root, path))",
+         "INSERT OR REPLACE INTO folders(path, parent_path, name, total_size, file_count, last_scan_root) "
+         "SELECT path, parent_path, name, total_size, file_count, last_scan_root FROM folders_legacy"},
+        {"files",
+         "CREATE TABLE files ("
+         "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+         "root_path TEXT NOT NULL,"
+         "path TEXT NOT NULL,"
+         "parent_path TEXT NOT NULL,"
+         "name TEXT NOT NULL,"
+         "size INTEGER NOT NULL DEFAULT 0,"
+         "UNIQUE(root_path, path))",
+         "INSERT OR REPLACE INTO files(root_path, path, parent_path, name, size) "
+         "SELECT root_path, path, parent_path, name, size FROM files_legacy"},
+    };
+
+    for (const auto &migration : migrations) {
+        const QString sql = tableSql(db, QString::fromLatin1(migration.table));
+        if (sql.isEmpty() || !sql.contains(QStringLiteral("UNIQUE"), Qt::CaseInsensitive)) {
+            continue;
+        }
+        // Only the legacy single-column form needs rebuilding.
+        if (sql.contains(QStringLiteral("UNIQUE(last_scan_root, path)"), Qt::CaseInsensitive)
+            || sql.contains(QStringLiteral("UNIQUE(root_path, path)"), Qt::CaseInsensitive)) {
+            continue;
+        }
+
+        opentree::Logger::info(QStringLiteral("Migrating legacy %1 table to a composite key").arg(QString::fromLatin1(migration.table)));
+
+        if (!db.transaction()) {
+            if (errorMessage) {
+                *errorMessage = db.lastError().text();
+            }
+            return false;
+        }
+
+        const QString legacyName = QStringLiteral("%1_legacy").arg(QString::fromLatin1(migration.table));
+        const QStringList statements = {
+            QStringLiteral("ALTER TABLE %1 RENAME TO %2").arg(QString::fromLatin1(migration.table), legacyName),
+            QString::fromLatin1(migration.createStatement),
+            QString::fromLatin1(migration.copyStatement),
+            QStringLiteral("DROP TABLE %1").arg(legacyName),
+        };
+        for (const QString &statement : statements) {
+            if (!execute(db, statement, errorMessage)) {
+                db.rollback();
+                return false;
+            }
+        }
+
+        if (!db.commit()) {
+            if (errorMessage) {
+                *errorMessage = db.lastError().text();
+            }
+            return false;
+        }
+    }
+
+    return true;
+}
+
 QString resolveFallbackSchemaPath()
 {
     const QString appDir = QCoreApplication::applicationDirPath();
@@ -73,6 +177,13 @@ bool DatabaseManager::initialize()
     QSqlQuery pragma(db);
     pragma.exec("PRAGMA journal_mode=WAL");
     pragma.exec("PRAGMA foreign_keys=ON");
+
+    QString migrationError;
+    if (!migrateLegacyPathUniqueness(db, &migrationError)) {
+        m_lastError = QStringLiteral("Schema migration failed: %1").arg(migrationError);
+        Logger::error(m_lastError);
+        return false;
+    }
 
     QFile schemaFile(":/sql/schema.sql");
     if (!schemaFile.open(QIODevice::ReadOnly | QIODevice::Text)) {

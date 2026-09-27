@@ -439,6 +439,37 @@ void AppController::activateRootSession(const QString &rootPath, bool showGraphT
         }
     }
 
+    // The path may already be inside a scanned root (for example scanning
+    // C:\Users\me\project after C:\ was scanned). Reuse that tree instead of adding a second
+    // one: activate the existing root and expand/focus the requested folder.
+    if (const RootSession *ancestor = findRootSessionForPath(normalizedRoot)) {
+        if (ancestor->result && !ancestor->result->rootPath.isEmpty()
+            && ancestor->result->rootPath.compare(normalizedRoot, Qt::CaseInsensitive) != 0) {
+            const QString ancestorRoot = ancestor->result->rootPath;
+            m_currentResult = ancestor->result;
+            m_activeFolderPath = normalizedRoot;
+            syncActiveResultUi(ancestor->result, normalizedRoot, {}, false);
+
+            if (const TreeEntry *entry = findTreeEntry(normalizedRoot)) {
+                // Already in the tree: just expand the branch and select it.
+                m_activeFolderPath = entry->path;
+                syncFolderFocusUi(*entry, showGraphTab);
+                m_window->setStatusText(QStringLiteral("%1 is inside the scanned root %2 - expanded to it. "
+                                                       "Use \"Rescan Current Root\" to refresh the data.")
+                                            .arg(normalizedRoot, ancestorRoot));
+            } else {
+                // The scanned data predates the folder, so refresh the root that contains it.
+                m_window->setStatusText(QStringLiteral("%1 is inside %2 but not in the scanned data yet - rescanning %2")
+                                            .arg(normalizedRoot, ancestorRoot));
+                m_window->setBusy(true);
+                m_window->setProgress(0);
+                m_lastRequestedRootPath = ancestorRoot;
+                m_scanService->scanPath(ancestorRoot);
+            }
+            return;
+        }
+    }
+
     m_lastRequestedRootPath = normalizedRoot;
     m_window->timelinePanel()->setCurrentRootPath(normalizedRoot);
     m_window->driveSelector()->setRootPath(normalizedRoot);

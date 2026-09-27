@@ -41,6 +41,8 @@ private:
 
     std::unique_ptr<Node> m_root;
     QHash<QString, Node *> m_nodesByPath;
+    // Identifies the applied sessions so re-applying the same ones does not rebuild the tree.
+    QStringList m_sessionsSignature;
     QFileIconProvider m_iconProvider;
 };
 

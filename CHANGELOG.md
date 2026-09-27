@@ -4,6 +4,46 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.10.0] - 2026-09-27
+
+### Added
+
+- Graph legend: a proper panel (toggleable from the toolbar) that explains the shapes, the
+  size metric, the selection/ancestor/growth colours and the aggregates, plus the mouse
+  actions.
+- `--dump-graph-html <scanPath> <out.html>` writes the graph page so its layout can be
+  inspected in a normal browser without WebEngine, and `--smoke-subfolder <root> <child>`
+  verifies that opening a folder inside a scanned root reuses that root.
+- `tools/make_icon.py` regenerates the application icon (a node tree on a rounded graphite
+  square) for `appicon.ico`, `assets/opentree.ico` and `assets/opentree-icon.png`.
+
+### Changed
+
+- Force layout: nodes no longer overlap. The solver is now Barnes-Hut with the strongest
+  overlap avoidance, and a post-layout pass nudges any remaining intersecting pairs apart
+  before the view is refitted (verified by a script that packs 60 nodes into a small area:
+  zero overlapping pairs remain).
+- Theme is deliberately neutral for now: structure is drawn with graphite greys through a new
+  border token and colour is reserved for selection, growth/shrink state and validation.
+  Richer themes come later.
+- The details pane keeps its tool row readable ("Show in Explorer" is no longer elided) by
+  moving "Stage for Deletion" to a full-width button at the bottom of the pane.
+- Scanning a folder that is already inside a scanned root no longer adds a second tree: the
+  existing root is activated and expanded to that folder (`--smoke-subfolder` covers it).
+- Logo refreshed: the icon is now a node tree on a rounded graphite square, matching the
+  neutral theme, and it is generated from a script instead of being an opaque binary blob.
+
+### Fixed
+
+- The folder/file cache declared `path UNIQUE`, so overlapping roots (a folder inside `C:\`
+  also being its own root) failed to persist with "UNIQUE constraint failed". Both tables now
+  use a composite key and existing databases are migrated automatically (the 418 MB test
+  database converted in about six seconds).
+- Report export no longer copies the whole file list just to sort it: only an index vector is
+  materialised before selecting the top entries.
+- The folder tree is not rebuilt when the same root sessions are re-applied (view-metric or
+  compare refreshes used to rebuild every node).
+
 ## [0.9.1] - 2026-09-27
 
 ### Fixed

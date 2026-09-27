@@ -38,6 +38,7 @@
 #include "ui/DetailsTablePanel.h"
 #include "ui/DuplicatesPanel.h"
 #include "ui/EntryActions.h"
+#include "ui/GraphPanel.h"
 #include "ui/SettingsDialog.h"
 #include "ui/EverythingPromptDialog.h"
 #include "ui/StagingReviewDialog.h"
@@ -783,6 +784,87 @@ int runFindDuplicatesMode(const QString &path, int minimumMB, bool includeSystem
 // Opens a real folder, waits for the scan to finish, then grabs the whole window so the
 // layout (toolbar, drive selector, tabs) can be inspected without a desktop session.
 // Usage: OpenTree.exe --render-window-preview <out.png> [path] [tabIndex]
+// Verifies that opening a folder inside an already scanned root reuses that tree: the root
+// session count must stay at one and the active folder must become the child.
+int runSubfolderSmokeMode(const QString &rootPath, const QString &childPath)
+{
+    QApplication app(__argc, __argv);
+    opentree::Logger::initialize();
+
+    opentree::AppController controller;
+    opentree::MainWindow window;
+    controller.attachWindow(&window);
+    window.resize(1200, 800);
+    window.show();
+
+    controller.openPath(rootPath);
+    QTimer::singleShot(6000, &window, [&controller, &childPath]() {
+        controller.openPath(childPath);
+    });
+    QTimer::singleShot(9000, &window, [&window]() { window.close(); });
+
+    const int code = app.exec();
+
+    QStringList report;
+    report << QStringLiteral("Subfolder smoke test");
+    report << QStringLiteral("root:  %1").arg(rootPath);
+    report << QStringLiteral("child: %1").arg(childPath);
+    report << QStringLiteral("exit:  %1").arg(code);
+    report << QStringLiteral("note: compare the log for 'expanded to it' and check that no second root scan started");
+    const QString reportPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(QStringLiteral("opentree-subfolder-smoke.txt"));
+    QFile reportFile(reportPath);
+    if (reportFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&reportFile);
+        for (const QString &line : report) {
+            stream << line << '\n';
+        }
+    }
+    return code;
+}
+
+// Writes the graph page (HTML + payload) for a scanned folder, so the visual layout can be
+// inspected in a normal browser without starting WebEngine.
+int runDumpGraphHtmlMode(const QString &path, const QString &outputPath)
+{
+    QApplication app(__argc, __argv);
+    opentree::Logger::initialize();
+
+    opentree::ConfigService configService;
+    const QString normalized = opentree::PathUtils::normalizePath(path);
+    const opentree::ScanResult scan = opentree::ScanService::performFilesystemScan(normalized, configService.excludedPatterns());
+
+    opentree::GraphPanel panel;
+    panel.resize(1500, 900);
+    panel.setGraphData(scan.rootPath, scan.treeEntries, {});
+    panel.setVisiblePaths({});
+    panel.setGraphRootPath(scan.rootPath);
+
+    QFile file(outputPath);
+    if (!file.open(QIODevice::WriteOnly | QIODevice::Text | QIODevice::Truncate)) {
+        return 1;
+    }
+    QTextStream stream(&file);
+    stream.setEncoding(QStringConverter::Utf8);
+    stream << panel.debugHtml();
+    stream.flush();
+
+    QStringList report;
+    report << QStringLiteral("Graph HTML written: %1").arg(outputPath);
+    report << QStringLiteral("Root: %1").arg(normalized);
+    report << QStringLiteral("Entries: %1").arg(scan.treeEntries.size());
+    const QString reportPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(QStringLiteral("opentree-graph-html-test.txt"));
+    QFile reportFile(reportPath);
+    if (reportFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream reportStream(&reportFile);
+        for (const QString &line : report) {
+            reportStream << line << '\n';
+        }
+    }
+    return 0;
+}
+
 // Smoke test for the lazy WebEngine start: runs the normal application, opens the Graph tab
 // from the main event loop and quits. No nested event loops, so it exercises the same path a
 // user clicking the tab takes.
@@ -997,7 +1079,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.9.1"));
+    QApplication::setApplicationVersion(QStringLiteral("0.10.0"));
 
     QString startupPath;
     QString scanTestPath;
@@ -1019,6 +1101,10 @@ int main(int argc, char *argv[])
     int insightsStaleDays = 365;
     QString ledgerTestPath;
     QString graphSmokePath;
+    QString graphHtmlPath;
+    QString graphHtmlOutput;
+    QString subfolderRootPath;
+    QString subfolderChildPath;
 
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
@@ -1045,6 +1131,16 @@ int main(int argc, char *argv[])
             if (index + 1 < argc && !QString::fromLocal8Bit(argv[index + 1]).startsWith('-')) {
                 detailsPreviewMode = QString::fromLocal8Bit(argv[++index]);
             }
+            continue;
+        }
+        if (argument == "--smoke-subfolder" && index + 2 < argc) {
+            subfolderRootPath = QString::fromLocal8Bit(argv[++index]);
+            subfolderChildPath = QString::fromLocal8Bit(argv[++index]);
+            continue;
+        }
+        if (argument == "--dump-graph-html" && index + 2 < argc) {
+            graphHtmlPath = QString::fromLocal8Bit(argv[++index]);
+            graphHtmlOutput = QString::fromLocal8Bit(argv[++index]);
             continue;
         }
         if (argument == "--smoke-graph" && index + 1 < argc) {
@@ -1099,6 +1195,14 @@ int main(int argc, char *argv[])
         if (argument == "--open-path" && index + 1 < argc) {
             startupPath = QString::fromLocal8Bit(argv[++index]);
         }
+    }
+
+    if (!subfolderChildPath.isEmpty()) {
+        return runSubfolderSmokeMode(subfolderRootPath, subfolderChildPath);
+    }
+
+    if (!graphHtmlOutput.isEmpty()) {
+        return runDumpGraphHtmlMode(graphHtmlPath, graphHtmlOutput);
     }
 
     if (!graphSmokePath.isEmpty()) {

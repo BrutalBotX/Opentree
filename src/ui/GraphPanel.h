@@ -80,6 +80,8 @@ public:
     void setMaxNodes(int maxNodes);
     void beginBatchUpdate();
     void endBatchUpdate();
+    // Full graph page (HTML + payload); used by renderGraph and the --dump-graph-html tool.
+    QString debugHtml() const;
 
 signals:
     void entryActivated(const TreeEntry &entry);
@@ -111,6 +113,7 @@ private:
     const TreeEntry *findEntryByPath(const QString &path) const;
     QString buildEmptyHtml() const;
     QString buildHtml() const;
+    QString nodeSizeModeLabel() const;
     QString buildGraphPayload(const QString &rootPath, const QVector<TreeEntry> &entries, const QVector<SnapshotCompareRow> &compareRows) const;
     void markGraphDirty();
     void renderGraph();

@@ -37,7 +37,7 @@ bool FolderRepository::replaceAll(const QVector<FolderEntry> &folders, const QSt
 
     QSqlQuery insertQuery(m_database);
     insertQuery.prepare(
-        "INSERT INTO folders(path, parent_path, name, total_size, file_count, last_scan_root) "
+        "INSERT OR REPLACE INTO folders(path, parent_path, name, total_size, file_count, last_scan_root) "
         "VALUES(?, ?, ?, ?, ?, ?)");
 
     for (const FolderEntry &folder : folders) {
@@ -89,3 +89,4 @@ QVector<FolderEntry> FolderRepository::loadByRoot(const QString &rootPath, QStri
 }
 
 }
+

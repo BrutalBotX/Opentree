@@ -547,9 +547,7 @@ void GraphPanel::renderGraph()
     }
 
 #if defined(OPENTREE_HAVE_WEBENGINE)
-    QString html = buildHtml();
-    html.replace("__GRAPH_DATA__", buildGraphPayload(m_graphRootPath, m_currentEntries, m_currentCompareRows));
-    m_view->setHtml(html, QUrl("https://local.opentree/"));
+    m_view->setHtml(debugHtml(), QUrl("https://local.opentree/"));
 #else
     QVector<TreeEntry> listed;
     for (const TreeEntry &entry : m_currentEntries) {
@@ -619,6 +617,27 @@ void GraphPanel::updateSelectionInView()
     m_view->page()->runJavaScript(
         QStringLiteral("if (typeof applySelectionState === 'function') { applySelectionState(%1); }").arg(argument));
 #endif
+}
+
+QString GraphPanel::debugHtml() const
+{
+    QString html = buildHtml();
+    html.replace("__GRAPH_DATA__", buildGraphPayload(m_graphRootPath, m_currentEntries, m_currentCompareRows));
+    html.replace("__GRAPH_METRIC__", nodeSizeModeLabel());
+    return html;
+}
+
+QString GraphPanel::nodeSizeModeLabel() const
+{
+    switch (m_nodeSizeMode) {
+    case NodeSizeMode::Files:
+        return QStringLiteral("file count");
+    case NodeSizeMode::Folders:
+        return QStringLiteral("folder count");
+    case NodeSizeMode::Size:
+    default:
+        return QStringLiteral("size");
+    }
 }
 
 QString GraphPanel::buildEmptyHtml() const
@@ -1093,19 +1112,24 @@ QString GraphPanel::buildHtml() const
   #toolbar button.active { background: #2f5db0; color: #ffffff; border-color: #5b8ae0; }
   #toolbar .hint { color: #6a7a98; font-size: 11px; margin-right: 2px; }
   #legend {
-    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    position: fixed; bottom: 16px; left: 16px;
     z-index: 20;
-    padding: 8px 18px;
+    padding: 10px 14px;
     border: 1px solid rgba(70, 90, 130, 0.5);
-    border-radius: 14px;
-    background: rgba(8, 12, 22, 0.78);
+    border-radius: 12px;
+    background: rgba(8, 12, 22, 0.82);
     backdrop-filter: blur(6px);
     font-size: 12px; color: #a8b8d8;
-    white-space: nowrap;
     box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    max-width: 320px;
   }
   #legend b { color: #d0e0ff; }
-  #legend .sep { color: #3a4860; margin: 0 6px; }
+  #legend .legendHead { font-weight: 600; color: #d0e0ff; margin-bottom: 6px; letter-spacing: 0.4px; }
+  #legend .legendGrid { display: grid; grid-template-columns: 16px 1fr; gap: 4px 8px; align-items: center; }
+  #legend .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
+  #legend .swatch.diamond { border-radius: 2px; transform: rotate(45deg); }
+  #legend .legendHint { margin-top: 7px; color: #7f8fb0; font-size: 11px; line-height: 1.35; }
+  #legend.hidden { display: none; }
 </style>
 </head>
 <body>
@@ -1122,8 +1146,22 @@ QString GraphPanel::buildHtml() const
     <button id="btnZoomOut">−</button>
     <button id="btnZoomIn">+</button>
     <button id="btnRelayout">Re-layout</button>
+    <button id="btnLegend" class="active" title="Show or hide the legend">Legend</button>
   </div>
-  <div id="legend"><b>Graph</b><span class="sep">·</span>click: select<span class="sep">·</span>double-click: enter folder<span class="sep">·</span>right-click: more<span class="sep">·</span><span style="color:#6a7a98;">planet = folder</span><span class="sep">·</span><span style="color:#6a7a98;">◆ = file</span></div>
+  <div id="legend">
+    <div class="legendHead">Legend</div>
+    <div class="legendGrid">
+      <span class="swatch" style="background:#4A90D9;border:1px solid #7FB2E8;"></span><span>Folder &mdash; round planet, sized by <b>__GRAPH_METRIC__</b></span>
+      <span class="swatch diamond" style="background:#4DD0E1;border:1px solid #80DEEA;"></span><span>File &mdash; diamond, same size scale</span>
+      <span class="swatch" style="background:#FFD700;"></span><span>Selected node</span>
+      <span class="swatch" style="background:#B388FF;"></span><span>On the path to the selection</span>
+      <span class="swatch" style="background:#FF4081;"></span><span>Grew since the compared snapshot</span>
+      <span class="swatch" style="background:#39FF14;"></span><span>Shrank since the compared snapshot</span>
+      <span class="swatch" style="background:#6A8AAA;"></span><span>Other folders / files (grouped, below the cutoff)</span>
+    </div>
+    <div class="legendHint">An edge means "contains". Node size follows the current view metric (<b>__GRAPH_METRIC__</b>).<br>
+      hover = focus &middot; click = select &middot; double-click = open folder &middot; right-click = more</div>
+  </div>
 <script>
 __GRAPH_DATA__
 
@@ -1275,17 +1313,20 @@ window.applySelectionState = applySelectionState;
 
 const forcePhysics = {
   enabled: true,
-  solver: 'forceAtlas2Based',
-  forceAtlas2Based: {
-    gravitationalConstant: -60,
-    centralGravity: 0.02,
-    springLength: 160,
-    springConstant: 0.05,
-    damping: 0.65,
-    avoidOverlap: 0.7,
+  solver: 'barnesHut',
+  barnesHut: {
+    theta: 0.6,
+    gravitationalConstant: -4500,
+    centralGravity: 0.22,
+    springLength: 150,
+    springConstant: 0.035,
+    damping: 0.62,
+    // 1 = strongest overlap avoidance vis offers; separateOverlappingNodes() then
+    // guarantees that no two nodes actually intersect.
+    avoidOverlap: 1,
   },
-  stabilization: { iterations: 260, fit: true },
-  minVelocity: 0.75,
+  stabilization: { enabled: true, iterations: 420, updateInterval: 25, fit: true },
+  minVelocity: 0.6,
 };
 const treeLayout = {
   hierarchical: {
@@ -1380,6 +1421,12 @@ document.getElementById('btnFit').addEventListener('click', settleView);
 document.getElementById('btnZoomIn').addEventListener('click', () => network.moveTo({ scale: network.getScale() * 1.25, animation: { duration: 160 } }));
 document.getElementById('btnZoomOut').addEventListener('click', () => network.moveTo({ scale: network.getScale() * 0.8, animation: { duration: 160 } }));
 document.getElementById('btnRelayout').addEventListener('click', () => applyLayout(currentLayout));
+const legendEl = document.getElementById('legend');
+const legendButton = document.getElementById('btnLegend');
+legendButton.addEventListener('click', () => {
+  legendEl.classList.toggle('hidden');
+  legendButton.classList.toggle('active', !legendEl.classList.contains('hidden'));
+});
 document.querySelectorAll('#toolbar button[data-layout]').forEach(button => {
   button.addEventListener('click', () => applyLayout(button.dataset.layout));
 });
@@ -1394,6 +1441,7 @@ if (isTree()) {
 network.on('stabilizationIterationsDone', () => {
   if (!isTree()) {
     network.setOptions({ physics: { enabled: false } });
+    separateOverlappingNodes();
   }
   settleView();
 });
@@ -1405,8 +1453,65 @@ let hoverIntentTimer = null;
 let lastMouse = { x: -1000, y: -1000 };
 let lastFocusMouse = { x: -1000, y: -1000 };
 
-function cancelHoverIntent() {
-  if (hoverIntentTimer) {
+// vis' overlap avoidance is only a soft force, so after the layout settles the nodes are
+// nudged apart until no two circles intersect, then the view is refitted. This is cheap for
+// the few hundred nodes the graph ever draws and it removes the "pile of planets" look.
+function nodeRadius(node) {
+  const size = node && node.size ? node.size : 20;
+  return size + 5;
+}
+
+function separateOverlappingNodes() {
+  const positions = network.getPositions();
+  const ids = Object.keys(positions);
+  if (ids.length < 2) {
+    return;
+  }
+
+  const radius = {};
+  ids.forEach(id => { radius[id] = nodeRadius(nodes.get(id)); });
+
+  let moved = false;
+  for (let pass = 0; pass < 80; pass++) {
+    moved = false;
+    for (let i = 0; i < ids.length; i++) {
+      const a = ids[i];
+      for (let j = i + 1; j < ids.length; j++) {
+        const b = ids[j];
+        let dx = positions[b].x - positions[a].x;
+        let dy = positions[b].y - positions[a].y;
+        let distance = Math.sqrt(dx * dx + dy * dy);
+        const minimum = radius[a] + radius[b];
+        if (distance >= minimum) {
+          continue;
+        }
+        if (distance < 0.001) {
+          // Coincident nodes: push them apart along a deterministic direction.
+          const angle = (i * 2.399963229728653) % (Math.PI * 2);
+          dx = Math.cos(angle);
+          dy = Math.sin(angle);
+          distance = 1;
+        }
+        const shift = (minimum - distance) * 0.52;
+        const ux = dx / distance;
+        const uy = dy / distance;
+        positions[a].x -= ux * shift;
+        positions[a].y -= uy * shift;
+        positions[b].x += ux * shift;
+        positions[b].y += uy * shift;
+        moved = true;
+      }
+    }
+    if (!moved) {
+      break;
+    }
+  }
+
+  nodes.update(ids.map(id => ({ id, x: positions[id].x, y: positions[id].y })));
+  network.fit({ animation: { duration: 320 } });
+}
+
+function cancelHoverIntent() {  if (hoverIntentTimer) {
     clearTimeout(hoverIntentTimer);
     hoverIntentTimer = null;
   }

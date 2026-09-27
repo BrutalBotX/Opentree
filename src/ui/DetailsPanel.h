@@ -8,6 +8,7 @@
 #include "services/SnapshotService.h"
 
 QT_FORWARD_DECLARE_CLASS(QAction)
+QT_FORWARD_DECLARE_CLASS(QPushButton)
 QT_FORWARD_DECLARE_CLASS(QToolButton)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QScrollArea)
@@ -49,7 +50,7 @@ private:
     QAction *m_openAction;
     QAction *m_showInExplorerAction;
     QAction *m_copyPathAction;
-    QAction *m_stageAction;
+    QPushButton *m_stageButton;
 };
 
 }

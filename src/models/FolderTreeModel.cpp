@@ -116,6 +116,20 @@ void FolderTreeModel::setEntries(const QVector<TreeEntry> &entries, const QStrin
 
 void FolderTreeModel::setRootSessions(const QVector<RootSession> &sessions)
 {
+    // Rebuilding every node is only needed when the sessions actually changed; a view-metric
+    // or compare refresh re-applies the same sessions, which used to rebuild the whole tree.
+    QStringList signature;
+    signature.reserve(sessions.size());
+    for (const RootSession &session : sessions) {
+        signature << QStringLiteral("%1@%2")
+                         .arg(session.result ? session.result->rootPath : QString(),
+                              QString::number(reinterpret_cast<quintptr>(session.result.get())));
+    }
+    if (signature == m_sessionsSignature && m_root) {
+        return;
+    }
+    m_sessionsSignature = signature;
+
     beginResetModel();
     m_root = std::make_unique<Node>();
     m_root->entry.path = QStringLiteral("__invisible_root__");

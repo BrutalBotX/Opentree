@@ -57,23 +57,23 @@ It is designed as a Windows-first visual storage analysis tool with a TreeSize-l
 
 ```text
 OpenTree/                     <- repository root (this folder is the working tree)
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ CMakeLists.txt
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ build_msvc.bat            <- MSVC 2022 + Qt WebEngine build
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ build_mingw.bat           <- MinGW build (no WebEngine, graph falls back to text)
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ src/
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ resources/
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ tests/                    <- core test suite (OpenTreeTests)
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ assets/
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ docs/
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ installer/
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ third_party/
-Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ include/
-Ã¢â€â€š   Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ dll/
-Ã¢â€â€š   Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ lib/
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ CHANGELOG.md
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ README.md
-Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ TIMELINE_PLAN.md
-Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ PROJECT_STATUS.md
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ CMakeLists.txt
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ build_msvc.bat            <- MSVC 2022 + Qt WebEngine build
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ build_mingw.bat           <- MinGW build (no WebEngine, graph falls back to text)
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ src/
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ resources/
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ tests/                    <- core test suite (OpenTreeTests)
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ assets/
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ docs/
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ installer/
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ third_party/
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ include/
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ dll/
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬Å¡   ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ lib/
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ CHANGELOG.md
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ README.md
+ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ TIMELINE_PLAN.md
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ PROJECT_STATUS.md
 ```
 
 `github/` is the legacy export bundle from before the repository root became the working
@@ -169,6 +169,8 @@ OpenTree.exe --render-chart-preview <out.png> [pie|bars|treemap[N]|pie+freespace
 OpenTree.exe --render-details-preview <out.png> [flat]
 OpenTree.exe --render-window-preview <out.png> [path] [tabIndex]
 OpenTree.exe --smoke-graph <path>                 :: checks the lazy WebEngine start (the graph needs a real window)
+OpenTree.exe --smoke-subfolder <root> <child>    :: checks that a child folder reuses the scanned root
+OpenTree.exe --dump-graph-html <path> <out.html> :: writes the graph page for inspection in a browser
 ```
 
 ### Tests
@@ -225,9 +227,9 @@ Expected shape:
 
 ```text
 themes/
-Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ my-theme/
-    Ã¢â€Å“Ã¢â€â‚¬Ã¢â€â‚¬ theme.json
-    Ã¢â€â€Ã¢â€â‚¬Ã¢â€â‚¬ theme.qss
+ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ my-theme/
+    ÃƒÂ¢Ã¢â‚¬ÂÃ…â€œÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ theme.json
+    ÃƒÂ¢Ã¢â‚¬ÂÃ¢â‚¬ÂÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ÃƒÂ¢Ã¢â‚¬ÂÃ¢â€šÂ¬ theme.qss
 ```
 
 ## Notes
@@ -251,7 +253,7 @@ themes/
 - Multi-root tree browsing is supported, but right-side panels still follow one active root context at a time.
 - Graph view remains dependent on Qt WebEngine for full functionality.
 - Cached reload currently prioritizes fast folder-tree display; the background refresh still does a full filesystem scan.
-- App icon may not render on titlebar in some Windows configurations Ã¢â‚¬â€ shell cache or `.ico` format compatibility.
+- App icon may not render on titlebar in some Windows configurations ÃƒÂ¢Ã¢â€šÂ¬Ã¢â‚¬Â shell cache or `.ico` format compatibility.
 
 ## Known Bugs / Rough Edges
 
