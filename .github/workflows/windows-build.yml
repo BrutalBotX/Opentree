@@ -116,14 +116,29 @@ jobs:
           $imports = (& $dumpbin /dependents build-msvc\OpenTree.exe) -join "`n"
           $engineLinked = $imports -match 'Qt6WebEngineWidgets.dll'
           $processDeployed = Test-Path 'build-msvc\QtWebEngineProcess.exe'
+          $configureLines = ((Select-String -Path build-msvc\configure.log -Pattern 'OpenTree:|WebEngine|WebChannel' -ErrorAction SilentlyContinue |
+            Select-Object -First 8 | ForEach-Object { $_.Line.Trim() }) -join "`n")
+          $cacheLines = ((Select-String -Path build-msvc\CMakeCache.txt -Pattern 'WebEngine|WebChannel|QT_ADDITIONAL|Qt6_DIR' -ErrorAction SilentlyContinue |
+            Select-Object -First 8 | ForEach-Object { $_.Line.Trim() }) -join "`n")
+          $diagnostics = @(
+            "links Qt6WebEngineWidgets: $engineLinked",
+            "QtWebEngineProcess deployed: $processDeployed",
+            "QT_ROOT_DIR: $env:QT_ROOT_DIR",
+            "",
+            "--- configure log (OpenTree/WebEngine lines) ---",
+            $configureLines,
+            "",
+            "--- CMakeCache ---",
+            $cacheLines,
+            "",
+            "--- OpenTree.exe imports (Qt) ---",
+            (($imports -split "`n") | Where-Object { $_ -match 'Qt6' } | ForEach-Object { $_.Trim() }) -join ", "
+          ) -join "`n"
+          # The step summary shows up as the check run's output text, which the API serves
+          # without authentication - unlike the job log.
+          $diagnostics | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
+          Write-Host $diagnostics
           if (-not $engineLinked -or -not $processDeployed) {
-            $configureLines = ((Select-String -Path build-msvc\configure.log -Pattern 'OpenTree:|WebEngine|WebChannel' -ErrorAction SilentlyContinue |
-              Select-Object -First 6 | ForEach-Object { $_.Line.Trim() }) -join ' /// ')
-            $cacheLines = ((Select-String -Path build-msvc\CMakeCache.txt -Pattern 'WebEngine|WebChannel|QT_ADDITIONAL' -ErrorAction SilentlyContinue |
-              Select-Object -First 6 | ForEach-Object { $_.Line.Trim() }) -join ' /// ')
-            # ::error on stdout becomes a check-run annotation, which is readable without
-            # authentication (job logs are not).
-            Write-Output ("::error title=Build without the graph::links=$engineLinked process=$processDeployed || configure: $configureLines || cache: $cacheLines")
             throw "build-msvc\OpenTree.exe does not use WebEngine - the installed app would have no graph."
           }
           Write-Host "Graph support verified in build-msvc\OpenTree.exe"
