@@ -76,7 +76,6 @@ MainWindow::MainWindow(QWidget *parent)
     , m_sizeUnitsAdaptiveAction(nullptr)
     , m_setOthersThresholdAction(nullptr)
     , m_exitAction(nullptr)
-    , m_locateEverythingAction(nullptr)
     , m_snapshotSettingsAction(nullptr)
     , m_reloadThemesAction(nullptr)
     , m_statusLabel(nullptr)
@@ -100,7 +99,8 @@ MainWindow::MainWindow(QWidget *parent)
     m_openCurrentInExplorerAction = new QAction("Open in Explorer", this);
     m_openTerminalHereAction = new QAction("Open Terminal Here", this);
     m_copyCurrentPathAction = new QAction("Copy Current Path", this);
-    m_openConfigFolderAction = new QAction("Open Config Folder", this);
+    m_openConfigFolderAction = new QAction("Open Settings Folder (opentree.ini)", this);
+    m_openDataFolderAction = new QAction("Open Data Folder (database)", this);
     m_openLogFileAction = new QAction("Open Log File", this);
     m_showGraphTabAction = new QAction("Graph", this);
     m_showChartTabAction = new QAction("Chart", this);
@@ -123,11 +123,9 @@ MainWindow::MainWindow(QWidget *parent)
     m_setOthersThresholdAction = new QAction("Set Others Threshold...", this);
     m_exitAction = new QAction("Exit", this);
     m_settingsAction = new QAction("Settings...", this);
-    m_locateEverythingAction = new QAction("Locate Everything Executable...", this);
-    m_useEverythingAction = new QAction("Use Everything when available", this);
-    m_useEverythingAction->setCheckable(true);
-    m_useEverythingAction->setChecked(true);
-    m_testEverythingAction = new QAction("Test Everything Connection", this);
+    // One entry for the Everything index: the checkbox, executable path and connection test
+    // live together on the Scanning tab of the settings dialog.
+    m_everythingIndexAction = new QAction("Everything Index...", this);
     m_exportReportHtmlAction = new QAction("Export Report as HTML...", this);
     m_exportReportPdfAction = new QAction("Export Report as PDF...", this);
     m_snapshotSettingsAction = new QAction("Snapshot Settings", this);
@@ -197,16 +195,14 @@ MainWindow::MainWindow(QWidget *parent)
 
     auto *toolsMenu = menuBar()->addMenu("Tools");
     toolsMenu->addAction(m_settingsAction);
-    toolsMenu->addSeparator();
-    toolsMenu->addAction(m_useEverythingAction);
-    toolsMenu->addAction(m_locateEverythingAction);
-    toolsMenu->addAction(m_testEverythingAction);
+    toolsMenu->addAction(m_everythingIndexAction);
     toolsMenu->addSeparator();
     toolsMenu->addAction(m_openCurrentInExplorerAction);
     toolsMenu->addAction(m_openTerminalHereAction);
     toolsMenu->addAction(m_copyCurrentPathAction);
     toolsMenu->addSeparator();
     toolsMenu->addAction(m_openConfigFolderAction);
+    toolsMenu->addAction(m_openDataFolderAction);
     toolsMenu->addAction(m_openLogFileAction);
 
     auto *viewMenu = menuBar()->addMenu("View");
@@ -263,10 +259,8 @@ MainWindow::MainWindow(QWidget *parent)
         emit compareSnapshotRequested();
     });
     connect(m_exitAction, &QAction::triggered, this, &QWidget::close);
-    connect(m_locateEverythingAction, &QAction::triggered, this, &MainWindow::everythingLocationRequested);
     connect(m_settingsAction, &QAction::triggered, this, &MainWindow::settingsRequested);
-    connect(m_useEverythingAction, &QAction::toggled, this, &MainWindow::useEverythingToggled);
-    connect(m_testEverythingAction, &QAction::triggered, this, &MainWindow::testEverythingRequested);
+    connect(m_everythingIndexAction, &QAction::triggered, this, &MainWindow::everythingSettingsRequested);
     connect(m_exportReportHtmlAction, &QAction::triggered, this, [this]() { emit exportReportRequested(QStringLiteral("html")); });
     connect(m_exportReportPdfAction, &QAction::triggered, this, [this]() { emit exportReportRequested(QStringLiteral("pdf")); });
     connect(m_snapshotSettingsAction, &QAction::triggered, this, &MainWindow::snapshotSettingsRequested);
@@ -275,6 +269,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_openTerminalHereAction, &QAction::triggered, this, &MainWindow::openTerminalHereRequested);
     connect(m_copyCurrentPathAction, &QAction::triggered, this, &MainWindow::copyCurrentPathRequested);
     connect(m_openConfigFolderAction, &QAction::triggered, this, &MainWindow::openConfigFolderRequested);
+    connect(m_openDataFolderAction, &QAction::triggered, this, &MainWindow::openDataFolderRequested);
     connect(m_openLogFileAction, &QAction::triggered, this, &MainWindow::openLogFileRequested);
     connect(m_expandAllAction, &QAction::triggered, this, &MainWindow::expandAllRequested);
     connect(m_collapseAllAction, &QAction::triggered, this, &MainWindow::collapseAllRequested);
@@ -349,12 +344,6 @@ MainWindow::MainWindow(QWidget *parent)
     m_mainToolBar->addSeparator();
     m_mainToolBar->addAction(m_createSnapshotAction);
     m_mainToolBar->addAction(m_compareSnapshotAction);
-    m_mainToolBar->addSeparator();
-    m_mainToolBar->addAction(m_openCurrentInExplorerAction);
-    m_mainToolBar->addAction(m_copyCurrentPathAction);
-    m_mainToolBar->addSeparator();
-    m_mainToolBar->addAction(m_useEverythingAction);
-    m_mainToolBar->addAction(m_locateEverythingAction);
 
     Logger::info("main-window-debug ctor: toolbar configured");
 
@@ -536,19 +525,6 @@ QAction *MainWindow::treemapDepth3Action() const
     return m_treemapDepth3Action;
 }
 
-QAction *MainWindow::useEverythingAction() const
-{
-    return m_useEverythingAction;
-}
-
-void MainWindow::setUseEverythingChecked(bool checked)
-{
-    if (!m_useEverythingAction) {
-        return;
-    }
-    const QSignalBlocker blocker(m_useEverythingAction);
-    m_useEverythingAction->setChecked(checked);
-}
 
 
 DetailsPanel *MainWindow::detailsPanel() const

@@ -7,6 +7,8 @@
 #include <QIcon>
 #include <QStandardPaths>
 #include <QMenu>
+#include <QMenuBar>
+#include <QMouseEvent>
 #include <QTextStream>
 #include <QTimer>
 
@@ -781,9 +783,106 @@ int runFindDuplicatesMode(const QString &path, int minimumMB, bool includeSystem
     return result.groups.isEmpty() ? 0 : 0;
 }
 
-// Opens a real folder, waits for the scan to finish, then grabs the whole window so the
-// layout (toolbar, drive selector, tabs) can be inspected without a desktop session.
-// Usage: OpenTree.exe --render-window-preview <out.png> [path] [tabIndex]
+// Reproduces the reported menu-bar glitch: clicking a menu before its drop-down has laid out
+// used to leave the bar unresponsive. This drives the menu bar through press/release pairs
+// without pumping events in between (the worst case) and reports whether the drop-down opens,
+// both on the first click and after a hover.
+int runMenuSmokeMode()
+{
+    QApplication app(__argc, __argv);
+    opentree::Logger::initialize();
+
+    opentree::MainWindow window;
+    window.resize(1200, 800);
+    window.show();
+    QCoreApplication::processEvents();
+
+    QMenuBar *bar = window.menuBar();
+    QStringList report;
+    report << QStringLiteral("Menu smoke test: %1 menus").arg(bar->actions().size());
+
+    const auto pump = [](int milliseconds) {
+        QEventLoop loop;
+        QTimer::singleShot(milliseconds, &loop, &QEventLoop::quit);
+        loop.exec();
+    };
+
+    bool allGood = true;
+    const QList<QAction *> menus = bar->actions();
+    for (int round = 0; round < 3; ++round) {
+        for (QAction *action : menus) {
+            QMenu *menu = action->menu();
+            if (!menu) {
+                continue;
+            }
+
+            const QPoint center = bar->actionGeometry(action).center();
+            const QPoint global = bar->mapToGlobal(center);
+
+            // Rapid click: press and release without letting Qt lay the popup out in between.
+            QMouseEvent press(QEvent::MouseButtonPress, center, global, Qt::LeftButton, Qt::LeftButton, Qt::NoModifier);
+            QApplication::sendEvent(bar, &press);
+            QMouseEvent release(QEvent::MouseButtonRelease, center, global, Qt::LeftButton, Qt::NoButton, Qt::NoModifier);
+            QApplication::sendEvent(bar, &release);
+            pump(120);
+
+            const bool openedByClick = menu->isVisible();
+            const QSize size = menu->size();
+            const bool sane = openedByClick && size.width() > 20 && size.height() > 10;
+
+            report << QStringLiteral("round %1 | %2: click=%3 (%4x%5)")
+                          .arg(round + 1)
+                          .arg(action->text())
+                          .arg(openedByClick ? QStringLiteral("open") : QStringLiteral("CLOSED"))
+                          .arg(size.width())
+                          .arg(size.height());
+
+            // While a menu is open (popup mode), moving onto the next item must switch to it.
+            if (openedByClick && menus.size() > 1 && action != menus.last()) {
+                QAction *next = menus.at(menus.indexOf(action) + 1);
+                const QPoint nextCenter = bar->actionGeometry(next).center();
+                QMouseEvent move(QEvent::MouseMove, nextCenter, bar->mapToGlobal(nextCenter),
+                                 Qt::NoButton, Qt::NoButton, Qt::NoModifier);
+                QApplication::sendEvent(bar, &move);
+                pump(150);
+                const bool switched = next->menu() && next->menu()->isVisible();
+                report << QStringLiteral("        popup-mode move to %1: %2")
+                              .arg(next->text(), switched ? QStringLiteral("switched") : QStringLiteral("STUCK"));
+                if (!switched) {
+                    allGood = false;
+                }
+            }
+
+            if (menu->isVisible()) {
+                menu->close();
+                pump(60);
+            }
+            for (QAction *candidate : menus) {
+                if (candidate->menu() && candidate->menu()->isVisible()) {
+                    candidate->menu()->close();
+                }
+            }
+            pump(40);
+
+            if (!sane) {
+                allGood = false;
+            }
+        }
+    }
+
+    const QString reportPath = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
+                                   .filePath(QStringLiteral("opentree-menu-smoke.txt"));
+    QFile reportFile(reportPath);
+    if (reportFile.open(QIODevice::WriteOnly | QIODevice::Text)) {
+        QTextStream stream(&reportFile);
+        stream << QStringLiteral("RESULT: %1").arg(allGood ? QStringLiteral("PASS") : QStringLiteral("FAIL")) << '\n';
+        for (const QString &line : report) {
+            stream << line << '\n';
+        }
+    }
+    return allGood ? 0 : 1;
+}
+
 // Verifies that opening a folder inside an already scanned root reuses that tree: the root
 // session count must stay at one and the active folder must become the child.
 int runSubfolderSmokeMode(const QString &rootPath, const QString &childPath)
@@ -1079,7 +1178,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.10.0"));
+    QApplication::setApplicationVersion(QStringLiteral("0.11.0"));
 
     QString startupPath;
     QString scanTestPath;
@@ -1105,6 +1204,7 @@ int main(int argc, char *argv[])
     QString graphHtmlOutput;
     QString subfolderRootPath;
     QString subfolderChildPath;
+    bool menuSmoke = false;
 
     for (int index = 1; index < argc; ++index) {
         const QString argument = QString::fromLocal8Bit(argv[index]);
@@ -1131,6 +1231,10 @@ int main(int argc, char *argv[])
             if (index + 1 < argc && !QString::fromLocal8Bit(argv[index + 1]).startsWith('-')) {
                 detailsPreviewMode = QString::fromLocal8Bit(argv[++index]);
             }
+            continue;
+        }
+        if (argument == "--smoke-menu") {
+            menuSmoke = true;
             continue;
         }
         if (argument == "--smoke-subfolder" && index + 2 < argc) {
@@ -1195,6 +1299,10 @@ int main(int argc, char *argv[])
         if (argument == "--open-path" && index + 1 < argc) {
             startupPath = QString::fromLocal8Bit(argv[++index]);
         }
+    }
+
+    if (menuSmoke) {
+        return runMenuSmokeMode();
     }
 
     if (!subfolderChildPath.isEmpty()) {

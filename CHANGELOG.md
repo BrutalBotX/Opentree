@@ -4,6 +4,42 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.11.0] - 2026-09-27
+
+### Added
+
+- The graph page follows the application theme: the page background, toolbar, legend, node
+  labels, edge colour, node glow and even the starfield are driven by the active palette
+  (light themes work too), so the graph no longer looks like a different app.
+- `--smoke-menu` diagnostic: drives the menu bar with rapid click pairs and popup-mode moves
+  and reports whether the drop-downs open (5 menus x 3 rounds).
+- Tools > "Open Data Folder (database)" opens the folder that holds `opentree.db`, next to the
+  existing settings-folder and log entries.
+
+### Changed
+
+- Toolbar trimmed to the actions that are not already available elsewhere: Scan Folder,
+  Rescan Current Root, Create Snapshot, Compare Snapshot. "Open in Explorer",
+  "Copy Current Path" and the two Everything buttons moved out (the details pane and the
+  Tools menu already offered them).
+- One Everything entry point: Tools > "Everything Index..." opens the settings dialog on its
+  Scanning tab, where the engine switch, executable path and connection test live together.
+- Stale files got a clearer UI: a preset picker ("Not modified in the last" 30 days ... 5 years
+  or Custom), a live summary ("200 files · 516 KB reclaimable (largest 200)") and a
+  "Stage Stale in Trash..." button that stages the listed files through the review dialog.
+- Version bumped to 0.11.0.
+
+### Fixed
+
+- Graph dragging is no longer glitched: hover focus, label reveals, the settle animation and
+  the overlap-separation pass all stand down while a drag is in flight (and for a short grace
+  period afterwards), so the camera and the nodes cannot fight the pointer.
+- Menu bar: clicking a menu before its drop-down had laid out could leave the bar in a state
+  where the drop-down never opened. The menu bar is no longer styled through the stylesheet
+  (it uses the palette), which removes the Qt state confusion; `--smoke-menu` covers it.
+- The application theme no longer draws structure with the selection colour (the graph page
+  used to keep its own blue chrome regardless of the theme).
+
 ## [0.10.0] - 2026-09-27
 
 ### Added

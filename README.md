@@ -169,6 +169,7 @@ OpenTree.exe --render-chart-preview <out.png> [pie|bars|treemap[N]|pie+freespace
 OpenTree.exe --render-details-preview <out.png> [flat]
 OpenTree.exe --render-window-preview <out.png> [path] [tabIndex]
 OpenTree.exe --smoke-graph <path>                 :: checks the lazy WebEngine start (the graph needs a real window)
+OpenTree.exe --smoke-menu                         :: checks that menu drop-downs open on fast clicks
 OpenTree.exe --smoke-subfolder <root> <child>    :: checks that a child folder reuses the scanned root
 OpenTree.exe --dump-graph-html <path> <out.html> :: writes the graph page for inspection in a browser
 ```

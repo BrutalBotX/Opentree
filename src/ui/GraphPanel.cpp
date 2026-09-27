@@ -619,11 +619,54 @@ void GraphPanel::updateSelectionInView()
 #endif
 }
 
+void GraphPanel::setThemePalette(const QPalette &palette)
+{
+    const QColor window = palette.color(QPalette::Window);
+    const QColor base = palette.color(QPalette::Base);
+    const QColor text = palette.color(QPalette::WindowText);
+    const QColor accent = palette.color(QPalette::Highlight);
+    QColor border = palette.color(QPalette::Mid);
+    if (!border.isValid() || border == base) {
+        border = base.darker(115);
+    }
+
+    if (window == m_themeWindow && base == m_themeBase && text == m_themeText
+        && accent == m_themeAccent && border == m_themeBorder) {
+        return;
+    }
+
+    m_themeWindow = window;
+    m_themeBase = base;
+    m_themeText = text;
+    m_themeAccent = accent;
+    m_themeBorder = border;
+
+    if (m_view) {
+        // The page carries the colours in its CSS, so re-render to show the change.
+        m_renderDirty = true;
+        renderGraph();
+    }
+}
+
 QString GraphPanel::debugHtml() const
 {
     QString html = buildHtml();
     html.replace("__GRAPH_DATA__", buildGraphPayload(m_graphRootPath, m_currentEntries, m_currentCompareRows));
     html.replace("__GRAPH_METRIC__", nodeSizeModeLabel());
+
+    const auto rgbTriplet = [](const QColor &color) {
+        return QStringLiteral("%1,%2,%3").arg(color.red()).arg(color.green()).arg(color.blue());
+    };
+    html.replace("__THEME_WINDOW_DARK__", m_themeWindow.darker(125).name());
+    html.replace("__THEME_WINDOW__", m_themeWindow.name());
+    html.replace("__THEME_BASE_RGB__", rgbTriplet(m_themeBase));
+    html.replace("__THEME_BASE__", m_themeBase.name());
+    html.replace("__THEME_TEXT_RGB__", rgbTriplet(m_themeText));
+    html.replace("__THEME_TEXT__", m_themeText.name());
+    html.replace("__THEME_ACCENT_RGB__", rgbTriplet(m_themeAccent));
+    html.replace("__THEME_ACCENT__", m_themeAccent.name());
+    html.replace("__THEME_BORDER_RGB__", rgbTriplet(m_themeBorder));
+    html.replace("__THEME_BORDER__", m_themeBorder.name());
     return html;
 }
 
@@ -1085,8 +1128,8 @@ QString GraphPanel::buildHtml() const
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body {
-    background: radial-gradient(ellipse 140% 90% at 30% 20%, #101624 0%, #0a0d16 55%, #05070e 100%);
-    color: #d0d8ee; font-family: "Segoe UI", system-ui, sans-serif;
+    background: radial-gradient(ellipse 140% 90% at 30% 20%, __THEME_WINDOW__ 0%, __THEME_WINDOW_DARK__ 55%, __THEME_WINDOW_DARK__ 100%);
+    color: __THEME_TEXT__; font-family: "Segoe UI", system-ui, sans-serif;
     height: 100vh; overflow: hidden;
   }
   #bgCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; }
@@ -1095,40 +1138,40 @@ QString GraphPanel::buildHtml() const
     position: fixed; top: 12px; right: 12px; z-index: 30;
     display: flex; gap: 6px; align-items: center;
     padding: 6px 8px;
-    border: 1px solid rgba(70, 90, 130, 0.5);
+    border: 1px solid __THEME_BORDER__;
     border-radius: 12px;
-    background: rgba(8, 12, 22, 0.78);
+    background: rgba(__THEME_BASE_RGB__, 0.88);
     backdrop-filter: blur(6px);
-    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.35);
   }
   #toolbar button {
-    border: 1px solid rgba(80, 110, 160, 0.5);
-    background: rgba(20, 28, 46, 0.85);
-    color: #b8c8e8;
+    border: 1px solid __THEME_BORDER__;
+    background: rgba(__THEME_BASE_RGB__, 0.95);
+    color: __THEME_TEXT__;
     font-size: 12px; font-family: inherit;
     padding: 4px 9px; border-radius: 8px; cursor: pointer;
   }
-  #toolbar button:hover { background: rgba(40, 56, 88, 0.95); color: #e0eaff; }
-  #toolbar button.active { background: #2f5db0; color: #ffffff; border-color: #5b8ae0; }
-  #toolbar .hint { color: #6a7a98; font-size: 11px; margin-right: 2px; }
+  #toolbar button:hover { background: rgba(__THEME_BORDER_RGB__, 0.85); color: __THEME_TEXT__; }
+  #toolbar button.active { background: __THEME_ACCENT__; color: #ffffff; border-color: __THEME_ACCENT__; }
+  #toolbar .hint { color: rgba(__THEME_TEXT_RGB__, 0.55); font-size: 11px; margin-right: 2px; }
   #legend {
     position: fixed; bottom: 16px; left: 16px;
     z-index: 20;
     padding: 10px 14px;
-    border: 1px solid rgba(70, 90, 130, 0.5);
+    border: 1px solid __THEME_BORDER__;
     border-radius: 12px;
-    background: rgba(8, 12, 22, 0.82);
+    background: rgba(__THEME_BASE_RGB__, 0.92);
     backdrop-filter: blur(6px);
-    font-size: 12px; color: #a8b8d8;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.4);
+    font-size: 12px; color: rgba(__THEME_TEXT_RGB__, 0.8);
+    box-shadow: 0 4px 24px rgba(0,0,0,0.35);
     max-width: 320px;
   }
-  #legend b { color: #d0e0ff; }
-  #legend .legendHead { font-weight: 600; color: #d0e0ff; margin-bottom: 6px; letter-spacing: 0.4px; }
+  #legend b { color: __THEME_TEXT__; }
+  #legend .legendHead { font-weight: 600; color: __THEME_TEXT__; margin-bottom: 6px; letter-spacing: 0.4px; }
   #legend .legendGrid { display: grid; grid-template-columns: 16px 1fr; gap: 4px 8px; align-items: center; }
   #legend .swatch { width: 12px; height: 12px; border-radius: 50%; display: inline-block; }
   #legend .swatch.diamond { border-radius: 2px; transform: rotate(45deg); }
-  #legend .legendHint { margin-top: 7px; color: #7f8fb0; font-size: 11px; line-height: 1.35; }
+  #legend .legendHint { margin-top: 7px; color: rgba(__THEME_TEXT_RGB__, 0.55); font-size: 11px; line-height: 1.35; }
   #legend.hidden { display: none; }
 </style>
 </head>
@@ -1172,7 +1215,7 @@ __GRAPH_DATA__
   let W = 1, H = 1, dpr = 1;
 
   const particles = [];
-  const colors = ['80,180,255','160,200,255','180,160,255','200,220,255','120,200,255'];
+  const colors = ['__THEME_TEXT_RGB__', '__THEME_BORDER_RGB__'];
 
   function seedParticles() {
     particles.length = 0;
@@ -1369,11 +1412,11 @@ const network = new vis.Network(container, { nodes, edges }, {
   interaction: { hover: true, tooltipDelay: 60, hoverConnectedEdges: true, navigationButtons: false },
   nodes: {
     borderWidth: 1.8,
-    font: { color: '#d0d8ee', size: 13, face: 'Segoe UI', strokeWidth: 0 },
-    shadow: { enabled: true, color: 'rgba(80,200,255,0.25)', size: 28, x: 0, y: 0 },
+    font: { color: '__THEME_TEXT__', size: 13, face: 'Segoe UI', strokeWidth: 0 },
+    shadow: { enabled: true, color: 'rgba(__THEME_ACCENT_RGB__,0.18)', size: 28, x: 0, y: 0 },
   },
   edges: Object.assign({
-    color: { inherit: false, color: 'rgba(60,160,240,0.25)', highlight: 'rgba(80,220,255,0.6)', hover: 'rgba(80,220,255,0.4)' },
+    color: { inherit: false, color: 'rgba(__THEME_TEXT_RGB__,0.16)', highlight: '__THEME_ACCENT__', hover: 'rgba(__THEME_ACCENT_RGB__,0.55)' },
     width: 0.9,
     selectionWidth: 2.2,
   }, isTree() ? treeEdges : forceEdges),
@@ -1388,6 +1431,11 @@ function setActiveLayoutButton() {
 }
 
 function settleView() {
+  if (dragInProgress()) {
+    // Never move the camera under the user's pointer; retry once the drag is over.
+    window.setTimeout(settleView, 300);
+    return;
+  }
   network.fit({ animation: { duration: 250 } });
   // Fitting hundreds of nodes makes them unreadable; clamp how far out we zoom and
   // re-center on the selected node (or the graph root) when that happens.
@@ -1462,6 +1510,9 @@ function nodeRadius(node) {
 }
 
 function separateOverlappingNodes() {
+  if (dragInProgress()) {
+    return;
+  }
   const positions = network.getPositions();
   const ids = Object.keys(positions);
   if (ids.length < 2) {
@@ -1554,6 +1605,8 @@ if (hoverFocusButton) {
 }
 
 network.on('hoverNode', p => {
+  if (dragInProgress()) return;
+
   const meta = nodeMeta[p.node];
   if (meta && !meta.shown && meta.name) nodes.update({ id: p.node, label: meta.name });
 
@@ -1580,6 +1633,8 @@ network.on('hoverNode', p => {
 });
 
 network.on('blurNode', p => {
+  if (dragInProgress()) return;
+
   const meta = nodeMeta[p.node];
   if (meta && !meta.shown) nodes.update({ id: p.node, label: '' });
 
@@ -1592,8 +1647,28 @@ network.on('blurNode', p => {
 container.addEventListener('mousedown', () => { cancelHoverIntent(); }, true);
 
 let lastDragTimestamp = 0;
-network.on('dragStart', () => { lastDragTimestamp = performance.now(); cancelHoverIntent(); });
-network.on('dragEnd', () => { lastDragTimestamp = performance.now(); });
+// Dragging used to fight the hover zoom and the settle animation: the camera moved while the
+// pointer was down, so nodes slipped away under the cursor. Hover focus, label reveals and
+// the settle/separation passes all stand down while a drag is in flight.
+let isDragging = false;
+let dragGuardUntil = 0;
+
+function dragInProgress() {
+  return isDragging || performance.now() < dragGuardUntil;
+}
+
+network.on('dragStart', () => {
+  isDragging = true;
+  lastDragTimestamp = performance.now();
+  cancelHoverIntent();
+  // The user is taking over the camera: forget the zoom-out we owe from hover focus.
+  hoverHome = null;
+});
+network.on('dragEnd', () => {
+  isDragging = false;
+  dragGuardUntil = performance.now() + 350;
+  lastDragTimestamp = performance.now();
+});
 
 network.on('click', params => {
   // Ignore the click that ends a pan/drag.

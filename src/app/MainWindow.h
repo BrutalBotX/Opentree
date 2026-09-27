@@ -50,8 +50,6 @@ public:
     QAction *treemapDepth3Action() const;
     QAction *rescanCurrentRootAction() const;
     QAction *refreshAction() const;
-    QAction *useEverythingAction() const;
-    void setUseEverythingChecked(bool checked);
     TreePanel *treePanel() const;
     DetailsPanel *detailsPanel() const;
     ChartPanel *chartPanel() const;
@@ -91,12 +89,10 @@ signals:
     void scanRequested();    void createSnapshotRequested();
     void compareSnapshotRequested();
     void snapshotManagementRequested();
-    void everythingLocationRequested();
     void settingsRequested();
     void exportDetailsCsvRequested();
     void exportReportRequested(const QString &format);
-    void useEverythingToggled(bool enabled);
-    void testEverythingRequested();
+    void everythingSettingsRequested();
     void snapshotSettingsRequested();
     void othersThresholdRequested();
     void rescanCurrentRootRequested();
@@ -105,6 +101,7 @@ signals:
     void openTerminalHereRequested();
     void copyCurrentPathRequested();
     void openConfigFolderRequested();
+    void openDataFolderRequested();
     void openLogFileRequested();
     void recentRootRequested(const QString &path);
     void expandAllRequested();
@@ -147,6 +144,7 @@ private:
     QAction *m_openTerminalHereAction;
     QAction *m_copyCurrentPathAction;
     QAction *m_openConfigFolderAction;
+    QAction *m_openDataFolderAction;
     QAction *m_openLogFileAction;
     QAction *m_showGraphTabAction;
     QAction *m_showChartTabAction;
@@ -168,13 +166,11 @@ private:
     QAction *m_sizeUnitsAdaptiveAction;
     QAction *m_setOthersThresholdAction;
     QAction *m_exitAction;
-    QAction *m_locateEverythingAction;
     QAction *m_settingsAction;
     QSystemTrayIcon *m_trayIcon = nullptr;
     bool m_closeToTrayEnabled = false;
     bool m_quitRequested = false;
-    QAction *m_useEverythingAction;
-    QAction *m_testEverythingAction;
+    QAction *m_everythingIndexAction;
     QAction *m_exportReportHtmlAction;
     QAction *m_exportReportPdfAction;
     QAction *m_snapshotSettingsAction;

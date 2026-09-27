@@ -37,14 +37,16 @@ ThemeDefinition makeTheme(const QString &id, const QString &name, const QString 
     palette.setColor(QPalette::ToolTipBase, base);
     palette.setColor(QPalette::ToolTipText, text);
     palette.setColor(QPalette::BrightText, text);
+    // Neutral structure colour, also read by the graph page for its chrome.
+    palette.setColor(QPalette::Mid, border);
     theme.palette = palette;
     // Focus/hover accent: a brighter blue on dark themes and a deeper blue on light ones so
     // focused controls stay clearly outlined against the surrounding frame.
     const QColor accent = window.lightness() < 128 ? highlight.lighter(135) : highlight.darker(120);
     theme.styleSheet = QStringLiteral(
-        "QMenuBar { background: %1; color: %2; }"
-        "QMenuBar::item { background: transparent; color: %2; padding: 6px 10px; }"
-        "QMenuBar::item:selected { background: %3; color: %4; }"
+        // The menu bar is deliberately left to the palette: styling QMenuBar items makes Qt
+        // drop clicks that arrive before the first popup is laid out, which left the menu
+        // bar in a state where the drop-down would not open at all.
         "QMenu { background: %1; color: %2; border: 1px solid %8; }"
         "QMenu::item { color: %2; padding: 6px 20px; }"
         "QMenu::item:selected { background: %3; color: %4; }"

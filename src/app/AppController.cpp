@@ -137,9 +137,6 @@ void AppController::attachWindow(MainWindow *window)
         m_window->setStatusText(QStringLiteral("Config: %1").arg(m_configService->configPath()));
     }
 
-    if (m_window->useEverythingAction()) {
-        m_window->setUseEverythingChecked(m_configService->useEverything());
-    }
     m_window->setCloseToTrayEnabled(m_configService->closeToTray());
 
     connect(m_window, &MainWindow::scanRequested, this, [this]() {
@@ -158,6 +155,7 @@ void AppController::attachWindow(MainWindow *window)
         if (!graph || !m_configService) {
             return;
         }
+        applyThemeToGraphPanel(graph);
         graph->setMaxNodes(m_configService->graphMaxNodes());
         graph->setFollowTreeExpansion(m_configService->graphFollowTreeExpansion());
         connect(graph, &GraphPanel::followTreeExpansionChanged, this, [this](bool follow) {
@@ -172,8 +170,11 @@ void AppController::attachWindow(MainWindow *window)
     connect(m_window, &MainWindow::settingsRequested, this, [this]() {
         handleSettingsRequest();
     });
-    connect(m_window, &MainWindow::everythingLocationRequested, this, [this]() {
-        handleLocateEverythingRequest();
+    connect(m_window, &MainWindow::everythingSettingsRequested, this, [this]() {
+        handleEverythingSettingsRequest();
+    });
+    connect(m_window, &MainWindow::openDataFolderRequested, this, [this]() {
+        handleOpenDataFolderRequest();
     });
     connect(m_window, &MainWindow::exportDetailsCsvRequested, this, [this]() {
         handleExportDetailsCsvRequest();
@@ -183,15 +184,6 @@ void AppController::attachWindow(MainWindow *window)
     });
     connect(m_window->detailsTablePanel(), &DetailsTablePanel::exportRequested, this, [this]() {
         handleExportDetailsCsvRequest();
-    });
-    connect(m_window, &MainWindow::useEverythingToggled, this, [this](bool enabled) {
-        m_configService->setUseEverything(enabled);
-        m_window->setStatusText(enabled
-            ? QStringLiteral("Everything scan engine enabled")
-            : QStringLiteral("Everything scan engine disabled; filesystem scanning will be used"));
-    });
-    connect(m_window, &MainWindow::testEverythingRequested, this, [this]() {
-        handleTestEverythingRequest();
     });
     connect(m_window, &MainWindow::snapshotSettingsRequested, this, [this]() {
         handleSnapshotSettingsRequest();
@@ -965,6 +957,26 @@ void AppController::handleOpenLogFileRequest()
     QDesktopServices::openUrl(QUrl::fromLocalFile(QDir::current().absoluteFilePath("opentree.log")));
 }
 
+void AppController::handleOpenDataFolderRequest()
+{
+    // Folder that holds opentree.db (and the snapshot ledger).
+    const QString folder = QFileInfo(m_databaseManager->databasePath()).absolutePath();
+    if (folder.isEmpty()) {
+        return;
+    }
+    QDesktopServices::openUrl(QUrl::fromLocalFile(folder));
+    if (m_window) {
+        m_window->setStatusText(QStringLiteral("Opened data folder: %1").arg(folder));
+    }
+}
+
+void AppController::handleEverythingSettingsRequest()
+{
+    // The single Everything entry point: the settings dialog opens on its Scanning tab,
+    // where the engine switch, executable path and connection test live together.
+    handleSettingsRequest(SettingsDialog::ScanningTab);
+}
+
 void AppController::updateTimelineFolderHistory()
 {
     if (!m_window || !m_snapshotService) {
@@ -1085,7 +1097,17 @@ void AppController::applyCurrentTheme()
         themeNames.insert(it.key(), it.value().name);
     }
     m_window->setAvailableThemes(themeNames, theme.id);
+    applyThemeToGraphPanel(m_window->existingGraphPanel());
     m_window->setStatusText(QStringLiteral("Theme: %1").arg(theme.name));
+}
+
+void AppController::applyThemeToGraphPanel(GraphPanel *graph)
+{
+    if (!graph || !m_configService) {
+        return;
+    }
+    const ThemeDefinition theme = m_themes.value(m_configService->themeId(), m_themes.value("dark"));
+    graph->setThemePalette(theme.palette);
 }
 
 void AppController::applyViewMetric(ViewMetric metric)
@@ -1304,49 +1326,6 @@ const TreeEntry *AppController::findTreeEntry(const QString &path) const
     return nullptr;
 }
 
-void AppController::handleLocateEverythingRequest()
-{
-    if (!m_window) {
-        return;
-    }
-
-    const QString filePath = QFileDialog::getOpenFileName(
-        m_window,
-        "Locate Everything executable",
-        m_configService->resolvedEverythingExecutablePath(),
-        "Everything executable (Everything.exe);;All files (*.*)");
-    if (filePath.isEmpty()) {
-        return;
-    }
-
-    m_configService->setEverythingExecutablePath(filePath);
-
-    QString error;
-    if (m_everythingClient && m_everythingClient->testConnection(&error)) {
-        m_window->setStatusText(QStringLiteral("Everything executable set to %1 and the index is reachable").arg(filePath));
-        QMessageBox::information(m_window, "Everything",
-            QStringLiteral("Everything is available.\nExecutable: %1").arg(filePath));
-        return;
-    }
-
-    // Never launch silently: ask whether Everything should be started now.
-    const QMessageBox::StandardButton answer = QMessageBox::question(
-        m_window, QStringLiteral("Everything"),
-        QStringLiteral("Everything is not running, so the SDK cannot use it yet.\n\nStart Everything now?"),
-        QMessageBox::Yes | QMessageBox::No, QMessageBox::Yes);
-    if (answer == QMessageBox::Yes) {
-        QString startError;
-        if (EverythingClient::startEverything(filePath, &startError)) {
-            m_window->setStatusText(QStringLiteral("Everything is starting; scans will use its index once it is up"));
-            return;
-        }
-        QMessageBox::warning(m_window, QStringLiteral("Everything"), startError);
-        return;
-    }
-
-    m_window->setStatusText(QStringLiteral("Everything executable set to %1 (not running)").arg(filePath));
-}
-
 void AppController::handleTestEverythingRequest()
 {
     if (!m_window || !m_everythingClient) {
@@ -1494,13 +1473,14 @@ void AppController::handleExportReportRequest(const QString &format)
     }
 }
 
-void AppController::handleSettingsRequest()
+void AppController::handleSettingsRequest(int initialTab)
 {
     if (!m_window) {
         return;
     }
 
     SettingsDialog dialog(m_configService, m_window->availableThemes(), m_window);
+    dialog.selectTab(initialTab);
     if (dialog.exec() != QDialog::Accepted) {
         return;
     }
@@ -1515,7 +1495,6 @@ void AppController::handleSettingsRequest()
         graph->setOtherThresholdPercent(m_otherThresholdPercent);
     }
     m_window->setCloseToTrayEnabled(m_configService->closeToTray());
-    m_window->setUseEverythingChecked(m_configService->useEverything());
 
     // Keep the scheduled task in sync with the snapshot settings.
     QString error;

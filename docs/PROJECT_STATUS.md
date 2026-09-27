@@ -36,6 +36,16 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
 
+### 0.11.0 follow-up (same night)
+
+- Graph page follows the app palette (chrome, labels, edges, starfield); dragging no longer
+  fights hover focus / settle animations, so node dragging is stable.
+- Menu bar unstyled (palette only) to fix the drop-down that would not open after a fast
+  click; `--smoke-menu` drives 5 menus x 3 rounds and passes.
+- Toolbar trimmed to Scan / Rescan / Snapshot / Compare; Everything controls combined into
+  Tools > "Everything Index..." (opens the settings Scanning tab); new "Open Data Folder".
+- Stale files: preset picker, live summary and a "Stage Stale in Trash..." action.
+
 ### 0.10.0 follow-up (same night)
 
 - Graph: force layout stops overlapping (Barnes-Hut + a separation pass) and the tab has a

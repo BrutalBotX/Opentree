@@ -3,7 +3,11 @@
 #include <QWidget>
 
 #include "domain/ScanTypes.h"
+#include "services/AnalysisService.h"
 
+QT_FORWARD_DECLARE_CLASS(QComboBox)
+QT_FORWARD_DECLARE_CLASS(QComboBox)
+QT_FORWARD_DECLARE_CLASS(QComboBox)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QPushButton)
 QT_FORWARD_DECLARE_CLASS(QSpinBox)
@@ -25,16 +29,22 @@ public:
 
 private:
     void stageJunk();
+    void stageStale();
+    int staleDays() const;
 
     AnalysisService *m_analysisService;
     QLabel *m_forecastLabel;
     QLabel *m_statusLabel;
     QPushButton *m_refreshButton;
-    QSpinBox *m_staleDaysSpin;
+    QComboBox *m_stalePresetCombo;
+    QSpinBox *m_staleCustomSpin;
+    QLabel *m_staleSummaryLabel;
+    QPushButton *m_stageStaleButton;
     QTableWidget *m_staleTable;
     QTableWidget *m_junkTable;
     QPushButton *m_stageJunkButton;
     ScanResultPtr m_result = std::make_shared<const ScanResult>();
+    QVector<StaleFile> m_staleFiles;
     qint64 m_junkBytes = 0;
 };
 

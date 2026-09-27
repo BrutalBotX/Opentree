@@ -13,6 +13,7 @@ namespace opentree {
 class ConfigService;
 class DatabaseManager;
 class DuplicatesPanel;
+class GraphPanel;
 class InsightsPanel;
 class TrashPanel;
 class VirtualTrashService;
@@ -68,6 +69,7 @@ private:
     void handleThemeSelected(const QString &themeId);
     void reloadThemes();
     void applyCurrentTheme();
+    void applyThemeToGraphPanel(GraphPanel *graph);
     void applyViewMetric(ViewMetric metric);
     void syncActiveResultUi(const ScanResultPtr &result, const QString &activeFolderPath, const QVector<SnapshotCompareRow> &compareRows, bool resetCompare);
     void syncFolderFocusUi(const TreeEntry &entry, bool showGraphTab);
@@ -78,11 +80,12 @@ private:
     void activateRootSession(const QString &rootPath, bool showGraphTab);
     void focusFolderPath(const QString &path, bool showGraphTab);
     const TreeEntry *findTreeEntry(const QString &path) const;
-    void handleLocateEverythingRequest();
     void handleExportDetailsCsvRequest();
     void handleExportReportRequest(const QString &format);
-    void handleSettingsRequest();
+    void handleSettingsRequest(int initialTab = 0);
     void handleTestEverythingRequest();
+    void handleEverythingSettingsRequest();
+    void handleOpenDataFolderRequest();
     void handleSnapshotSettingsRequest();
     void handleSnapshotManagementRequest();
     void handleCompareSnapshotRequest(int snapshotId);

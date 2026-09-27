@@ -1,6 +1,7 @@
 #include "ui/InsightsPanel.h"
 
 #include <QFileInfo>
+#include <QComboBox>
 #include <QGroupBox>
 #include <QHBoxLayout>
 #include <QHeaderView>
@@ -25,7 +26,10 @@ InsightsPanel::InsightsPanel(AnalysisService *analysisService, QWidget *parent)
     , m_forecastLabel(new QLabel(this))
     , m_statusLabel(new QLabel(this))
     , m_refreshButton(new QPushButton(QStringLiteral("Refresh Analysis"), this))
-    , m_staleDaysSpin(new QSpinBox(this))
+    , m_stalePresetCombo(new QComboBox(this))
+    , m_staleCustomSpin(new QSpinBox(this))
+    , m_staleSummaryLabel(new QLabel(this))
+    , m_stageStaleButton(new QPushButton(QStringLiteral("Stage Stale in Trash..."), this))
     , m_staleTable(new QTableWidget(this))
     , m_junkTable(new QTableWidget(this))
     , m_stageJunkButton(new QPushButton(QStringLiteral("Stage Junk in Trash..."), this))
@@ -51,12 +55,32 @@ InsightsPanel::InsightsPanel(AnalysisService *analysisService, QWidget *parent)
     auto *staleLayout = new QVBoxLayout(staleBox);
     auto *staleControls = new QHBoxLayout;
     staleControls->setContentsMargins(0, 0, 0, 0);
-    staleControls->addWidget(new QLabel(QStringLiteral("Untouched for at least"), staleBox));
-    m_staleDaysSpin->setRange(30, 3650);
-    m_staleDaysSpin->setValue(365);
-    m_staleDaysSpin->setSuffix(QStringLiteral(" days"));
-    staleControls->addWidget(m_staleDaysSpin);
-    staleControls->addStretch(1);
+    staleControls->addWidget(new QLabel(QStringLiteral("Not modified in the last"), staleBox));
+    m_stalePresetCombo->addItem(QStringLiteral("30 days"), 30);
+    m_stalePresetCombo->addItem(QStringLiteral("90 days"), 90);
+    m_stalePresetCombo->addItem(QStringLiteral("6 months"), 180);
+    m_stalePresetCombo->addItem(QStringLiteral("1 year"), 365);
+    m_stalePresetCombo->addItem(QStringLiteral("2 years"), 730);
+    m_stalePresetCombo->addItem(QStringLiteral("5 years"), 1825);
+    m_stalePresetCombo->addItem(QStringLiteral("Custom..."), -1);
+    m_stalePresetCombo->setCurrentIndex(3);
+    m_stalePresetCombo->setMinimumWidth(120);
+    m_stalePresetCombo->setToolTip(QStringLiteral("How long a file must have been untouched to count as stale"));
+    staleControls->addWidget(m_stalePresetCombo);
+
+    m_staleCustomSpin->setRange(7, 3650);
+    m_staleCustomSpin->setValue(365);
+    m_staleCustomSpin->setSuffix(QStringLiteral(" days"));
+    m_staleCustomSpin->setVisible(false);
+    staleControls->addWidget(m_staleCustomSpin);
+
+    m_staleSummaryLabel->setAlignment(Qt::AlignRight | Qt::AlignVCenter);
+    m_staleSummaryLabel->setToolTip(QStringLiteral("Largest stale files; at most 200 are listed"));
+    staleControls->addWidget(m_staleSummaryLabel, 1);
+
+    m_stageStaleButton->setToolTip(QStringLiteral("Review the stale files, then add them to the virtual trash list.\n"
+                                                  "Nothing is deleted: the Trash tab moves items to the Recycle Bin."));
+    staleControls->addWidget(m_stageStaleButton, 0);
     staleLayout->addLayout(staleControls);
 
     m_staleTable->setColumnCount(4);
@@ -101,7 +125,12 @@ InsightsPanel::InsightsPanel(AnalysisService *analysisService, QWidget *parent)
     layout->addWidget(junkBox, 1);
 
     connect(m_refreshButton, &QPushButton::clicked, this, &InsightsPanel::refresh);
-    connect(m_staleDaysSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) { refresh(); });
+    connect(m_stalePresetCombo, qOverload<int>(&QComboBox::currentIndexChanged), this, [this](int) {
+        m_staleCustomSpin->setVisible(m_stalePresetCombo->currentData().toInt() < 0);
+        refresh();
+    });
+    connect(m_staleCustomSpin, qOverload<int>(&QSpinBox::valueChanged), this, [this](int) { refresh(); });
+    connect(m_stageStaleButton, &QPushButton::clicked, this, &InsightsPanel::stageStale);
     connect(m_stageJunkButton, &QPushButton::clicked, this, &InsightsPanel::stageJunk);
 
     refresh();
@@ -151,7 +180,8 @@ void InsightsPanel::refresh()
     }
 
     // Stale files
-    const QVector<StaleFile> stale = m_analysisService->staleFiles(*m_result, m_staleDaysSpin->value(), 200, &error);
+    const QVector<StaleFile> stale = m_analysisService->staleFiles(*m_result, staleDays(), 200, &error);
+    m_staleFiles = stale;
     qint64 staleBytes = 0;
     {
         TableSortGuard guard(m_staleTable);
@@ -182,6 +212,15 @@ void InsightsPanel::refresh()
         }
     }
 
+    m_staleSummaryLabel->setText(stale.isEmpty()
+        ? QStringLiteral("nothing stale in this scan")
+        : QStringLiteral("%1 file%2 \u00b7 %3 reclaimable%4")
+              .arg(stale.size())
+              .arg(stale.size() == 1 ? QString() : QStringLiteral("s"))
+              .arg(SizeFormatter::formatBytes(staleBytes))
+              .arg(stale.size() >= 200 ? QStringLiteral(" (largest 200)") : QString()));
+    m_stageStaleButton->setEnabled(EntryActionHub::instance()->isAvailable() && !stale.isEmpty());
+
     if (!stale.isEmpty() || !junk.isEmpty()) {
         m_forecastLabel->setText(m_forecastLabel->text()
                                  + QStringLiteral(" | %1 stale, %2 junk")
@@ -189,6 +228,51 @@ void InsightsPanel::refresh()
                                             SizeFormatter::formatBytes(m_junkBytes)));
     }
     m_stageJunkButton->setEnabled(EntryActionHub::instance()->isAvailable() && m_junkBytes > 0);
+}
+
+int InsightsPanel::staleDays() const
+{
+    const int preset = m_stalePresetCombo->currentData().toInt();
+    return preset < 0 ? m_staleCustomSpin->value() : preset;
+}
+
+void InsightsPanel::stageStale()
+{
+    if (m_staleFiles.isEmpty() || !m_result || m_result->rootPath.isEmpty()) {
+        return;
+    }
+
+    QVector<StageRequest> candidates;
+    candidates.reserve(m_staleFiles.size());
+    for (const StaleFile &file : m_staleFiles) {
+        StageRequest candidate;
+        candidate.path = file.path;
+        candidate.size = file.size;
+        candidate.isFolder = false;
+        candidates.push_back(candidate);
+    }
+
+    StagingReviewDialog dialog(StagingReviewDialog::Action::Stage, candidates, {}, this);
+    if (dialog.exec() != QDialog::Accepted) {
+        return;
+    }
+
+    int staged = 0;
+    qint64 stagedBytes = 0;
+    QString error;
+    EntryActionHub::instance()->stage(candidates, m_result->rootPath, QStringLiteral("Stale file"),
+                                      &staged, &stagedBytes, &error);
+    if (staged == 0) {
+        QMessageBox::warning(this, QStringLiteral("Stage stale files"),
+                             error.isEmpty() ? QStringLiteral("Nothing could be staged.") : error);
+        return;
+    }
+
+    m_statusLabel->setText(QStringLiteral("Staged %1 stale file%2 (%3). Review them in the Trash tab.")
+                               .arg(staged)
+                               .arg(staged == 1 ? QString() : QStringLiteral("s"))
+                               .arg(SizeFormatter::formatBytes(stagedBytes)));
+    m_statusLabel->setVisible(true);
 }
 
 void InsightsPanel::stageJunk()
