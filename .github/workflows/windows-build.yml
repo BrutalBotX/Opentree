@@ -113,26 +113,33 @@ jobs:
       - name: Check that the build really has the graph
         shell: pwsh
         run: |
-          # The import table lists the DLLs as plain strings, so check the file contents
-          # instead of calling dumpbin: its path moves between Visual Studio versions on the
-          # runners (the image ships VS 2026, not 2022).
-          $bytes = [System.IO.File]::ReadAllBytes('build-msvc\OpenTree.exe')
-          $text = [System.Text.Encoding]::ASCII.GetString($bytes)
-          $engineLinked = $text.Contains('Qt6WebEngineWidgets.dll')
+          # The executable deliberately does not link WebEngine any more: the renderer is a
+          # plugin loaded on first use. Check that the plugin imports WebEngine and that
+          # windeployqt deployed the runtime and the software GL library it needs.
+          $appText = [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes('build-msvc\OpenTree.exe'))
+          $pluginPath = 'build-msvc\opentree_graph_webengine.dll'
+          $pluginText = if (Test-Path $pluginPath) {
+            [System.Text.Encoding]::ASCII.GetString([System.IO.File]::ReadAllBytes($pluginPath))
+          } else { '' }
+          $pluginLinksEngine = $pluginText.Contains('Qt6WebEngineWidgets.dll')
+          $appLinksEngine = $appText.Contains('Qt6WebEngineWidgets.dll')
           $processDeployed = Test-Path 'build-msvc\QtWebEngineProcess.exe'
+          $softwareGl = Test-Path 'build-msvc\opengl32sw.dll'
           $graphLine = ((Select-String -Path build-msvc\configure.log -Pattern 'Graph tab' -ErrorAction SilentlyContinue |
             Select-Object -First 1 | ForEach-Object { $_.Line.Trim() }) -join '')
           $summary = @(
-            "links Qt6WebEngineWidgets: $engineLinked",
+            "renderer plugin links Qt6WebEngineWidgets: $pluginLinksEngine",
+            "app links Qt6WebEngineWidgets (must be false): $appLinksEngine",
             "QtWebEngineProcess deployed: $processDeployed",
+            "opengl32sw deployed: $softwareGl",
             "configure said: $graphLine"
           ) -join "`n"
           $summary | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Append -Encoding utf8
           Write-Host $summary
-          if (-not $engineLinked -or -not $processDeployed) {
-            throw "build-msvc\OpenTree.exe does not use WebEngine - the installed app would have no graph."
+          if (-not $pluginLinksEngine -or $appLinksEngine -or -not $processDeployed -or -not $softwareGl) {
+            throw "The graph renderer plugin or the runtime it needs is missing from the build."
           }
-          Write-Host "Graph support verified in build-msvc\OpenTree.exe"
+          Write-Host "Graph support verified (plugin + WebEngine runtime deployed)"
 
       - name: Test
         run: ctest --test-dir build-msvc -R core --output-on-failure
