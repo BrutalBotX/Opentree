@@ -66,6 +66,23 @@ QString parentPath(const QString &path)
     return normalizePath(QFileInfo(path).dir().absolutePath());
 }
 
+QStringView parentPathView(const QString &path)
+{
+    // Scan results store normalized paths ("C:/Users/x"), so the parent is everything before the
+    // last separator. A drive root keeps its separator ("C:/a" -> "C:/").
+    if (path.isEmpty()) {
+        return {};
+    }
+    const int slash = path.lastIndexOf(QLatin1Char('/'));
+    if (slash <= 0) {
+        return {};
+    }
+    if (slash == 2 && path.size() >= 3 && path.at(1) == QLatin1Char(':')) {
+        return QStringView(path).left(3);
+    }
+    return QStringView(path).left(slash);
+}
+
 bool isSameOrDescendant(const QString &path, const QString &rootPath)
 {
     return isSameOrDescendantImpl(path, rootPath);

@@ -27,6 +27,7 @@
 #include <cmath>
 #include <limits>
 
+#include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
@@ -414,12 +415,12 @@ void ChartPanel::rebuild()
     QVector<TreeEntry> childFolders;
     QVector<FileEntry> childFiles;
     for (const TreeEntry &entry : m_result->treeEntries) {
-        if (entry.kind == TreeEntryKind::Folder && samePath(entry.parentPath, activeEntry.path)) {
+        if (entry.kind == TreeEntryKind::Folder && samePath(PathUtils::parentPath(entry.path), activeEntry.path)) {
             childFolders.push_back(entry);
         }
     }
     for (const FileEntry &file : m_result->files) {
-        if (samePath(file.parentPath, activeEntry.path)) {
+        if (samePath(PathUtils::parentPath(file.path), activeEntry.path)) {
             childFiles.push_back(file);
         }
     }
@@ -474,7 +475,6 @@ void ChartPanel::rebuild()
         ChartSlice slice;
         slice.entry.kind = TreeEntryKind::File;
         slice.entry.path = file.path;
-        slice.entry.parentPath = file.parentPath;
         slice.entry.name = file.name;
         slice.entry.size = file.size;
         slice.entry.parentSize = activeEntry.size;
@@ -954,7 +954,7 @@ QVector<ChartPanel::TreemapNode> ChartPanel::buildTreemapNodes(const QString &ro
         }
     }
     for (const TreeEntry &entry : m_result->treeEntries) {
-        if (entry.parentPath.compare(rootPath, Qt::CaseInsensitive) != 0) {
+        if (PathUtils::parentPath(entry.path).compare(rootPath, Qt::CaseInsensitive) != 0) {
             continue;
         }
 

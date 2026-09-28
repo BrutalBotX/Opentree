@@ -354,9 +354,6 @@ bool EverythingClient::queryRootLocked(const QString &rootPath, QVector<FileEntr
 
                 FolderEntry folder;
                 folder.path = fullPath;
-                folder.parentPath = fullPath.compare(normalizedRoot, Qt::CaseInsensitive) == 0
-                    ? QString()
-                    : PathUtils::parentPath(fullPath);
                 folder.name = PathUtils::fileName(fullPath);
                 if (folder.name.isEmpty()) {
                     folder.name = fullPath;
@@ -368,7 +365,6 @@ bool EverythingClient::queryRootLocked(const QString &rootPath, QVector<FileEntr
 
                 FileEntry file;
                 file.path = fullPath;
-                file.parentPath = PathUtils::parentPath(fullPath);
                 file.name = PathUtils::fileName(fullPath);
                 file.size = sizeValue.QuadPart;
                 files->push_back(file);

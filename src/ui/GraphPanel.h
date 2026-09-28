@@ -8,20 +8,18 @@
 
 #include <QVector>
 
+#include <memory>
+
 QT_FORWARD_DECLARE_CLASS(QCompleter)
 QT_FORWARD_DECLARE_CLASS(QCheckBox)
 QT_FORWARD_DECLARE_CLASS(QFileSystemModel)
 QT_FORWARD_DECLARE_CLASS(QLabel)
 QT_FORWARD_DECLARE_CLASS(QLineEdit)
-
-#if defined(OPENTREE_HAVE_WEBENGINE)
-QT_FORWARD_DECLARE_CLASS(QWebChannel)
-QT_FORWARD_DECLARE_CLASS(QWebEngineView)
-#else
 QT_FORWARD_DECLARE_CLASS(QTextBrowser)
-#endif
 
 namespace opentree {
+
+class IGraphView;
 
 class GraphBridge : public QObject {
     Q_OBJECT
@@ -69,6 +67,8 @@ public:
     };
 
     explicit GraphPanel(QWidget *parent = nullptr);
+    // Out-of-line so the unique_ptr to the renderer interface can stay incomplete here.
+    ~GraphPanel() override;
 
     void setGraphData(const QString &rootPath, const QVector<TreeEntry> &entries, const QVector<SnapshotCompareRow> &compareRows);
     void setNodeSizeMode(NodeSizeMode mode);
@@ -103,6 +103,7 @@ public slots:    Q_INVOKABLE
 
 private slots:
     void handleAddressSubmitted();
+    void handleGraphLoadFinished(bool ok);
 
 protected:
     // The WebEngine view is created only when the Graph tab is actually shown, and its
@@ -129,13 +130,12 @@ private:
     QCheckBox *m_followTreeCheck;
     QLabel *m_summaryLabel;
 
-#if defined(OPENTREE_HAVE_WEBENGINE)
-    GraphBridge *m_bridge;
-    QWebChannel *m_channel;
-    QWebEngineView *m_view = nullptr;   // created lazily on first show
-#else
-    QTextBrowser *m_view = nullptr;     // created lazily on first show
-#endif
+    // The graph page is rendered by a plugin that links Qt WebEngine, loaded the first time the
+    // tab is shown. Without it (MinGW builds) the panel falls back to a plain text list.
+    GraphBridge *m_bridge = nullptr;
+    std::unique_ptr<IGraphView> m_graphView;
+    QWidget *m_view = nullptr;               // the renderer widget (plugin view or fallback)
+    QTextBrowser *m_fallbackView = nullptr;  // used when the renderer plugin is unavailable
 
     QString m_currentRootPath;
     QVector<TreeEntry> m_currentEntries;

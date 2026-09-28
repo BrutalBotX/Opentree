@@ -41,7 +41,7 @@ bool FileRepository::replaceAll(const QVector<FileEntry> &files, const QString &
     for (const FileEntry &file : files) {
         insertQuery.addBindValue(normalizedRoot);
         insertQuery.addBindValue(file.path);
-        insertQuery.addBindValue(file.parentPath);
+        insertQuery.addBindValue(PathUtils::parentPath(file.path));
         insertQuery.addBindValue(file.name);
         insertQuery.addBindValue(file.size);
         if (!insertQuery.exec()) {
@@ -75,7 +75,6 @@ QVector<FileEntry> FileRepository::loadByRoot(const QString &rootPath, QString *
     while (query.next()) {
         FileEntry file;
         file.path = query.value(0).toString();
-        file.parentPath = query.value(1).toString();
         file.name = query.value(2).toString();
         file.size = query.value(3).toLongLong();
         files.push_back(file);

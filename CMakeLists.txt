@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.13.1 LANGUAGES CXX)
+project(OpenTree VERSION 0.13.2 LANGUAGES CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -102,6 +102,8 @@ qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/integrations/EverythingClient.cpp
     src/utils/Logger.h
     src/utils/Logger.cpp
+    src/utils/MemoryProbe.h
+    src/utils/MemoryProbe.cpp
     src/utils/FileMetadataUtils.h
     src/utils/FileMetadataUtils.cpp
     src/utils/PathUtils.h
@@ -152,9 +154,27 @@ if (TARGET Qt6::WebChannel)
 endif()
 
 if (_opentree_have_webengine_widgets AND _opentree_have_webchannel)
-    target_link_libraries(OpenTree PRIVATE Qt6::WebEngineWidgets Qt6::WebChannel)
-    target_compile_definitions(OpenTree PRIVATE OPENTREE_HAVE_WEBENGINE=1)
-    message(STATUS "OpenTree: Graph tab enabled (WebEngineWidgets and WebChannel targets found)")
+    message(STATUS "OpenTree: Graph tab enabled (renderer built as a WebEngine plugin)")
+
+    # WebEngine lives in a plugin instead of the executable. Loading Chromium commits a few
+    # hundred megabytes, and most sessions never open the Graph tab: the plugin is loaded the
+    # first time the tab is shown, so an unused graph costs nothing.
+    add_library(opentree_graph_webengine MODULE
+        src/graph/WebEngineGraphPlugin.cpp
+        src/graph/IGraphView.h
+    )
+    target_include_directories(opentree_graph_webengine PRIVATE src)
+    target_link_libraries(opentree_graph_webengine PRIVATE
+        Qt6::Core
+        Qt6::Gui
+        Qt6::Widgets
+        Qt6::WebEngineWidgets
+        Qt6::WebChannel
+    )
+    set_target_properties(opentree_graph_webengine PROPERTIES
+        RUNTIME_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:OpenTree>"
+        LIBRARY_OUTPUT_DIRECTORY "$<TARGET_FILE_DIR:OpenTree>"
+    )
 else()
     message(WARNING "OpenTree: Graph tab DISABLED (WebEngineWidgets target found: ${_opentree_have_webengine_widgets}, WebChannel target found: ${_opentree_have_webchannel}) - the tab will show a text list")
 endif()
@@ -220,20 +240,26 @@ if (WIN32)
     set(QT_WINDEPLOYQT_EXECUTABLE "${CMAKE_PREFIX_PATH}/bin/windeployqt.exe")
     if (EXISTS "${QT_WINDEPLOYQT_EXECUTABLE}")
         # The PDF report uses QPdfWriter (QtGui), so PrintSupport is not needed... except in
-        # the WebEngine build: Qt6WebEngineWidgets.dll itself imports Qt6PrintSupport.dll, so
-        # it must stay deployed there or the app cannot start.
-        set(OPENTREE_WINDEPLOYQT_EXTRA_FLAGS "")
+        # the WebEngine plugin: Qt6WebEngineWidgets.dll itself imports Qt6PrintSupport.dll, so
+        # it must stay deployed whenever the graph renderer plugin is built. The graph also
+        # needs opengl32sw.dll: QT_OPENGL=software keeps the shared context Qt builds for
+        # WebEngine from dragging the GPU driver into the app process, which costs a couple of
+        # hundred megabytes while the graph is open.
+        set(OPENTREE_WINDEPLOYQT_EXTRA_FLAGS --no-translations)
+        set(OPENTREE_WINDEPLOYQT_BINARIES "$<TARGET_FILE:OpenTree>")
         if (NOT TARGET Qt6::WebEngineWidgets)
-            list(APPEND OPENTREE_WINDEPLOYQT_EXTRA_FLAGS --no-printsupport)
+            list(APPEND OPENTREE_WINDEPLOYQT_EXTRA_FLAGS --no-printsupport --no-opengl-sw)
+        else()
+            # Pass the plugin too so windeployqt deploys the WebEngine runtime the plugin needs
+            # (scanning only OpenTree.exe would miss it now that the app does not link WebEngine).
+            list(APPEND OPENTREE_WINDEPLOYQT_BINARIES "$<TARGET_FILE:opentree_graph_webengine>")
         endif()
 
         add_custom_command(TARGET OpenTree POST_BUILD
             COMMAND "${QT_WINDEPLOYQT_EXECUTABLE}"
                 --dir "$<TARGET_FILE_DIR:OpenTree>"
-                --no-translations
-                --no-opengl-sw
                 ${OPENTREE_WINDEPLOYQT_EXTRA_FLAGS}
-                "$<TARGET_FILE:OpenTree>"
+                ${OPENTREE_WINDEPLOYQT_BINARIES}
             COMMENT "Deploying Qt runtime dependencies"
         )
     endif()

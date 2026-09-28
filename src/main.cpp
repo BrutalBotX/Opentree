@@ -28,6 +28,7 @@
 #include "app/AppController.h"
 #include "data/DatabaseManager.h"
 #include "services/ConfigService.h"
+#include "utils/MemoryProbe.h"
 #include "services/DedupService.h"
 #include "services/ScanService.h"
 #include "services/AnalysisService.h"
@@ -195,7 +196,7 @@ int runScanTestMode(const QString &path)
                 }
             }
 
-            everythingResult = opentree::ScanService::buildTreeResult(normalizedPath, filteredFolders, filteredFiles);
+            everythingResult = opentree::ScanService::buildTreeResult(normalizedPath, std::move(filteredFolders), std::move(filteredFiles));
             everythingResult.usedEverything = true;
             record(QStringLiteral("Everything query: %1 ms -> %2")
                        .arg(timer.elapsed())
@@ -296,7 +297,6 @@ opentree::ScanResult buildPreviewScanResult(const QString &root)
         entry.kind = opentree::TreeEntryKind::Folder;
         entry.name = QString::fromLatin1(item.name);
         entry.path = root + QLatin1Char('/') + entry.name;
-        entry.parentPath = root;
         entry.size = qint64(item.mb) * 1024LL * 1024LL;
         entry.parentSize = rootEntry.size;
         entry.fileCount = 1 + (qint64(item.mb) % 7);
@@ -334,7 +334,6 @@ opentree::ScanResult buildPreviewScanResult(const QString &root)
         entry.name = QString::fromLatin1(item.name);
         const QString parentPath = root + QLatin1Char('/') + QString::fromLatin1(item.parent);
         entry.path = parentPath + QLatin1Char('/') + entry.name;
-        entry.parentPath = parentPath;
         entry.size = qint64(item.mb) * 1024LL * 1024LL;
         entry.parentSize = sizeByPath.value(parentPath, rootEntry.size);
         entry.fileCount = 1 + (qint64(item.mb) % 9);
@@ -346,14 +345,12 @@ opentree::ScanResult buildPreviewScanResult(const QString &root)
         opentree::FileEntry file;
         file.name = QString::fromLatin1(item.name);
         file.path = root + QLatin1Char('/') + file.name;
-        file.parentPath = root;
         file.size = qint64(item.mb) * 1024LL * 1024LL;
 
         opentree::TreeEntry entry;
         entry.kind = opentree::TreeEntryKind::File;
         entry.name = file.name;
         entry.path = file.path;
-        entry.parentPath = file.parentPath;
         entry.size = file.size;
         entry.parentSize = rootEntry.size;
         result.treeEntries.push_back(entry);
@@ -1079,7 +1076,6 @@ int runWindowPreviewMode(const QString &outputPath, const QString &path, int tab
         entry.kind = opentree::TreeEntryKind::File;
         entry.path = stagePath;
         entry.name = QFileInfo(stagePath).fileName();
-        entry.parentPath = QFileInfo(stagePath).path();
         entry.size = QFileInfo(stagePath).size();
         opentree::EntryActionHub::instance()->stage(entry, nullptr);
         QCoreApplication::processEvents();
@@ -1218,7 +1214,15 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.13.1"));
+    QApplication::setApplicationVersion(QStringLiteral("0.13.2"));
+
+    // Qt WebEngine needs Qt::AA_ShareOpenGLContexts set before it initialises. The app does not
+    // link WebEngine any more (the graph renderer is a plugin loaded on first use), so nothing
+    // sets it early - and setting it before QApplication exists would make Qt build a shared
+    // OpenGL context, dragging in the GPU stack at startup for a widgets app. It is set in
+    // GraphPanel just before the plugin is loaded instead, where the cost is only paid by users
+    // who actually open the graph. QT_OPENGL=software keeps that late context cheap.
+    qputenv("QT_OPENGL", QByteArrayLiteral("software"));
 
     QString startupPath;
     QString scanTestPath;
@@ -1399,19 +1403,24 @@ int main(int argc, char *argv[])
     }
 
     try {
+        opentree::logMemoryUsage(QStringLiteral("main: before QApplication"));
         QApplication app(argc, argv);
         QApplication::setWindowIcon(QIcon(QStringLiteral(":/icons/appicon.ico")));
         opentree::Logger::initialize();
         opentree::Logger::info("Application startup begin");
+        opentree::logMemoryUsage(QStringLiteral("main: after QApplication"));
 
         opentree::Logger::info("Constructing AppController");
         opentree::AppController controller;
+        opentree::logMemoryUsage(QStringLiteral("main: after AppController"));
 
         opentree::Logger::info("Constructing MainWindow");
         opentree::MainWindow window;
+        opentree::logMemoryUsage(QStringLiteral("main: after MainWindow"));
 
         opentree::Logger::info("Attaching MainWindow");
         controller.attachWindow(&window);
+        opentree::logMemoryUsage(QStringLiteral("main: after attachWindow"));
 
         if (!startupPath.isEmpty()) {
             controller.openPath(startupPath);
@@ -1419,6 +1428,7 @@ int main(int argc, char *argv[])
 
         opentree::Logger::info("Showing MainWindow");
         window.show();
+        opentree::logMemoryUsage(QStringLiteral("startup"));
 
         const int exitCode = app.exec();
         opentree::Logger::info(QStringLiteral("Application exiting with code %1").arg(exitCode));

@@ -1,5 +1,7 @@
 #include "services/ScanService.h"
 
+#include "utils/MemoryProbe.h"
+
 #include <QDir>
 #include <QDirIterator>
 #include <QFileInfo>
@@ -127,7 +129,7 @@ ScanResult ScanService::performScan(const QString &rootPath,
     });
 
     emit scanProgress(90, QStringLiteral("Building tree"));
-    ScanResult result = buildTreeResult(rootPath, {}, files);
+    ScanResult result = buildTreeResult(rootPath, {}, std::move(files));
     result.usedEverything = false;
     emit scanProgress(100, QStringLiteral("Scan complete"));
     return result;
@@ -158,13 +160,13 @@ ScanResult ScanService::performEverythingScan(const QString &rootPath,
         folders = std::move(filteredFolders);
     }
 
-    return buildTreeResult(rootPath, folders, files);
+    return buildTreeResult(rootPath, std::move(folders), std::move(files));
 }
 
 ScanResult ScanService::performFilesystemScan(const QString &rootPath, const QStringList &excludedPatterns)
 {
     QVector<FileEntry> files = collectFilesystemFiles(rootPath, excludedPatterns, nullptr);
-    return buildTreeResult(rootPath, {}, files);
+    return buildTreeResult(rootPath, {}, std::move(files));
 }
 
 QVector<FileEntry> ScanService::collectFilesystemFiles(
@@ -188,7 +190,6 @@ QVector<FileEntry> ScanService::collectFilesystemFiles(
         const QFileInfo info = it.fileInfo();
         FileEntry file;
         file.path = path;
-        file.parentPath = PathUtils::normalizePath(info.dir().absolutePath());
         file.name = info.fileName();
         file.size = info.size();
         files.push_back(file);
@@ -207,11 +208,11 @@ QVector<FileEntry> ScanService::collectFilesystemFiles(
     return files;
 }
 
-ScanResult ScanService::buildTreeResult(const QString &rootPath, const QVector<FolderEntry> &folders, const QVector<FileEntry> &files)
+ScanResult ScanService::buildTreeResult(const QString &rootPath, QVector<FolderEntry> folders, QVector<FileEntry> files)
 {
     ScanResult result;
     result.rootPath = rootPath;
-    result.files = files;
+    result.files = std::move(files);
 
     QHash<QString, FolderEntry> folderMap;
     auto ensureFolder = [&](const QString &path) -> FolderEntry & {
@@ -223,9 +224,6 @@ ScanResult ScanService::buildTreeResult(const QString &rootPath, const QVector<F
 
         FolderEntry entry;
         entry.path = normalized;
-        entry.parentPath = normalized.compare(rootPath, Qt::CaseInsensitive) == 0
-            ? QString()
-            : PathUtils::parentPath(normalized);
         entry.name = PathUtils::fileName(normalized);
         if (entry.name.isEmpty()) {
             entry.name = normalized;
@@ -234,14 +232,13 @@ ScanResult ScanService::buildTreeResult(const QString &rootPath, const QVector<F
     };
 
     ensureFolder(rootPath);
-    for (const FolderEntry &folder : folders) {
+    for (const FolderEntry &folder : std::as_const(folders)) {
         FolderEntry &entry = ensureFolder(folder.path);
-        entry.parentPath = folder.parentPath;
         entry.name = folder.name;
     }
 
-    for (const FileEntry &file : files) {
-        QString currentPath = file.parentPath;
+    for (const FileEntry &file : result.files) {
+        QString currentPath = PathUtils::parentPath(file.path);
         while (!currentPath.isEmpty() && currentPath.startsWith(rootPath, Qt::CaseInsensitive)) {
             FolderEntry &folder = ensureFolder(currentPath);
             folder.totalSize += file.size;
@@ -288,38 +285,51 @@ ScanResult ScanService::buildTreeResult(const QString &rootPath, const QVector<F
     });
 
     result.treeEntries.reserve(result.folders.size() + result.files.size());
-    for (const FolderEntry &folder : result.folders) {
+    for (const FolderEntry &folder : std::as_const(result.folders)) {
         TreeEntry entry;
         entry.kind = TreeEntryKind::Folder;
         entry.path = folder.path;
-        entry.parentPath = folder.parentPath;
         entry.name = folder.name;
         entry.size = folder.totalSize;
-        entry.parentSize = folder.parentPath.isEmpty() ? 0 : folderMap.value(folder.parentPath).totalSize;
+        entry.parentSize = folder.path.compare(rootPath, Qt::CaseInsensitive) == 0
+            ? 0
+            : folderMap.value(PathUtils::parentPath(folder.path)).totalSize;
         entry.fileCount = folder.fileCount;
         entry.folderCount = folder.folderCount;
         result.treeEntries.push_back(entry);
     }
-    for (const FileEntry &file : result.files) {
+    for (const FileEntry &file : std::as_const(result.files)) {
         TreeEntry entry;
         entry.kind = TreeEntryKind::File;
         entry.path = file.path;
-        entry.parentPath = file.parentPath;
         entry.name = file.name;
         entry.size = file.size;
-        entry.parentSize = folderMap.value(file.parentPath).totalSize;
+        entry.parentSize = folderMap.value(PathUtils::parentPath(file.path)).totalSize;
         result.treeEntries.push_back(entry);
     }
 
+    // Group rows by parent folder (derived from the path), folders first, then by name. The
+    // comparisons are done on views so sorting hundreds of thousands of rows does not allocate.
     std::sort(result.treeEntries.begin(), result.treeEntries.end(), [](const TreeEntry &left, const TreeEntry &right) {
-        if (left.parentPath != right.parentPath) {
-            return left.parentPath < right.parentPath;
+        const QStringView leftParent = PathUtils::parentPathView(left.path);
+        const QStringView rightParent = PathUtils::parentPathView(right.path);
+        if (leftParent != rightParent) {
+            return leftParent < rightParent;
         }
         if (left.kind != right.kind) {
             return left.kind == TreeEntryKind::Folder;
         }
-        return left.name.toLower() < right.name.toLower();
+        return QString::compare(left.name, right.name, Qt::CaseInsensitive) < 0;
     });
+
+    // The scan grew these vectors by doubling; give the slack back before the result is shared.
+    result.files.squeeze();
+    result.folders.squeeze();
+    result.treeEntries.squeeze();
+
+    logMemoryUsage(QStringLiteral("scan-built (%1 files, %2 folders)")
+                       .arg(result.files.size())
+                       .arg(result.folders.size()));
 
     return result;
 }

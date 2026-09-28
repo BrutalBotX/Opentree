@@ -89,7 +89,6 @@ SnapshotCreateResult SnapshotService::createSnapshot(const ScanResult &result, q
     while (previousFilesQuery.next()) {
         FileEntry file;
         file.path = previousFilesQuery.value(0).toString();
-        file.parentPath = previousFilesQuery.value(1).toString();
         file.name = previousFilesQuery.value(2).toString();
         file.size = previousFilesQuery.value(3).toLongLong();
         previousFiles.insert(file.path, file);
@@ -129,7 +128,6 @@ SnapshotCreateResult SnapshotService::createSnapshot(const ScanResult &result, q
             if (entry.path.isEmpty()) {
                 entry.kind = TreeEntryKind::Folder;
                 entry.path = path;
-                entry.parentPath = path.compare(result.rootPath, Qt::CaseInsensitive) == 0 ? QString() : PathUtils::parentPath(path);
                 entry.name = PathUtils::fileName(path);
                 if (entry.name.isEmpty()) {
                     entry.name = path;
@@ -194,7 +192,7 @@ SnapshotCreateResult SnapshotService::createSnapshot(const ScanResult &result, q
         itemQuery.addBindValue(snapshotId);
         itemQuery.addBindValue(entry.kind == TreeEntryKind::Folder ? "folder" : "file");
         itemQuery.addBindValue(entry.path);
-        itemQuery.addBindValue(entry.parentPath);
+        itemQuery.addBindValue(PathUtils::parentPath(entry.path));
         itemQuery.addBindValue(entry.name);
         itemQuery.addBindValue(entry.size);
         itemQuery.addBindValue(entry.parentSize);
@@ -226,7 +224,7 @@ SnapshotCreateResult SnapshotService::createSnapshot(const ScanResult &result, q
     for (const FileEntry &file : result.files) {
         stateInsertQuery.addBindValue(result.rootPath);
         stateInsertQuery.addBindValue(file.path);
-        stateInsertQuery.addBindValue(file.parentPath);
+        stateInsertQuery.addBindValue(PathUtils::parentPath(file.path));
         stateInsertQuery.addBindValue(file.name);
         stateInsertQuery.addBindValue(file.size);
         if (!stateInsertQuery.exec()) {
@@ -262,18 +260,18 @@ SnapshotCreateResult SnapshotService::createSnapshot(const ScanResult &result, q
         if (!hadPrevious && hasCurrent) {
             eventType = "ADD";
             newSize = currentFiles.value(path).size;
-            parentPath = currentFiles.value(path).parentPath;
+            parentPath = PathUtils::parentPath(path);
             name = currentFiles.value(path).name;
         } else if (hadPrevious && !hasCurrent) {
             eventType = "DELETE";
             oldSize = previousFiles.value(path).size;
-            parentPath = previousFiles.value(path).parentPath;
+            parentPath = PathUtils::parentPath(path);
             name = previousFiles.value(path).name;
         } else if (hadPrevious && hasCurrent && previousFiles.value(path).size != currentFiles.value(path).size) {
             eventType = "MODIFY";
             oldSize = previousFiles.value(path).size;
             newSize = currentFiles.value(path).size;
-            parentPath = currentFiles.value(path).parentPath;
+            parentPath = PathUtils::parentPath(path);
             name = currentFiles.value(path).name;
         }
 

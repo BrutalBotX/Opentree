@@ -10,6 +10,7 @@
 #include <QProcess>
 
 #include "services/VirtualTrashService.h"
+#include "utils/PathUtils.h"
 
 namespace opentree {
 
@@ -140,7 +141,7 @@ bool EntryActionHub::stage(const TreeEntry &entry, QString *errorMessage)
     request.path = entry.path;
     request.size = entry.size;
     request.isFolder = entry.kind == TreeEntryKind::Folder;
-    return stage({request}, entry.parentPath, QStringLiteral("Staged from a context menu"), nullptr, nullptr, errorMessage);
+    return stage({request}, PathUtils::parentPath(entry.path), QStringLiteral("Staged from a context menu"), nullptr, nullptr, errorMessage);
 }
 
 bool EntryActionHub::stage(const QString &path, qint64 size, bool isFolder, const QString &rootPath,

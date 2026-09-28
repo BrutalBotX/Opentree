@@ -82,7 +82,6 @@ DuplicatesPanel::DuplicatesPanel(ConfigService *configService, QWidget *parent)
         entry.path = path;
         entry.size = item->data(0, Qt::UserRole + 1).toLongLong();
         entry.name = QFileInfo(path).fileName();
-        entry.parentPath = QFileInfo(path).path();
 
         QMenu menu(this);
         QAction *openAction = menu.addAction(QStringLiteral("Open"));
@@ -228,7 +227,6 @@ void DuplicatesPanel::handleItemActivated(QTreeWidgetItem *item, int column)
     TreeEntry entry;
     entry.kind = TreeEntryKind::File;
     entry.path = path;
-    entry.parentPath = QFileInfo(path).absolutePath();
     entry.name = QFileInfo(path).fileName();
     entry.size = item->data(0, Qt::UserRole + 1).toLongLong();
     emit entryActivated(entry);

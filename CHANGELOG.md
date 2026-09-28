@@ -4,6 +4,34 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.13.2] - 2026-09-29
+
+### Changed
+
+- **The graph renderer is now a plugin, so Qt WebEngine is only loaded if the Graph tab is
+  actually opened.** Linking WebEngine made the executable commit around 230 MB of memory at
+  startup whether or not anyone looked at the graph. The renderer now lives in
+  `opentree_graph_webengine.dll` and is loaded the first time the tab is shown; when the plugin
+  is missing (the MinGW build) the panel falls back to a plain text list as before. Measured
+  with a scan of `C:\Program Files` (27k files): startup dropped from 252 MB to 14 MB, and the
+  same session including the scan and the UI from 321 MB to 78 MB.
+- The shared OpenGL context WebEngine requires is created when the graph opens rather than
+  before `QApplication` (which forced Qt to initialise the whole GPU stack at startup), and it
+  uses the software rasteriser so the GPU driver stays out of the process while the graph is
+  open. The page itself still renders in Chromium's own GPU process. This is why the installer
+  now ships `opengl32sw.dll`.
+- Scan results no longer store each entry's parent path (it is derived from the path), the scan
+  vectors are moved into the result instead of copied and have their spare capacity released
+  after the build, and the tree sort compares names without allocating lowercase copies.
+- Memory is now logged as `memory[...]` lines (startup, after a scan, when the renderer loads,
+  when it is released) so `opentree.log` shows where the memory goes.
+
+### Fixed
+
+- The graph no longer hangs on first use in the installed build: Qt WebEngine needs
+  `Qt::AA_ShareOpenGLContexts` before it initialises, and the plugin sets it right before
+  loading the renderer.
+
 ## [0.13.1] - 2026-09-27
 
 ### Fixed

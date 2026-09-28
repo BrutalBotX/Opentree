@@ -42,7 +42,7 @@ bool FolderRepository::replaceAll(const QVector<FolderEntry> &folders, const QSt
 
     for (const FolderEntry &folder : folders) {
         insertQuery.addBindValue(folder.path);
-        insertQuery.addBindValue(folder.parentPath);
+        insertQuery.addBindValue(PathUtils::parentPath(folder.path));
         insertQuery.addBindValue(folder.name);
         insertQuery.addBindValue(folder.totalSize);
         insertQuery.addBindValue(folder.fileCount);
@@ -78,7 +78,6 @@ QVector<FolderEntry> FolderRepository::loadByRoot(const QString &rootPath, QStri
     while (query.next()) {
         FolderEntry folder;
         folder.path = query.value(0).toString();
-        folder.parentPath = query.value(1).toString();
         folder.name = query.value(2).toString();
         folder.totalSize = query.value(3).toLongLong();
         folder.fileCount = query.value(4).toInt();

@@ -1,7 +1,8 @@
 #include "ui/GraphPanel.h"
 
 #include <QHash>
-#include <QCheckBox>#include <QDir>
+#include <QCheckBox>
+#include <QDir>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QLineEdit>
@@ -16,19 +17,54 @@
 #include <cmath>
 
 #include "ui/EntryActions.h"
+#include "utils/MemoryProbe.h"
 #include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 #include "utils/Logger.h"
 
-#if defined(OPENTREE_HAVE_WEBENGINE)
-#include <QWebChannel>
-#include <QWebEnginePage>
-#include <QWebEngineView>
-#endif
+#include "graph/IGraphView.h"
+
+#include <QCoreApplication>
+#include <QFile>
+#include <QPluginLoader>
 
 namespace opentree {
 
 namespace {
+
+// Loads the WebEngine renderer plugin on first use and keeps it loaded for the rest of the
+// session. Returns null when the plugin is missing (the MinGW build), in which case the panel
+// shows a plain text list instead.
+IGraphViewFactory *graphViewFactory()
+{
+    static bool tried = false;
+    static IGraphViewFactory *factory = nullptr;
+    if (!tried) {
+        tried = true;
+        const QString path = QCoreApplication::applicationDirPath()
+            + QStringLiteral("/opentree_graph_webengine.dll");
+        if (!QFile::exists(path)) {
+            Logger::info(QStringLiteral("graph: renderer plugin not found at %1, using the text fallback").arg(path));
+            return nullptr;
+        }
+        // Qt WebEngine requires Qt::AA_ShareOpenGLContexts. Setting it here (rather than before
+        // QApplication in main) means Qt only builds the shared context when the graph is first
+        // opened, so users who never open the graph never pay for it.
+        QCoreApplication::setAttribute(Qt::AA_ShareOpenGLContexts, true);
+        // Deliberately leaked: destroying the loader would unload the plugin while the view
+        // still needs it.
+        auto *loader = new QPluginLoader(path);
+        Logger::info(QStringLiteral("graph: loading the renderer plugin from %1").arg(path));
+        QObject *instance = loader->instance();
+        factory = qobject_cast<IGraphViewFactory *>(instance);
+        if (!factory) {
+            Logger::warning(QStringLiteral("graph: could not load %1: %2").arg(path, loader->errorString()));
+        } else {
+            Logger::info(QStringLiteral("graph: loaded the %1 renderer plugin").arg(factory->backendName()));
+        }
+    }
+    return factory;
+}
 
 bool isSameOrDescendant(const QString &path, const QString &rootPath)
 {
@@ -85,10 +121,7 @@ GraphPanel::GraphPanel(QWidget *parent)
     , m_addressBar(new QLineEdit(this))
     , m_followTreeCheck(new QCheckBox(QStringLiteral("Follow tree expansion"), this))
     , m_summaryLabel(new QLabel(this))
-#if defined(OPENTREE_HAVE_WEBENGINE)
     , m_bridge(new GraphBridge(this))
-    , m_channel(new QWebChannel(this))
-#endif
 {
     auto *layout = new QVBoxLayout(this);
     layout->setContentsMargins(12, 12, 12, 12);
@@ -104,12 +137,9 @@ GraphPanel::GraphPanel(QWidget *parent)
     addressRow->addWidget(m_addressBar, 1);
     addressRow->addWidget(m_followTreeCheck, 0);
     layout->addLayout(addressRow);
-#if defined(OPENTREE_HAVE_WEBENGINE)
     m_bridge->onActivate = [this](const QString &path) { activateNode(path); };
     m_bridge->onOpen = [this](const QString &path) { openNode(path); };
     m_bridge->onContextMenu = [this](const QString &path, int x, int y) { showNodeContextMenu(path, x, y); };
-    m_channel->registerObject(QStringLiteral("graphBridge"), m_bridge);
-#endif
     layout->addWidget(m_summaryLabel);
 
     connect(m_followTreeCheck, &QCheckBox::toggled, this, [this](bool checked) {
@@ -131,15 +161,20 @@ void GraphPanel::ensureView()
         return;
     }
 
-#if defined(OPENTREE_HAVE_WEBENGINE)
-    auto *view = new QWebEngineView(this);
-    view->page()->setWebChannel(m_channel);
-    m_view = view;
-#else
-    auto *view = new QTextBrowser(this);
-    view->setReadOnly(true);
-    m_view = view;
-#endif
+    if (IGraphViewFactory *factory = graphViewFactory()) {
+        m_graphView.reset(factory->create(this, m_bridge));
+        if (m_graphView) {
+            connect(m_graphView->notifier(), SIGNAL(loadFinished(bool)), this, SLOT(handleGraphLoadFinished(bool)));
+            m_view = m_graphView->widget();
+        }
+    }
+
+    if (!m_view) {
+        // No renderer plugin (MinGW build): show the plain list instead of an empty pane.
+        m_fallbackView = new QTextBrowser(this);
+        m_fallbackView->setReadOnly(true);
+        m_view = m_fallbackView;
+    }
 
     // Place the view right under the summary label, where the constructor used to add it.
     if (auto *box = qobject_cast<QVBoxLayout *>(layout())) {
@@ -151,21 +186,35 @@ void GraphPanel::ensureView()
     // renderGraph() runs from showEvent() so the page is loaded exactly once.
 }
 
+void GraphPanel::handleGraphLoadFinished(bool ok)
+{
+    logMemoryUsage(QStringLiteral("graph-loaded (%1)").arg(ok ? QStringLiteral("ok") : QStringLiteral("failed")));
+}
+
+GraphPanel::~GraphPanel() = default;
+
 void GraphPanel::releaseView()
 {
-#if defined(OPENTREE_HAVE_WEBENGINE)
-    if (!m_view) {
+    if (!m_view && !m_graphView) {
         return;
     }
-    // Leaving the Graph tab destroys the WebEngine view. That shuts the renderer process
-    // down and returns its memory (~100-150 MB) instead of merely freezing the page; the
-    // view is recreated on the next visit. Chromium's in-process state stays loaded either
-    // way, which is why the lazy first start matters more than this step.
-    m_view->deleteLater();
+
+    // Leaving the Graph tab lets the renderer go: the renderer process shuts down and its
+    // memory is returned. The plugin stays loaded, so the next visit is cheaper than the first.
+    if (m_graphView) {
+        m_graphView->release();
+        m_graphView.reset();
+    }
+    if (m_fallbackView) {
+        m_fallbackView->deleteLater();
+        m_fallbackView = nullptr;
+    }
     m_view = nullptr;
     m_renderDirty = true;
-    Logger::info(QStringLiteral("graph-debug releaseView: graph tab hidden, WebEngine view released"));
-#endif
+    Logger::info(QStringLiteral("graph-debug releaseView: graph tab hidden, renderer released"));
+    // deleteLater() runs on the next event-loop turn, so measure after it had a chance to
+    // actually tear the renderer down.
+    QTimer::singleShot(1500, this, []() { logMemoryUsage(QStringLiteral("graph-released")); });
 }
 
 void GraphPanel::showEvent(QShowEvent *event)
@@ -179,13 +228,9 @@ void GraphPanel::showEvent(QShowEvent *event)
         const bool created = !m_view;
         ensureView();
 
-#if defined(OPENTREE_HAVE_WEBENGINE)
-        if (m_view && m_view->page()
-            && m_view->page()->lifecycleState() == QWebEnginePage::LifecycleState::Discarded) {
-            m_view->page()->setLifecycleState(QWebEnginePage::LifecycleState::Active);
-            m_renderDirty = true;
+        if (m_graphView) {
+            m_graphView->refreshAfterShow();
         }
-#endif
 
         if (!m_renderDirty) {
             return;
@@ -390,7 +435,7 @@ void GraphPanel::openNode(const QString &path)
 {
     if (path == QStringLiteral("__up__")) {
         const TreeEntry *entry = findEntryByPath(m_graphRootPath);
-        const TreeEntry *parentEntry = entry ? findEntryByPath(entry->parentPath) : nullptr;
+        const TreeEntry *parentEntry = entry ? findEntryByPath(PathUtils::parentPath(entry->path)) : nullptr;
         if (parentEntry) {
             Logger::info(QStringLiteral("graph-debug openNode up from=%1 to=%2")
                              .arg(m_graphRootPath)
@@ -579,37 +624,38 @@ void GraphPanel::renderGraph()
     if (m_currentEntries.isEmpty()) {
         m_summaryLabel->setText("Graph: scan a folder to visualize its structure.");
 
-#if defined(OPENTREE_HAVE_WEBENGINE)
-        m_view->setHtml(buildEmptyHtml(), QUrl("https://local.opentree/"));
-#else
-        m_view->setText("vis.js graph requires the MSVC WebEngine build. Use build_msvc.bat and run build-msvc/OpenTree.exe.");
-#endif
+        if (m_graphView) {
+            m_graphView->setHtml(buildEmptyHtml(), QUrl("https://local.opentree/"));
+        } else if (m_fallbackView) {
+            m_fallbackView->setText(QStringLiteral("The graph needs the WebEngine renderer plugin (opentree_graph_webengine.dll). "
+                                                   "The MSVC build ships it; build with build_msvc.bat."));
+        }
         return;
     }
 
-#if defined(OPENTREE_HAVE_WEBENGINE)
-    m_view->setHtml(debugHtml(), QUrl("https://local.opentree/"));
-#else
-    QVector<TreeEntry> listed;
-    for (const TreeEntry &entry : m_currentEntries) {
-        if (isSameOrDescendant(entry.path, m_graphRootPath)) {
-            listed.push_back(entry);
+    if (m_graphView) {
+        m_graphView->setHtml(debugHtml(), QUrl("https://local.opentree/"));
+    } else if (m_fallbackView) {
+        QVector<TreeEntry> listed;
+        for (const TreeEntry &entry : m_currentEntries) {
+            if (isSameOrDescendant(entry.path, m_graphRootPath)) {
+                listed.push_back(entry);
+            }
         }
-    }
-    std::sort(listed.begin(), listed.end(), [](const TreeEntry &left, const TreeEntry &right) {
-        return left.size > right.size;
-    });
-    if (listed.size() > 40) {
-        listed.resize(40);
-    }
+        std::sort(listed.begin(), listed.end(), [](const TreeEntry &left, const TreeEntry &right) {
+            return left.size > right.size;
+        });
+        if (listed.size() > 40) {
+            listed.resize(40);
+        }
 
-    QStringList lines;
-    lines << QStringLiteral("Top items for %1").arg(m_graphRootPath);
-    for (const TreeEntry &entry : listed) {
-        lines << QStringLiteral("- %1 (%2)").arg(entry.path, SizeFormatter::formatBytes(entry.size));
+        QStringList lines;
+        lines << QStringLiteral("Top items for %1").arg(m_graphRootPath);
+        for (const TreeEntry &entry : listed) {
+            lines << QStringLiteral("- %1 (%2)").arg(entry.path, SizeFormatter::formatBytes(entry.size));
+        }
+        m_fallbackView->setText(lines.join('\n'));
     }
-    m_view->setText(lines.join('\n'));
-#endif
 
     int folderCount = 0;
     for (const TreeEntry &entry : m_currentEntries) {
@@ -640,24 +686,22 @@ void GraphPanel::refreshSelectionVisuals()
         return;
     }
 
-#if defined(OPENTREE_HAVE_WEBENGINE)
-    updateSelectionInView();
-#endif
+    if (m_graphView) {
+        updateSelectionInView();
+    }
 }
 
 void GraphPanel::updateSelectionInView()
 {
-#if defined(OPENTREE_HAVE_WEBENGINE)
-    if (!m_view || !m_view->page()) {
+    if (!m_graphView) {
         return;
     }
 
     const QString argument = m_selectedPath.isEmpty()
         ? QStringLiteral("null")
         : QStringLiteral("'%1'").arg(escapeJsString(m_selectedPath));
-    m_view->page()->runJavaScript(
+    m_graphView->runJavaScript(
         QStringLiteral("if (typeof applySelectionState === 'function') { applySelectionState(%1); }").arg(argument));
-#endif
 }
 
 void GraphPanel::setThemePalette(const QPalette &palette)
@@ -842,20 +886,21 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
         if (isRootFolder) {
             rootEntry = entry;
             hasRootEntry = true;
-            if (!entry.parentPath.isEmpty()) {
+            const QString parentPath = PathUtils::parentPath(entry.path);
+            if (!parentPath.isEmpty()) {
                 hasUpNode = true;
-                upTargetPath = entry.parentPath;
+                upTargetPath = parentPath;
             }
             continue;
         }
 
-        if (entry.kind == TreeEntryKind::Folder && entry.parentPath.compare(rootPath, Qt::CaseInsensitive) == 0) {
+        if (entry.kind == TreeEntryKind::Folder && PathUtils::parentPath(entry.path).compare(rootPath, Qt::CaseInsensitive) == 0) {
             directFolders.push_back(entry);
         }
 
         if (entry.kind == TreeEntryKind::Folder) {
             folders.push_back(entry);
-        } else if (entry.parentPath.compare(rootPath, Qt::CaseInsensitive) == 0) {
+        } else if (PathUtils::parentPath(entry.path).compare(rootPath, Qt::CaseInsensitive) == 0) {
             directFiles.push_back(entry);
         }
 
@@ -1169,9 +1214,10 @@ QString GraphPanel::buildGraphPayload(const QString &rootPath, const QVector<Tre
                             .arg(QStringLiteral("'%1'").arg(borderColor));
         }
 
-        if (!entry.parentPath.isEmpty() && allowedPaths.contains(entry.parentPath)) {
+        const QString parentPath = PathUtils::parentPath(entry.path);
+        if (!parentPath.isEmpty() && allowedPaths.contains(parentPath)) {
             edgeJson << QStringLiteral("{from:%1,to:%2}")
-                            .arg(QStringLiteral("'%1'").arg(escapeJsString(entry.parentPath)))
+                            .arg(QStringLiteral("'%1'").arg(escapeJsString(parentPath)))
                             .arg(QStringLiteral("'%1'").arg(escapedPath));
         }
     }

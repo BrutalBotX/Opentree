@@ -14,6 +14,7 @@
 
 #include "ui/EntryActions.h"
 #include "ui/TableItems.h"
+#include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
@@ -157,7 +158,7 @@ void HeatmapPanel::rebuild()
             parentSize = entry.size;
             continue;
         }
-        if (samePath(entry.parentPath, m_activeFolderPath)) {
+        if (samePath(PathUtils::parentPath(entry.path), m_activeFolderPath)) {
             children.push_back(entry);
             childrenSize += entry.size;
         }

@@ -62,7 +62,6 @@ FileEntry makeFile(const QString &path, qint64 size)
 {
     FileEntry file;
     file.path = path;
-    file.parentPath = PathUtils::parentPath(path);
     file.name = PathUtils::fileName(path);
     file.size = size;
     return file;
@@ -268,7 +267,6 @@ private slots:
         child.kind = TreeEntryKind::Folder;
         child.path = result.rootPath + "/media";
         child.name = QStringLiteral("media");
-        child.parentPath = result.rootPath;
         child.size = 5 * 1024 * 1024;
         child.fileCount = 1;
         result.treeEntries << child;
@@ -303,7 +301,6 @@ private slots:
             folder.kind = TreeEntryKind::Folder;
             folder.path = QStringLiteral("%1/folder-%2").arg(result.rootPath).arg(index);
             folder.name = QStringLiteral("folder-%1").arg(index);
-            folder.parentPath = result.rootPath;
             folder.size = (12 - index) * 1024 * 1024;
             folder.fileCount = index + 1;
             folder.folderCount = index % 3;
@@ -359,7 +356,6 @@ private slots:
             auto addFolder = [&](const QString &name, qint64 size, int files) {
                 FolderEntry folder;
                 folder.path = root + QLatin1Char('/') + name;
-                folder.parentPath = root;
                 folder.name = name;
                 folder.totalSize = size;
                 folder.fileCount = files;
@@ -368,7 +364,6 @@ private slots:
                 TreeEntry entry;
                 entry.kind = TreeEntryKind::Folder;
                 entry.path = folder.path;
-                entry.parentPath = folder.parentPath;
                 entry.name = folder.name;
                 entry.size = size;
                 entry.fileCount = files;

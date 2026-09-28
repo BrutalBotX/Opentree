@@ -22,7 +22,7 @@ public:
     ScanResultPtr takeLastResult();
     QString lastError() const;
     static ScanResult performFilesystemScan(const QString &rootPath, const QStringList &excludedPatterns);
-    static ScanResult buildTreeResult(const QString &rootPath, const QVector<FolderEntry> &folders, const QVector<FileEntry> &files);
+    static ScanResult buildTreeResult(const QString &rootPath, QVector<FolderEntry> folders, QVector<FileEntry> files);
 
 signals:
     void scanStarted(const QString &rootPath);

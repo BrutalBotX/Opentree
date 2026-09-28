@@ -3,6 +3,7 @@
 #include <QFileInfo>
 #include <QHash>
 
+#include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 
 namespace opentree {
@@ -145,7 +146,7 @@ void FolderTreeModel::setRootSessions(const QVector<RootSession> &sessions)
         }
 
         for (const TreeEntry &entry : session.result->treeEntries) {
-            QString parentKey = entry.parentPath;
+            QString parentKey = PathUtils::parentPath(entry.path);
             if (entry.path.compare(session.result->rootPath, Qt::CaseInsensitive) == 0) {
                 parentKey = m_root->entry.path;
             }

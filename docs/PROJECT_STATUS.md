@@ -36,6 +36,22 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
 
+## 0.13.2 follow-up (memory pass)
+
+- The Graph tab's Qt WebEngine renderer moved into a plugin (`src/graph/IGraphView.h`,
+  `src/graph/WebEngineGraphPlugin.cpp`). The executable no longer links WebEngine, so only users
+  who open the graph pay Chromium's ~230 MB. The panel sets `Qt::AA_ShareOpenGLContexts` right
+  before loading the plugin (WebEngine hangs without it) and runs the shared context on the
+  software rasteriser (`opengl32sw.dll`, now deployed) so the GPU driver stays out of the
+  process.
+- Scan entries lost their redundant `parentPath` field (derived now), the scan vectors are moved
+  and squeezed, and the tree sort is allocation-free. `logMemoryUsage` (src/utils/MemoryProbe)
+  records memory at startup, after a scan, and around the renderer lifecycle.
+- Measured with `C:\Program Files` (27,104 files / 2,502 folders): startup 252 -> 14 MB,
+  scan+UI 321 -> 78 MB; the graph costs ~430 MB while open and the renderer is still released
+  when the tab is left. Smoke tests (`--smoke-menu`, `--smoke-subfolder`, `--smoke-graph`) and
+  the core tests pass on MSVC and MinGW.
+
 ### 0.13.1 follow-up (same night)
 
 - Installer fix: the 0.13.0 release shipped without the graph because CI built it from a Qt kit

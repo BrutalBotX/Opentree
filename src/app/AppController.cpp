@@ -48,6 +48,7 @@
 #include "ui/TimelinePanel.h"
 #include "ui/TreePanel.h"
 #include "utils/Logger.h"
+#include "utils/MemoryProbe.h"
 #include "utils/SizeFormatter.h"
 #include "utils/TaskSchedulerUtils.h"
 #include "utils/PathUtils.h"
@@ -476,10 +477,12 @@ void AppController::activateRootSession(const QString &rootPath, bool showGraphT
     m_lastRequestedRootPath = normalizedRoot;
     m_window->timelinePanel()->setCurrentRootPath(normalizedRoot);
     m_window->driveSelector()->setRootPath(normalizedRoot);
+    logMemoryUsage(QStringLiteral("open-path start (%1)").arg(normalizedRoot));
 
     ScanResultPtr cachedResult;
     QString cacheError;
     if (loadCachedRootResult(normalizedRoot, &cachedResult, &cacheError)) {
+        logMemoryUsage(QStringLiteral("open-path cached result loaded"));
         m_currentResult = cachedResult;
         m_activeFolderPath = cachedResult->rootPath;
         bool replaced = false;
@@ -505,6 +508,7 @@ void AppController::activateRootSession(const QString &rootPath, bool showGraphT
         m_window->setStatusText(QStringLiteral("Scanning %1").arg(normalizedRoot));
     }
     m_scanService->scanPath(normalizedRoot);
+    logMemoryUsage(QStringLiteral("open-path scan requested"));
 }
 
 void AppController::refreshTimeline()
@@ -638,6 +642,9 @@ void AppController::handleScanFinished()
         m_rootSessions.push_back({result->rootPath, result});
     }
     syncActiveResultUi(result, m_activeFolderPath, {}, true);
+    logMemoryUsage(QStringLiteral("scan-shown (%1 files, %2 folders)")
+                       .arg(result->files.size())
+                       .arg(result->folders.size()));
     refreshTimeline();
     if (m_folderRepository && m_fileRepository) {
         QString error;
@@ -645,6 +652,7 @@ void AppController::handleScanFinished()
             || !m_fileRepository->replaceAll(result->files, result->rootPath, &error)) {
             Logger::warning("Failed to persist scan: " + error);
         }
+        logMemoryUsage(QStringLiteral("scan-persisted"));
     }
 
     m_window->setBusy(false);
@@ -685,7 +693,7 @@ void AppController::handleEntryActivated(const TreeEntry &entry)
         }
     }
 
-    m_activeFolderPath = entry.kind == TreeEntryKind::Folder ? entry.path : entry.parentPath;
+    m_activeFolderPath = entry.kind == TreeEntryKind::Folder ? entry.path : PathUtils::parentPath(entry.path);
     m_window->detailsPanel()->setEntry(entry);
     m_window->chartPanel()->setActiveFolderPath(m_activeFolderPath);
     m_window->detailsTablePanel()->setActiveFolderPath(m_activeFolderPath);
@@ -702,7 +710,7 @@ void AppController::handleGraphEntryActivated(const TreeEntry &entry)
     Logger::info(QStringLiteral("graph-debug graph activate kind=%1 path=%2 parent=%3")
                      .arg(entry.kind == TreeEntryKind::Folder ? QStringLiteral("folder") : QStringLiteral("file"))
                      .arg(entry.path)
-                     .arg(entry.parentPath));
+                     .arg(PathUtils::parentPath(entry.path)));
     if (const RootSession *session = findRootSessionForPath(entry.path)) {
         if (m_currentResult->rootPath.compare(session->result->rootPath, Qt::CaseInsensitive) != 0) {
             activateRootSession(session->result->rootPath, true);
@@ -754,7 +762,7 @@ void AppController::handleGraphEntryOpened(const TreeEntry &entry)
     Logger::info(QStringLiteral("graph-debug graph open kind=%1 path=%2 parent=%3")
                      .arg(entry.kind == TreeEntryKind::Folder ? QStringLiteral("folder") : QStringLiteral("file"))
                      .arg(entry.path)
-                     .arg(entry.parentPath));
+                     .arg(PathUtils::parentPath(entry.path)));
     if (entry.kind == TreeEntryKind::Folder) {
         focusFolderPath(entry.path, true);
         return;
@@ -785,8 +793,8 @@ void AppController::handleChartEntryActivated(const TreeEntry &entry)
         return;
     }
 
-    if (!entry.parentPath.isEmpty()) {
-        focusFolderPath(entry.parentPath, false);
+    if (!PathUtils::parentPath(entry.path).isEmpty()) {
+        focusFolderPath(PathUtils::parentPath(entry.path), false);
     }
     m_window->treePanel()->selectEntryPath(entry.path);
     syncFileSelectionUi(entry);
@@ -836,8 +844,8 @@ void AppController::handleChartOpenInGraphRequested(const TreeEntry &entry)
         return;
     }
 
-    if (!entry.parentPath.isEmpty()) {
-        focusFolderPath(entry.parentPath, true);
+    if (!PathUtils::parentPath(entry.path).isEmpty()) {
+        focusFolderPath(PathUtils::parentPath(entry.path), true);
     }
     m_window->treePanel()->selectEntryPath(entry.path);
     syncFileSelectionUi(entry);
@@ -1320,7 +1328,7 @@ void AppController::syncFileSelectionUi(const TreeEntry &entry)
 
     Logger::info(QStringLiteral("graph-debug syncFileSelectionUi path=%1 parent=%2")
                      .arg(entry.path)
-                     .arg(entry.parentPath));
+                     .arg(PathUtils::parentPath(entry.path)));
 
     m_window->detailsPanel()->setEntry(entry);
     updateGraphPanel(ensureGraphPanel(m_window), [&](GraphPanel *graph) {
@@ -1671,7 +1679,7 @@ bool AppController::loadCachedRootResult(const QString &rootPath, ScanResultPtr 
     }
 
     QString folderError;
-    const QVector<FolderEntry> folders = m_folderRepository->loadByRoot(normalizedRoot, &folderError);
+    QVector<FolderEntry> folders = m_folderRepository->loadByRoot(normalizedRoot, &folderError);
     if (!folderError.isEmpty()) {
         if (errorMessage) {
             *errorMessage = folderError;
@@ -1683,7 +1691,7 @@ bool AppController::loadCachedRootResult(const QString &rootPath, ScanResultPtr 
         return false;
     }
 
-    *result = std::make_shared<const ScanResult>(ScanService::buildTreeResult(normalizedRoot, folders, {}));
+    *result = std::make_shared<const ScanResult>(ScanService::buildTreeResult(normalizedRoot, std::move(folders), {}));
     return true;
 }
 

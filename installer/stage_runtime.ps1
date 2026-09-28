@@ -37,9 +37,11 @@ if ($code -ge 8) {
 # The graph needs these; catch a broken deployment here instead of after shipping.
 $required = @(
     'OpenTree.exe',
+    'opentree_graph_webengine.dll',
     'Qt6WebEngineWidgets.dll',
     'Qt6WebEngineCore.dll',
     'QtWebEngineProcess.exe',
+    'opengl32sw.dll',
     'resources\qtwebengine_resources.pak',
     'translations\qtwebengine_locales\en-US.pak'
 )

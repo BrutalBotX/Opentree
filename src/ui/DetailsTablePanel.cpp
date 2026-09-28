@@ -393,7 +393,7 @@ void DetailsTablePanel::rebuild()
     rows.reserve(256);
     for (const TreeEntry &entry : m_result->treeEntries) {
         const bool include = flat ? isSameOrDescendant(entry.path, m_activeFolderPath) && !samePath(entry.path, m_activeFolderPath)
-                                  : samePath(entry.parentPath, m_activeFolderPath);
+                                  : samePath(PathUtils::parentPath(entry.path), m_activeFolderPath);
         if (include) {
             rows.push_back({entry, 0.0, {}});
         }
