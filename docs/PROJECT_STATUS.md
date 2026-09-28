@@ -38,11 +38,20 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 ### 0.13.1 follow-up (same night)
 
-- Installer fix: the 0.13.0 release shipped without WebEngine (CI built from a Qt kit that had
-  none, and the graph is optional at configure time, so the build silently produced a
-  graph-less exe). CI now verifies the Qt kit and the built exe, and the installer stages a
-  clean runtime folder instead of packaging build intermediates. Verified by installing into a
-  temp folder and running the graph smoke test from there with a system-only PATH.
+- Installer fix: the 0.13.0 release shipped without the graph because CI built it from a Qt kit
+  that lacked the optional Qt Positioning module, which `Qt6WebEngineCore` needs: the
+  `Qt6WebEngineWidgets` CMake package then refuses to load and, since the graph is optional at
+  configure time, the build silently produced a graph-less exe. The CI verification step was
+  broken as well (a hardcoded `Visual Studio\2022\` path to `dumpbin`, while the runners ship
+  Visual Studio 2026), which made a correct build look broken.
+- CI now installs `qtwebengine`, `qtwebchannel` and `qtpositioning`, checks both the Qt kit and
+  the built exe for WebEngine (by scanning the import table, no dumpbin), and the installer
+  stages a clean runtime folder (`installer/stage_runtime.ps1`) instead of packaging
+  `build-msvc` with its CMake intermediates; the staging step refuses to continue when the
+  WebEngine files are missing.
+- Verified against the published release: `OpenTree-Setup-0.13.1.exe` was downloaded from
+  GitHub, installed silently into a temp folder and `OpenTree.exe --smoke-graph` ran from there
+  with `PATH` reduced to the system directories (exit 0).
 
 ### 0.13.0 follow-up (same night)
 
