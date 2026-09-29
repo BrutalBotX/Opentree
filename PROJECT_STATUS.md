@@ -36,7 +36,29 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
 
-## 0.13.2 follow-up (memory pass)
+## 0.13.3 follow-up (timeline and snapshots check)
+
+- A full pass over the snapshot/timeline feature, end to end against the real database:
+  `--background-snapshot` with a whitelisted test tree (3 files / 6 MB) followed by changes
+  (grow, delete, add) and a second run, verifying snapshot rows, ADD/MODIFY/DELETE file events,
+  the per-folder ledger, `snapshot_current_files` state and the totals; then a back-dated
+  snapshot to check retention pruning (pruned 3 events, recorded in the run row).
+- Fixed: **scheduled runs never created snapshots** (the scan result was read before the queued
+  finished signal, so every run ended with "no result" and no error anywhere). The background
+  mode now waits on the scan signals, logs each step, records a run summary and prunes old file
+  events (the retention setting previously had no effect at all).
+- Fixed: the comparison's total delta counted a folder once per ancestor. Only the outermost
+  changed folders are added now; added tests for compare rows/percentages/largest growth and for
+  retention.
+- Checked: the Timeline tab renders the overview (root, schedule, last run, growth), the history
+  chart, the snapshot list and the folder history; the Snapshots menu has Create/Compare/Manage
+  Settings; `schtasks` accepts the app's daily/weekly/monthly task definitions (verified with
+  throw-away task names, then deleted). The installed app and the MinGW build behave the same.
+- Not covered: clicking through the dialogs/compare *buttons* (this session cannot inject mouse
+  input; keyboard shortcuts work). The handlers and the panel population were reviewed and the
+  underlying service calls are covered by tests.
+
+### 0.13.2 follow-up (memory pass)
 
 - The Graph tab's Qt WebEngine renderer moved into a plugin (`src/graph/IGraphView.h`,
   `src/graph/WebEngineGraphPlugin.cpp`). The executable no longer links WebEngine, so only users

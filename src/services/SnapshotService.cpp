@@ -421,8 +421,18 @@ SnapshotCompareResult SnapshotService::compareSnapshotToCurrent(int snapshotId, 
     result.found = true;
     result.changedFolderCount = rows.size();
     result.fileEventCount = snapshotFileEvents(snapshotId, errorMessage).size();
+
+    // A folder's size already includes everything below it, so summing every row would count a
+    // change once per ancestor. Only the outermost changed folders add to the total.
+    QSet<QString> changedPaths;
+    changedPaths.reserve(rows.size());
     for (const SnapshotCompareRow &row : rows) {
-        result.totalDeltaBytes += row.deltaBytes;
+        changedPaths.insert(row.path);
+    }
+    for (const SnapshotCompareRow &row : rows) {
+        if (!changedPaths.contains(PathUtils::parentPath(row.path))) {
+            result.totalDeltaBytes += row.deltaBytes;
+        }
         if (std::llabs(row.deltaBytes) > std::llabs(result.largestChangeBytes)) {
             result.largestChangeBytes = row.deltaBytes;
             result.largestChangePath = row.path;

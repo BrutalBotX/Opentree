@@ -37,8 +37,10 @@ SnapshotSettingsDialog::SnapshotSettingsDialog(ConfigService *configService, QWi
     m_thresholdSpinBox->setRange(1, 1024 * 100);
     m_thresholdSpinBox->setSuffix(" MB");
     m_thresholdSpinBox->setValue(static_cast<int>(m_configService->snapshotThresholdBytes() / (1024 * 1024)));
-    m_retentionSpinBox->setRange(7, 90);
+    m_retentionSpinBox->setRange(0, 365);
     m_retentionSpinBox->setSuffix(" days");
+    // 0 prunes nothing: the file event log is kept forever.
+    m_retentionSpinBox->setSpecialValueText(QStringLiteral("Keep forever"));
     m_retentionSpinBox->setValue(m_configService->snapshotRetentionDays());
     m_timeEdit->setDisplayFormat("HH:mm");
     m_timeEdit->setTime(m_configService->snapshotScheduleTime());

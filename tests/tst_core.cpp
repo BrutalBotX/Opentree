@@ -424,6 +424,142 @@ private slots:
 
         database.close();
     }
+
+    void compareRowsAndSummary()
+    {
+        QSqlDatabase database = openSchemaDatabase(QStringLiteral("compare-test"));
+        QVERIFY(database.isOpen());
+
+        SnapshotService service(database);
+        const QString root = QStringLiteral("C:/comparetree");
+
+        auto makeResult = [&](qint64 normalSize, bool includeAdded, qint64 addedSize) {
+            ScanResult result;
+            result.rootPath = root;
+
+            auto addFolder = [&](const QString &name, qint64 size) {
+                FolderEntry folder;
+                folder.path = root + QLatin1Char('/') + name;
+                folder.name = name;
+                folder.totalSize = size;
+                folder.fileCount = 1;
+                result.folders << folder;
+
+                TreeEntry entry;
+                entry.kind = TreeEntryKind::Folder;
+                entry.path = folder.path;
+                entry.name = name;
+                entry.size = size;
+                entry.fileCount = 1;
+                result.treeEntries << entry;
+            };
+            addFolder(QStringLiteral("normal"), normalSize);
+            qint64 rootSize = normalSize;
+            if (includeAdded) {
+                addFolder(QStringLiteral("added"), addedSize);
+                rootSize += addedSize;
+            }
+
+            TreeEntry rootEntry;
+            rootEntry.kind = TreeEntryKind::Folder;
+            rootEntry.path = root;
+            rootEntry.name = QStringLiteral("comparetree");
+            rootEntry.size = rootSize;
+            result.treeEntries << rootEntry;
+
+            result.files << makeFile(root + QStringLiteral("/normal/file.bin"), normalSize);
+            if (includeAdded) {
+                result.files << makeFile(root + QStringLiteral("/added/file.bin"), addedSize);
+            }
+            return result;
+        };
+
+        QVERIFY(service.createSnapshot(makeResult(100, false, 0), 0, nullptr).created);
+        const QVector<SnapshotSummary> summaries = service.listSnapshots(nullptr);
+        QVERIFY(!summaries.isEmpty());
+        const int snapshotId = summaries.first().id;
+
+        // Unchanged tree: there is nothing to compare.
+        const SnapshotCompareResult unchanged =
+            service.compareSnapshotToCurrent(snapshotId, makeResult(100, false, 0), nullptr);
+        QVERIFY(!unchanged.found);
+
+        // The folder grew from 100 to 250 and a second one appeared with 400.
+        const ScanResult current = makeResult(250, true, 400);
+        const SnapshotCompareResult summary = service.compareSnapshotToCurrent(snapshotId, current, nullptr);
+        QVERIFY(summary.found);
+        QCOMPARE(summary.changedFolderCount, 3);        // normal, added and the root
+        QCOMPARE(summary.totalDeltaBytes, qint64(550)); // the root delta only: children are inside it
+        QCOMPARE(summary.largestGrowthPath, root);
+        QCOMPARE(summary.largestGrowthBytes, qint64(550));
+        QVERIFY(!summary.snapshotCreatedAt.isEmpty());
+
+        const QVector<SnapshotCompareRow> rows = service.compareSnapshotRows(snapshotId, current, nullptr);
+        QCOMPARE(rows.size(), 3);
+        QCOMPARE(rows.first().path, root); // biggest absolute delta first
+        bool sawAdded = false;
+        bool sawNormal = false;
+        for (const SnapshotCompareRow &row : rows) {
+            QVERIFY(row.deltaBytes != 0);
+            if (row.path == root + QStringLiteral("/added")) {
+                sawAdded = true;
+                QCOMPARE(row.previousSize, qint64(0));
+                QCOMPARE(row.currentSize, qint64(400));
+                QCOMPARE(row.percentChangeText, QStringLiteral("new"));
+            } else if (row.path == root + QStringLiteral("/normal")) {
+                sawNormal = true;
+                QCOMPARE(row.previousSize, qint64(100));
+                QCOMPARE(row.currentSize, qint64(250));
+                QCOMPARE(row.deltaBytes, qint64(150));
+                QCOMPARE(row.percentChangeText, QStringLiteral("150.0%"));
+            }
+        }
+        QVERIFY(sawAdded);
+        QVERIFY(sawNormal);
+
+        database.close();
+    }
+
+    void retentionPrunesOldFileEvents()
+    {
+        QSqlDatabase database = openSchemaDatabase(QStringLiteral("retention-test"));
+        QVERIFY(database.isOpen());
+
+        SnapshotService service(database);
+        const QString root = QStringLiteral("C:/retentiontree");
+
+        ScanResult result;
+        result.rootPath = root;
+        FolderEntry folder;
+        folder.path = root;
+        folder.name = QStringLiteral("retentiontree");
+        folder.totalSize = 10;
+        folder.fileCount = 1;
+        result.folders << folder;
+        TreeEntry entry;
+        entry.kind = TreeEntryKind::Folder;
+        entry.path = root;
+        entry.name = QStringLiteral("retentiontree");
+        entry.size = 10;
+        entry.fileCount = 1;
+        result.treeEntries << entry;
+        result.files << makeFile(root + QStringLiteral("/a.bin"), 10);
+
+        QVERIFY(service.createSnapshot(result, 0, nullptr).created);
+
+        // Back-date the snapshot beyond the retention window and prune: its events go, the
+        // snapshot itself stays.
+        QSqlQuery backdate(database);
+        backdate.prepare(QStringLiteral("UPDATE snapshots SET created_at = ?"));
+        backdate.addBindValue(QDateTime::currentDateTime().addDays(-30).toString(Qt::ISODate));
+        QVERIFY(backdate.exec());
+
+        QCOMPARE(service.compactFileEvents(7, nullptr), 1);
+        QCOMPARE(service.compactFileEvents(7, nullptr), 0); // nothing left to prune
+        QCOMPARE(service.listSnapshots(nullptr).size(), 1); // pruning keeps the snapshot
+
+        database.close();
+    }
 };
 
 class TestTheme : public QObject {

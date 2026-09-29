@@ -4,6 +4,34 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.13.3] - 2026-09-29
+
+### Fixed
+
+- **Scheduled snapshots never recorded anything.** `--background-snapshot` polled the scanner and
+  then read its result, racing the queued `finished` signal, so a run regularly ended with "no
+  result" and quietly created no snapshot at all. It now waits for the scan signals (with a 15
+  minute guard) and logs every step of the run.
+- Background runs are recorded in the database, so the Timeline tab's "Last run" line has
+  something to show (status, roots processed, snapshots created, events pruned); failures are
+  recorded there as well instead of being swallowed.
+- **Retention pruning now actually runs.** The scheduled run prunes file events belonging to
+  snapshots older than `Snapshots/RetentionDays` and reports how many it dropped; previously
+  nothing called it, so the event log grew forever.
+- Comparing a snapshot no longer counts a folder's change once per ancestor: the total delta
+  only adds the outermost changed folders, so a folder that doubled no longer reports twice the
+  growth.
+
+### Changed
+
+- The snapshot settings dialog allows a retention of "Keep forever" (0) up to 365 days instead
+  of the old 7-90 day range.
+
+### Added
+
+- Tests for the snapshot comparison (rows, percentages, largest growth, "nothing to compare")
+  and for retention pruning.
+
 ## [0.13.2] - 2026-09-29
 
 ### Changed

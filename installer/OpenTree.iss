@@ -6,7 +6,7 @@
 ;   ISCC.exe /DMyAppVersion=0.13.0 installer\OpenTree.iss
 
 #ifndef MyAppVersion
-  #define MyAppVersion "0.13.2"
+  #define MyAppVersion "0.13.3"
 #endif
 
 #define MyAppName "OpenTree"

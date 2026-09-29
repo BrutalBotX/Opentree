@@ -1,6 +1,11 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.13.2 LANGUAGES CXX)
+project(OpenTree VERSION 0.13.3 LANGUAGES CXX)
+
+# Qt writes its CMake packages into the user package registry as well, so a MinGW build could
+# pick up the MSVC WebEngine packages (or the other way around) and then try to link import
+# libraries from the wrong toolchain. Only the configured kit is searched.
+set(CMAKE_FIND_USE_PACKAGE_REGISTRY FALSE)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -136,12 +141,17 @@ target_link_libraries(OpenTree PRIVATE
 # Qt6WebEngineWidgets_FOUND variables, which are not set reliably across kits (same trap as
 # Qt6::PrintSupport below), and fall back to the per-module packages if the aggregate
 # find_package(Qt6 COMPONENTS ...) did not load them.
-find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebChannel)
-if (NOT TARGET Qt6::WebEngineWidgets)
-    find_package(Qt6WebEngineWidgets QUIET)
-endif()
-if (NOT TARGET Qt6::WebChannel)
-    find_package(Qt6WebChannel QUIET)
+#
+# WebEngine only exists in the MSVC kit here (Qt does not ship it for MinGW), and looking for it
+# in a MinGW build would only find the MSVC packages, so it is skipped for other compilers.
+if (MSVC)
+    find_package(Qt6 QUIET COMPONENTS WebEngineWidgets WebChannel)
+    if (NOT TARGET Qt6::WebEngineWidgets)
+        find_package(Qt6WebEngineWidgets QUIET)
+    endif()
+    if (NOT TARGET Qt6::WebChannel)
+        find_package(Qt6WebChannel QUIET)
+    endif()
 endif()
 
 set(_opentree_have_webengine_widgets FALSE)

@@ -62,6 +62,7 @@ int runBackgroundSnapshotMode()
     opentree::ConfigService configService;
     opentree::DatabaseManager databaseManager;
     if (!databaseManager.initialize()) {
+        opentree::Logger::error("background snapshots: could not open the database");
         return 1;
     }
 
@@ -69,29 +70,85 @@ int runBackgroundSnapshotMode()
     opentree::ScanService scanService(&configService, &everythingClient);
     opentree::SnapshotService snapshotService(databaseManager.database());
 
+    // Everything the scheduler run did is recorded so the Timeline tab can show it.
+    opentree::BackgroundRunSummary run;
+    run.startedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+
     const QStringList whitelist = configService.snapshotWhitelist();
+    opentree::Logger::info(QStringLiteral("background snapshots: %1 root(s) in the whitelist").arg(whitelist.size()));
     if (whitelist.isEmpty()) {
+        run.finishedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+        run.status = QStringLiteral("skipped");
+        run.message = QStringLiteral("No roots configured. Add folders in Snapshot settings.");
+        QString recordError;
+        if (!snapshotService.recordBackgroundRun(run, &recordError)) {
+            opentree::Logger::warning("background snapshots: could not record the run: " + recordError);
+        }
         return 0;
     }
 
     for (const QString &rootPath : whitelist) {
+        opentree::Logger::info(QStringLiteral("background snapshots: scanning %1").arg(rootPath));
+        // Wait for the scan through its signals: polling isBusy() and then grabbing the result
+        // raced the queued finished signal, so runs regularly ended up with no result at all.
+        QEventLoop scanLoop;
+        QObject::connect(&scanService, &opentree::ScanService::scanFinished, &scanLoop, &QEventLoop::quit);
+        QObject::connect(&scanService, &opentree::ScanService::scanFailed, &scanLoop, &QEventLoop::quit);
+        // Never let a wedged scan keep the scheduled task alive forever.
+        QTimer::singleShot(15 * 60 * 1000, &scanLoop, &QEventLoop::quit);
         scanService.scanPath(rootPath);
-        while (scanService.isBusy()) {
-            QCoreApplication::processEvents();
-        }
+        scanLoop.exec();
 
         const opentree::ScanResultPtr result = scanService.takeLastResult();
-        if (!result) {
-            continue;
-        }
-        if (result->rootPath.isEmpty()) {
+        if (!result || result->rootPath.isEmpty()) {
+            const QString reason = scanService.lastError();
+            opentree::Logger::warning(QStringLiteral("background snapshots: scan of %1 produced no result%2")
+                                          .arg(rootPath, reason.isEmpty() ? QString() : QStringLiteral(": ") + reason));
+            run.message = QStringLiteral("A scan produced no result.");
             continue;
         }
 
+        ++run.rootsProcessed;
         QString error;
-        snapshotService.createSnapshot(*result, configService.snapshotThresholdBytes(), &error);
+        const opentree::SnapshotCreateResult created =
+            snapshotService.createSnapshot(*result, configService.snapshotThresholdBytes(), &error);
+        if (created.created) {
+            ++run.snapshotsCreated;
+            opentree::Logger::info(QStringLiteral("background snapshots: snapshot created for %1 (%2 changed items)")
+                                       .arg(result->rootPath)
+                                       .arg(created.changedItemCount));
+        } else if (!error.isEmpty()) {
+            opentree::Logger::warning(QStringLiteral("background snapshots: %1 failed: %2").arg(result->rootPath, error));
+            run.message = QStringLiteral("Snapshot failed: %1").arg(error);
+        } else {
+            opentree::Logger::info(QStringLiteral("background snapshots: nothing to record for %1: %2")
+                                       .arg(result->rootPath, created.message));
+            if (run.message.isEmpty()) {
+                run.message = created.message;
+            }
+        }
     }
 
+    // Retention: file events belonging to snapshots older than the configured window are pruned
+    // so the ledger does not grow forever.
+    QString retentionError;
+    run.eventsCompacted = snapshotService.compactFileEvents(configService.snapshotRetentionDays(), &retentionError);
+    if (!retentionError.isEmpty()) {
+        opentree::Logger::warning("background snapshots: retention pruning failed: " + retentionError);
+    } else if (run.eventsCompacted > 0) {
+        opentree::Logger::info(QStringLiteral("background snapshots: pruned %1 old file event(s)").arg(run.eventsCompacted));
+    }
+
+    run.finishedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
+    run.status = run.snapshotsCreated > 0 ? QStringLiteral("ok") : QStringLiteral("no changes");
+    QString recordError;
+    if (!snapshotService.recordBackgroundRun(run, &recordError)) {
+        opentree::Logger::warning("background snapshots: could not record the run: " + recordError);
+    }
+    opentree::Logger::info(QStringLiteral("background snapshots: finished (%1 roots, %2 snapshots, status %3)")
+                               .arg(run.rootsProcessed)
+                               .arg(run.snapshotsCreated)
+                               .arg(run.status));
     return 0;
 }
 
@@ -1214,7 +1271,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.13.2"));
+    QApplication::setApplicationVersion(QStringLiteral("0.13.3"));
 
     // Qt WebEngine needs Qt::AA_ShareOpenGLContexts set before it initialises. The app does not
     // link WebEngine any more (the graph renderer is a plugin loaded on first use), so nothing
