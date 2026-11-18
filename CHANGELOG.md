@@ -49,6 +49,10 @@ The format is loosely based on Keep a Changelog.
   not change, instead of allocating a fresh 20,000-entry model on every scan.
 - The installer's default version follows the app version (a local
   `build_installer.bat` run without an argument used to produce a mislabeled 0.13.3 setup).
+- The installer no longer ships CMake AUTOMOC intermediates: the graph plugin's
+  `opentree_graph_webengine_autogen` folder slipped through the staging filter and into the
+  installed copy. The filter now excludes every `*_autogen` folder, and the staging step
+  fails the build if build intermediates leak into the staged runtime.
 
 ## [0.13.3] - 2026-09-29
 
