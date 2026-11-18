@@ -45,8 +45,6 @@ qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/ui/DriveSelector.cpp
     src/ui/ThemeManager.h
     src/ui/ThemeManager.cpp
-    src/ui/SnapshotSettingsDialog.h
-    src/ui/SnapshotSettingsDialog.cpp
     src/ui/SettingsDialog.h
     src/ui/SettingsDialog.cpp
     src/ui/SnapshotManagerDialog.h
@@ -220,6 +218,7 @@ if (TARGET Qt6::Test)
         src/services/DatabaseMaintenanceService.cpp
         src/services/UpdateChecker.cpp
         src/services/VirtualTrashService.cpp
+        src/data/DatabaseManager.cpp
         src/integrations/EverythingClient.cpp
         src/ui/AddressBarAutocomplete.h
         src/ui/EntryActions.cpp

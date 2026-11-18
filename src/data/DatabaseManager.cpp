@@ -213,9 +213,29 @@ bool DatabaseManager::initialize()
         }
     }
 
+    // The schema statements above use CREATE TABLE IF NOT EXISTS, so the column migrations
+    // must run after them: PRAGMA table_info cannot see a table that does not exist yet.
+    if (!ensureColumnMigrations(db, &migrationError)) {
+        m_lastError = QStringLiteral("Schema migration failed: %1").arg(migrationError);
+        Logger::error(m_lastError);
+        return false;
+    }
+
+    Logger::info("Database initialized successfully");
+
+    return true;
+}
+
+bool DatabaseManager::ensureColumnMigrations(QSqlDatabase &db, QString *errorMessage)
+{
+    // 0.13.4: the files table gained root_path long ago; background runs learned to record
+    // how much the scheduled sweeps staged. Older databases predate those columns; add them
+    // in place. (migrateLegacyPathUniqueness above handles the even older unique-path form.)
     QSqlQuery columnsQuery(db);
     if (!columnsQuery.exec(QStringLiteral("PRAGMA table_info(files)"))) {
-        m_lastError = columnsQuery.lastError().text();
+        if (errorMessage) {
+            *errorMessage = columnsQuery.lastError().text();
+        }
         return false;
     }
 
@@ -230,23 +250,25 @@ bool DatabaseManager::initialize()
     if (!hasRootPathColumn) {
         QSqlQuery alterQuery(db);
         if (!alterQuery.exec(QStringLiteral("ALTER TABLE files ADD COLUMN root_path TEXT"))) {
-            m_lastError = alterQuery.lastError().text();
-            Logger::error(QStringLiteral("Schema migration failed: %1").arg(m_lastError));
+            if (errorMessage) {
+                *errorMessage = alterQuery.lastError().text();
+            }
             return false;
         }
         QSqlQuery backfillQuery(db);
         if (!backfillQuery.exec(QStringLiteral("UPDATE files SET root_path = '' WHERE root_path IS NULL"))) {
-            m_lastError = backfillQuery.lastError().text();
-            Logger::error(QStringLiteral("Schema migration backfill failed: %1").arg(m_lastError));
+            if (errorMessage) {
+                *errorMessage = backfillQuery.lastError().text();
+            }
             return false;
         }
     }
 
-    // 0.13.4: background runs learned to record how much the scheduled sweeps staged.
-    // Older databases predate the columns; add them in place.
     QSqlQuery backgroundColumns(db);
     if (!backgroundColumns.exec(QStringLiteral("PRAGMA table_info(snapshot_background_runs)"))) {
-        m_lastError = backgroundColumns.lastError().text();
+        if (errorMessage) {
+            *errorMessage = backgroundColumns.lastError().text();
+        }
         return false;
     }
     bool hasSweepColumns = false;
@@ -264,14 +286,13 @@ bool DatabaseManager::initialize()
         for (const QString &statement : sweepColumns) {
             QSqlQuery alterQuery(db);
             if (!alterQuery.exec(statement)) {
-                m_lastError = alterQuery.lastError().text();
-                Logger::error(QStringLiteral("Schema migration failed: %1").arg(m_lastError));
+                if (errorMessage) {
+                    *errorMessage = alterQuery.lastError().text();
+                }
                 return false;
             }
         }
     }
-
-    Logger::info("Database initialized successfully");
 
     return true;
 }

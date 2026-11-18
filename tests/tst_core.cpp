@@ -7,11 +7,13 @@
 #include <QMenu>
 #include <QRegularExpression>
 #include <QSqlDatabase>
+#include <QSqlError>
 #include <QSqlQuery>
 #include <QStringListModel>
 #include <QTemporaryDir>
 
 #include "domain/ScanTypes.h"
+#include "data/DatabaseManager.h"
 #include "services/AnalysisService.h"
 #include "services/DatabaseMaintenanceService.h"
 #include "services/DedupService.h"
@@ -25,6 +27,7 @@
 #include "ui/EntryActions.h"
 #include "ui/TableItems.h"
 #include "ui/ThemeManager.h"
+#include "utils/Logger.h"
 #include "utils/PathUtils.h"
 #include "utils/SizeFormatter.h"
 
@@ -718,6 +721,53 @@ private slots:
         }
         QSqlDatabase::removeDatabase(QStringLiteral("maintenance-test"));
     }
+    void migrationAddsColumnsToAnOldSchema()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString dbPath = dir.filePath(QStringLiteral("legacy.db"));
+
+        const QString connection = QStringLiteral("legacy-migration-test");
+        {
+            QSqlDatabase database = openFileSchemaDatabase(connection, dbPath);
+            QVERIFY(database.isOpen());
+
+            // Simulate a pre-0.13.4 database by dropping the sweep columns the new code
+            // expects (SQLite 3.35+ DROP COLUMN).
+            QSqlQuery drop1(database);
+            QVERIFY2(drop1.exec(QStringLiteral("ALTER TABLE snapshot_background_runs DROP COLUMN sweep_staged_count")),
+                     qPrintable(drop1.lastError().text()));
+            QSqlQuery drop2(database);
+            QVERIFY2(drop2.exec(QStringLiteral("ALTER TABLE snapshot_background_runs DROP COLUMN sweep_staged_bytes")),
+                     qPrintable(drop2.lastError().text()));
+
+            // The migration must add both columns back.
+            QString error;
+            QVERIFY2(DatabaseManager::ensureColumnMigrations(database, &error), qPrintable(error));
+
+            // A background run with sweep numbers round-trips through the migrated table.
+            SnapshotService snapshots(database);
+            BackgroundRunSummary run;
+            run.startedAt = QStringLiteral("2026-10-12T10:00:00");
+            run.finishedAt = QStringLiteral("2026-10-12T10:01:00");
+            run.status = QStringLiteral("ok");
+            run.rootsProcessed = 1;
+            run.snapshotsCreated = 1;
+            run.sweepStagedCount = 3;
+            run.sweepStagedBytes = 12345;
+            QVERIFY(snapshots.recordBackgroundRun(run, &error));
+
+            const BackgroundRunSummary read = snapshots.latestBackgroundRun(&error);
+            QCOMPARE(read.sweepStagedCount, 3);
+            QCOMPARE(read.sweepStagedBytes, qint64(12345));
+
+            // Running the migration again on the already-migrated schema is a no-op.
+            QVERIFY(DatabaseManager::ensureColumnMigrations(database, &error));
+
+            database.close();
+        }
+        QSqlDatabase::removeDatabase(connection);
+    }
 };
 
 class TestAddressBarAutocomplete : public QObject {
@@ -808,10 +858,11 @@ private slots:
             QVERIFY(item.reason.startsWith(QStringLiteral("Scheduled sweep")));
         }
         QVERIFY(paths.contains(dir.filePath("reports.cache")));
-        // The duplicate pair must contribute exactly one copy, never both.
-        const bool stagedA = paths.contains(dir.filePath("alpha.bin"));
-        const bool stagedB = paths.contains(dir.filePath("bravo.bin"));
-        QVERIFY2(stagedA != stagedB, "exactly one duplicate copy is staged");
+        // The kept copy is deterministic: always the lexicographically smallest path, so
+        // repeated scheduled runs stage the same file and never both copies of a pair.
+        QVERIFY2(paths.contains(dir.filePath("bravo.bin"))
+                     && !paths.contains(dir.filePath("alpha.bin")),
+                 "the lexicographically larger duplicate copy is staged");
 
         // A second run stages nothing new (same paths upsert) and stays within the cap.
         const SweepResult again = sweep.run(result, true, true, 16 * 1024, 0);
@@ -1049,6 +1100,10 @@ int main(int argc, char *argv[])
 {
     // QApplication (not QCoreApplication): the table item suites create real widgets.
     QApplication app(argc, argv);
+
+    // Services log through Logger; without initialization it writes to an empty path and
+    // every call warns. Point it at a scratch file next to the test executable.
+    opentree::Logger::initialize();
 
     // Every suite gets its own report file, so one run keeps all of the results even when
     // the executable is built for the Windows GUI subsystem.

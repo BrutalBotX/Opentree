@@ -70,7 +70,6 @@ private:
 
     // Scheduled sweeps (run inside the background snapshot task)
     QCheckBox *m_sweepEnabledCheck;
-    QSpinBox *m_sweepDuplicateMinSizeSpin;
     QSpinBox *m_sweepJunkMinSizeSpin;
 
     // Graph

@@ -47,15 +47,25 @@ This file tracks what is done, what is intentionally deferred, and what the next
     the configured retention window (disabled when retention is "Keep forever").
 - Address bar autocomplete in the Chart and Graph tabs: folder paths from every scanned root
   are offered as you type (case-insensitive, substring match, capped at 20,000 suggestions).
-- Chart highlighting: hovering a pie slice, bar or treemap tile outlines it in the chart and
-  soft-highlights the matching tree row; selecting an item keeps its outline.
+  The completer reuses one model and skips the rebuild when the list did not change.
+- Chart highlighting: hovering a treemap tile or bar row outlines it (pie slices via their
+  label rows) and soft-highlights the matching tree row; the selected item keeps a persistent
+  outline that hovers do not clear.
 - Scheduled sweeps (Settings > Snapshots, "Scheduled sweep"): the background snapshot task
-  stages duplicate and junk candidates in the virtual trash after each scan, with separate
-  minimum sizes for both candidate kinds. The run summary reports the staged count.
+  stages duplicate and junk candidates in the virtual trash after each scan. Duplicates use
+  the Deduplication settings (minimum size, system-folder skip) so the sweep matches the
+  Duplicates tab; junk candidates have their own minimum. The kept duplicate copy is the
+  lexicographically smallest path, so repeated runs always stage the same files. The run
+  summary reports the staged count.
 - Snapshot Manager gained "Prune Old Snapshots...", replacing the old retention-only pruning
   workflow with an explicit, confirm-first bulk delete. The retention setting still drives the
   background pruning of file events.
-- Core tests extended (`TestDatabaseMaintenance`, `TestAddressBarAutocomplete`, `TestSweep`).
+- The old separate Snapshot Settings dialog is gone: Snapshots > "Snapshot Settings" opens the
+  Snapshots tab of the unified Settings dialog (which re-syncs the Windows scheduled task).
+- The schema column migrations live in `DatabaseManager::ensureColumnMigrations` (public, so
+  the tests exercise the migration from a pre-0.13.4 schema directly).
+- Core tests extended (`TestDatabaseMaintenance`, `TestAddressBarAutocomplete`, `TestSweep`);
+  75 assertions across 13 suites pass on MSVC.
 
 ## 0.13.3 follow-up (timeline and snapshots check)
 
@@ -539,9 +549,9 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 ### Settings/UI polish
 
-- No unified application settings dialog yet beyond snapshot settings
-- No theme management beyond current defaults
-- Keyboard shortcuts exist for the main tabs (`Ctrl+1`..`Ctrl+6`), scan (`Ctrl+O`),
+- Unified Settings dialog covers General, Scanning, Snapshots (including the scheduled
+  sweep), Graph and Deduplication; the separate Snapshot Settings dialog was removed
+- Keyboard shortcuts exist for the main tabs (`Ctrl+1`..`Ctrl+9`), scan (`Ctrl+O`),
   refresh (`F5`) and copy path; no full shortcut pass yet
 
 ### Reports / cleanup / dedupe
@@ -628,6 +638,9 @@ This file tracks what is done, what is intentionally deferred, and what the next
 ## Known Limitations
 
 - Timeline only shows snapshots for the current scanned root; if none exist for that root, it will be empty
+- `--smoke-menu` is timing-sensitive: its 120-160 ms event pumps can misreport right after a
+  heavy build while the system is still busy (a failure that passes on an immediate rerun is
+  a flake, not a regression)
 - Snapshot storage is thresholded changed-folder storage, not a full reconstruction model
 - Background snapshot execution is intentionally minimal and should be hardened later
 - Filesystem scan progress is approximate during discovery because total file count is unknown up front

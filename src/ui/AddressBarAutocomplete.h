@@ -46,10 +46,20 @@ inline void apply(QLineEdit *addressBar, const QStringList &paths)
         completer->setCompletionMode(QCompleter::PopupCompletion);
         completer->setFilterMode(Qt::MatchContains);
         completer->setMaxVisibleItems(12);
+        completer->setModel(new QStringListModel(completer));
         addressBar->setCompleter(completer);
     }
 
-    completer->setModel(new QStringListModel(unique, completer));
+    // Reuse the model (setStringList) instead of replacing it, and skip the work when the
+    // list did not change: every scan re-pushes the same folder list.
+    auto *model = qobject_cast<QStringListModel *>(completer->model());
+    if (!model) {
+        model = new QStringListModel(completer);
+        completer->setModel(model);
+    }
+    if (model->stringList() != unique) {
+        model->setStringList(unique);
+    }
 }
 
 } // namespace opentree::AddressBarAutocomplete

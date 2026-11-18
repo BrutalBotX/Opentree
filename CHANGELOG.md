@@ -4,16 +4,17 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
-## [0.13.4] - 2026-10-12
+## [0.13.4] - 2026-11-18
 
 ### Added
 
 - **Scheduled sweeps**: the background snapshot task can now stage duplicate and junk
   candidates in the virtual trash after each scan (Settings > Snapshots, "Scheduled sweep").
   Staging only writes database rows — nothing is deleted until the user reviews the Trash tab
-  and confirms. Duplicate candidates respect a minimum size (default 50 MB); junk candidates
-  respect their own minimum (default 1 MB). The Timeline's "Last run" line reports how many
-  items a sweep staged.
+  and confirms. Duplicate candidates use the minimum size and the system-folder skip from the
+  Deduplication settings, so the sweep and the Duplicates tab agree on what counts; junk
+  candidates respect their own minimum (default 1 MB). The Timeline's "Last run" line reports
+  how many items a sweep staged.
 - **Database Maintenance** (Tools menu): shows the local database's on-disk size, page and
   free-list counts, and per-table row counts, and offers two actions — **VACUUM Database**
   (rebuild the file so pages freed by deleted rows are returned to disk) and **Prune Old File
@@ -25,11 +26,29 @@ The format is loosely based on Keep a Changelog.
   configured retention window (with its items, file events and ledger rows) after a
   confirmation that shows how many snapshots are affected. Disabled when retention is "Keep
   forever".
-- **Chart highlighting**: the item under the mouse gets a bright outline in the pie, bars and
-  treemap, and the matching row is highlighted in the tree (folder rows; file rows have no
-  tree entry). Selecting an item keeps its outline in the chart.
-- Tests for the new maintenance service (stats, retention pruning, VACUUM on a file-backed
-  database) and for the address-bar autocomplete.
+- **Chart highlighting**: the item under the mouse gets a bright outline — treemap tiles and
+  bar rows directly, pie slices through their label rows (the pie surface itself is not
+  hit-testable) — and the matching row is soft-highlighted in the tree. Selecting an item
+  keeps its outline, and a hover that moves away does not clear it.
+- Tests for the maintenance service (stats, retention pruning, VACUUM on a file-backed
+  database, the column migration from a pre-0.13.4 schema), the address-bar autocomplete,
+  and the sweep service (deterministic keep-one-copy, junk minimum).
+
+### Changed
+
+- Snapshots > "Snapshot Settings" now opens the Snapshots tab of the unified Settings dialog
+  instead of the old separate dialog, which is gone. The scheduled task is still re-synced
+  when the dialog is accepted.
+
+### Fixed
+
+- The scheduled sweep keeps the **lexicographically smallest** copy of every duplicate group.
+  It previously kept "the first file", which depends on scan order: across runs the kept copy
+  could swap, and both copies of a pair could end up staged in the trash.
+- The address-bar completer reuses one model and skips the rebuild when the folder list did
+  not change, instead of allocating a fresh 20,000-entry model on every scan.
+- The installer's default version follows the app version (a local
+  `build_installer.bat` run without an argument used to produce a mislabeled 0.13.3 setup).
 
 ## [0.13.3] - 2026-09-29
 

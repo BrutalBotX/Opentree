@@ -44,7 +44,6 @@
 #include "ui/DatabaseMaintenanceDialog.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
-#include "ui/SnapshotSettingsDialog.h"
 #include "ui/SettingsDialog.h"
 #include "ui/SnapshotManagerDialog.h"
 #include "ui/ThemeManager.h"
@@ -1381,7 +1380,7 @@ void AppController::syncFolderFocusUi(const TreeEntry &entry, bool showGraphTab)
     m_window->treePanel()->selectEntryPath(entry.path);
     m_window->detailsPanel()->setEntry(entry);
     m_window->chartPanel()->setActiveFolderPath(entry.path);
-    m_window->chartPanel()->setHighlightedPath(entry.path);
+    m_window->chartPanel()->setSelectedHighlightPath(entry.path);
     m_window->detailsTablePanel()->setActiveFolderPath(entry.path);
     m_window->extensionsPanel()->setActiveFolderPath(entry.path);
     m_window->heatmapPanel()->setActiveFolderPath(entry.path);
@@ -1672,27 +1671,9 @@ void AppController::handleSettingsRequest(int initialTab)
 
 void AppController::handleSnapshotSettingsRequest()
 {
-    if (!m_window) {
-        return;
-    }
-
-    SnapshotSettingsDialog dialog(m_configService, m_window);
-    if (dialog.exec() != QDialog::Accepted) {
-        return;
-    }
-
-    QString error;
-    if (!TaskSchedulerUtils::syncSnapshotTask(
-            QCoreApplication::applicationFilePath(),
-            m_configService->snapshotScheduleEnabled(),
-            m_configService->snapshotScheduleMode(),
-            m_configService->snapshotScheduleTime(),
-            &error)) {
-        QMessageBox::warning(m_window, "Snapshot Settings", error.isEmpty() ? "Failed to update scheduled task." : error);
-        return;
-    }
-
-    m_window->setStatusText("Snapshot settings updated");
+    // The unified settings dialog covers snapshot settings (schedule, threshold, retention,
+    // whitelist and the scheduled sweep) and syncs the Windows scheduled task on accept.
+    handleSettingsRequest(SettingsDialog::SnapshotsTab);
 }
 
 void AppController::handleSnapshotManagementRequest()

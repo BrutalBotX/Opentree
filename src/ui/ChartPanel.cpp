@@ -343,14 +343,37 @@ void ChartPanel::setAddressBarPaths(const QStringList &paths)
 
 void ChartPanel::setHighlightedPath(const QString &path)
 {
-    if (m_highlightedPath.compare(path, Qt::CaseInsensitive) == 0) {
+    if (m_hoveredPath.compare(path, Qt::CaseInsensitive) == 0) {
         return;
     }
 
-    m_highlightedPath = path;
+    m_hoveredPath = path;
     m_pieView->update();
     m_barView->update();
     m_treemapView->update();
+}
+
+void ChartPanel::setSelectedHighlightPath(const QString &path)
+{
+    if (m_selectedPath.compare(path, Qt::CaseInsensitive) == 0) {
+        return;
+    }
+
+    m_selectedPath = path;
+    m_pieView->update();
+    m_barView->update();
+    m_treemapView->update();
+}
+
+bool ChartPanel::matchesHighlight(const QString &path) const
+{
+    if (m_hoveredPath.isEmpty() && m_selectedPath.isEmpty()) {
+        return false;
+    }
+    if (!m_hoveredPath.isEmpty() && path.compare(m_hoveredPath, Qt::CaseInsensitive) == 0) {
+        return true;
+    }
+    return !m_selectedPath.isEmpty() && path.compare(m_selectedPath, Qt::CaseInsensitive) == 0;
 }
 
 void ChartPanel::setOtherThresholdPercent(double percent)
@@ -694,19 +717,17 @@ void ChartPanel::paintPie(QPainter &painter, const QRect &rect) const
     }
 
     // Hover/selection outline: a bright ring segment on top of the matching slice.
-    if (!m_highlightedPath.isEmpty()) {
-        for (const ChartSlice &slice : m_slices) {
-            if (!slice.activatable || slice.entry.path.compare(m_highlightedPath, Qt::CaseInsensitive) != 0) {
-                continue;
-            }
-            QColor ring = slice.color.lighter(135);
-            ring.setAlpha(230);
-            painter.setBrush(Qt::NoBrush);
-            painter.setPen(QPen(ring, 3.0));
-            const QRectF ringRect = pie.adjusted(-2.5, -2.5, 2.5, 2.5);
-            painter.drawPie(ringRect, int(-slice.startAngle * 16.0), int(-slice.spanAngle * 16.0));
-            break;
+    for (const ChartSlice &slice : m_slices) {
+        if (!slice.activatable || !matchesHighlight(slice.entry.path)) {
+            continue;
         }
+        QColor ring = slice.color.lighter(135);
+        ring.setAlpha(230);
+        painter.setBrush(Qt::NoBrush);
+        painter.setPen(QPen(ring, 3.0));
+        const QRectF ringRect = pie.adjusted(-2.5, -2.5, 2.5, 2.5);
+        painter.drawPie(ringRect, int(-slice.startAngle * 16.0), int(-slice.spanAngle * 16.0));
+        break;
     }
 
     painter.save();
@@ -927,8 +948,7 @@ void ChartPanel::paintBars(QPainter &painter, const QRect &rect) const
         painter.drawRoundedRect(slice.barRect, 4, 4);
 
         // Hover/selection highlight: an outline around the bar and its label row.
-        if (slice.activatable && !m_highlightedPath.isEmpty()
-            && slice.entry.path.compare(m_highlightedPath, Qt::CaseInsensitive) == 0) {
+        if (slice.activatable && matchesHighlight(slice.entry.path)) {
             QColor ring = slice.color.lighter(135);
             ring.setAlpha(230);
             painter.setBrush(Qt::NoBrush);
@@ -1179,8 +1199,7 @@ void ChartPanel::paintTreemapNodes(QPainter &painter, const QVector<TreemapNode>
         painter.drawRect(node.rect);
 
         // Hover/selection highlight: an inset bright border on the matching tile.
-        if (node.activatable && !m_highlightedPath.isEmpty()
-            && node.entry.path.compare(m_highlightedPath, Qt::CaseInsensitive) == 0) {
+        if (node.activatable && matchesHighlight(node.entry.path)) {
             QColor ring = node.color.lighter(135);
             ring.setAlpha(235);
             painter.setBrush(Qt::NoBrush);

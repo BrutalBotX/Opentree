@@ -131,14 +131,17 @@ int runBackgroundSnapshotMode()
 
         // Scheduled sweep: stage duplicate/junk candidates in the virtual trash. Staging only
         // writes database rows; the user reviews the Trash tab before anything is deleted.
+        // The duplicate threshold and system-folder skip come from the Deduplication
+        // settings so the sweep matches the Duplicates tab.
         if (configService.sweepEnabled()) {
             opentree::SweepService sweepService(databaseManager.database());
             const opentree::SweepResult sweep = sweepService.run(
                 *result,
                 true,
                 true,
-                configService.sweepDuplicateMinimumBytes(),
-                configService.sweepJunkMinimumBytes());
+                configService.dedupMinimumBytes(),
+                configService.sweepJunkMinimumBytes(),
+                configService.dedupSkipSystemFolders());
             run.sweepStagedCount += sweep.stagedCount;
             run.sweepStagedBytes += sweep.stagedBytes;
             if (sweep.stagedCount > 0) {

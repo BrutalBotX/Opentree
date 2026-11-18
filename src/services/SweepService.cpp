@@ -19,6 +19,7 @@ SweepResult SweepService::run(const ScanResult &result,
                               bool findJunk,
                               qint64 duplicateMinimumBytes,
                               qint64 junkMinimumBytes,
+                              bool skipSystemPaths,
                               int maxStaged)
 {
     SweepResult sweep;
@@ -31,23 +32,31 @@ SweepResult SweepService::run(const ScanResult &result,
 
     if (findDuplicates && !result.files.isEmpty()) {
         DedupService dedupService;
-        const DedupResult dedup = dedupService.findDuplicates(result.files, duplicateMinimumBytes, true);
+        const DedupResult dedup = dedupService.findDuplicates(result.files, duplicateMinimumBytes, skipSystemPaths);
         for (const DuplicateGroup &group : dedup.groups) {
             if (sweep.stagedCount >= maxStaged) {
                 break;
             }
 
-            // Keep one copy: the first file in size-sorted order. Every additional copy is a
-            // candidate, and the virtual trash de-duplicates paths on its own.
-            for (int index = 1; index < group.files.size(); ++index) {
+            // Keep one copy: always the lexicographically smallest path, so the choice is
+            // stable across runs. Depending on scan order used to stage "all but the first",
+            // successive runs could stage the other copy too and end up with the whole group
+            // in the trash.
+            const QString keep = std::min_element(group.files.cbegin(), group.files.cend(),
+                                                  [](const DuplicateFile &a, const DuplicateFile &b) {
+                                                      return a.path < b.path;
+                                                  })->path;
+            for (const DuplicateFile &file : group.files) {
                 if (sweep.stagedCount >= maxStaged) {
                     break;
                 }
-                const DuplicateFile &file = group.files[index];
+                if (file.path.compare(keep, Qt::CaseInsensitive) == 0) {
+                    continue;
+                }
                 ++sweep.duplicateCandidates;
                 QString error;
                 if (!trashService.stage(file.path, file.size, false, result.rootPath,
-                                        QStringLiteral("%1: duplicate of %2").arg(reasonBase, group.files.first().path),
+                                        QStringLiteral("%1: duplicate of %2").arg(reasonBase, keep),
                                         &error)) {
                     Logger::warning(QStringLiteral("sweep: could not stage %1: %2").arg(file.path, error));
                     continue;

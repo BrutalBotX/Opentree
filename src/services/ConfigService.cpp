@@ -345,17 +345,6 @@ void ConfigService::setSweepEnabled(bool enabled)
     m_settings.sync();
 }
 
-qint64 ConfigService::sweepDuplicateMinimumBytes() const
-{
-    return m_settings.value("Sweeps/DuplicateMinimumBytes", 50LL * 1024 * 1024).toLongLong();
-}
-
-void ConfigService::setSweepDuplicateMinimumBytes(qint64 bytes)
-{
-    m_settings.setValue("Sweeps/DuplicateMinimumBytes", std::max<qint64>(0, bytes));
-    m_settings.sync();
-}
-
 qint64 ConfigService::sweepJunkMinimumBytes() const
 {
     return m_settings.value("Sweeps/JunkMinimumBytes", 1LL * 1024 * 1024).toLongLong();
@@ -387,7 +376,6 @@ void ConfigService::ensureDefaults()
         m_settings.setValue("Snapshots/ScheduleTime", QTime(22, 0));
         m_settings.setValue("Snapshots/Whitelist", QStringList());
         m_settings.setValue("Sweeps/Enabled", false);
-        m_settings.setValue("Sweeps/DuplicateMinimumBytes", 50LL * 1024 * 1024);
         m_settings.setValue("Sweeps/JunkMinimumBytes", 1LL * 1024 * 1024);
         m_settings.setValue("Deduplication/MinFileSize", 50LL * 1024 * 1024);
         m_settings.setValue("Deduplication/SkipSystemFolders", true);

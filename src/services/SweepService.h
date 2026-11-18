@@ -22,14 +22,17 @@ class SweepService {
 public:
     explicit SweepService(QSqlDatabase database);
 
-    // Stages "all but the largest file" of every duplicate group at or above
-    // `duplicateMinimumBytes`, and junk files at or above `junkMinimumBytes`. A cap keeps a
-    // single run from flooding the trash.
+    // Stages "all but the kept copy" of every duplicate group at or above
+    // `duplicateMinimumBytes`, and junk files at or above `junkMinimumBytes`. The duplicate
+    // threshold and the system-folder skip come from the Deduplication settings, so the
+    // sweep and the Duplicates tab agree on what counts. A cap keeps a single run from
+    // flooding the trash.
     SweepResult run(const ScanResult &result,
                     bool findDuplicates,
                     bool findJunk,
                     qint64 duplicateMinimumBytes,
                     qint64 junkMinimumBytes,
+                    bool skipSystemPaths = true,
                     int maxStaged = 500);
 
 private:

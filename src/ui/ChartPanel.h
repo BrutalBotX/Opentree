@@ -30,8 +30,10 @@ public:
     void setScanResult(const ScanResultPtr &result);
     void setActiveFolderPath(const QString &path);
     void setAddressBarPaths(const QStringList &paths);
-    // Highlights the slice/tile for a path (used to mirror the active folder and hover).
+    // Transient hover highlight (cleared when the pointer leaves a chart item).
     void setHighlightedPath(const QString &path);
+    // Persistent selection highlight (set when an item is activated; survives hovers).
+    void setSelectedHighlightPath(const QString &path);
     void setOtherThresholdPercent(double percent);
     void setViewMetric(ViewMetric metric);
     void setTreemapDepth(int depth);
@@ -109,7 +111,11 @@ private:
     double m_otherThresholdPercent = 1.0;
     ViewMetric m_viewMetric = ViewMetric::Size;
     int m_treemapDepth = 1;
-    QString m_highlightedPath;
+    QString m_hoveredPath;
+    QString m_selectedPath;
+
+    // True when the path matches the hover or the selection (both draw an outline).
+    bool matchesHighlight(const QString &path) const;
 };
 
 }
