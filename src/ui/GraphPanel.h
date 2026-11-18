@@ -71,6 +71,7 @@ public:
     ~GraphPanel() override;
 
     void setGraphData(const QString &rootPath, const QVector<TreeEntry> &entries, const QVector<SnapshotCompareRow> &compareRows);
+    void setAddressBarPaths(const QStringList &paths);
     void setNodeSizeMode(NodeSizeMode mode);
     void setGraphRootPath(const QString &path);
     void setSelectedPath(const QString &path);

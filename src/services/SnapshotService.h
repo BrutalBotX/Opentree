@@ -26,6 +26,8 @@ struct BackgroundRunSummary {
     int rootsProcessed = 0;
     int snapshotsCreated = 0;
     int eventsCompacted = 0;
+    int sweepStagedCount = 0;
+    qint64 sweepStagedBytes = 0;
     QString message;
 };
 
@@ -86,6 +88,10 @@ public:
     SnapshotCreateResult createSnapshot(const ScanResult &result, qint64 thresholdBytes, QString *errorMessage = nullptr);
     QVector<SnapshotSummary> listSnapshots(QString *errorMessage = nullptr) const;
     bool deleteSnapshot(int snapshotId, QString *errorMessage = nullptr);
+    // Deletes every snapshot (and its items, file events and ledger rows) older than the
+    // retention window. A value of 0 means "keep forever" and prunes nothing. Returns the
+    // number of snapshots removed.
+    int pruneOldSnapshots(int retentionDays, QString *errorMessage = nullptr);
     SnapshotCompareResult compareSnapshotToCurrent(int snapshotId, const ScanResult &current, QString *errorMessage = nullptr) const;
     QVector<SnapshotCompareRow> compareSnapshotRows(int snapshotId, const ScanResult &current, QString *errorMessage = nullptr) const;
     QVector<SnapshotFileEvent> snapshotFileEvents(int snapshotId, QString *errorMessage = nullptr) const;

@@ -396,6 +396,66 @@ bool SnapshotService::deleteSnapshot(int snapshotId, QString *errorMessage)
     return true;
 }
 
+int SnapshotService::pruneOldSnapshots(int retentionDays, QString *errorMessage)
+{
+    if (retentionDays <= 0) {
+        return 0;
+    }
+
+    const QString cutoff = QDateTime::currentDateTime().addDays(-retentionDays).toString(Qt::ISODate);
+
+    QSqlQuery countQuery(m_database);
+    countQuery.prepare(QStringLiteral("SELECT COUNT(*) FROM snapshots WHERE created_at < ?"));
+    countQuery.addBindValue(cutoff);
+    if (!countQuery.exec() || !countQuery.next()) {
+        if (errorMessage) {
+            *errorMessage = countQuery.lastError().text();
+        }
+        return 0;
+    }
+    const int count = countQuery.value(0).toInt();
+    if (count == 0) {
+        return 0;
+    }
+
+    if (!m_database.transaction()) {
+        if (errorMessage) {
+            *errorMessage = m_database.lastError().text();
+        }
+        return 0;
+    }
+
+    // snapshots/snapshot_items and snapshots/snapshot_ledger are ON DELETE CASCADE, but
+    // foreign keys may be off on an older connection, so the children are removed explicitly.
+    const QStringList statements = {
+        QStringLiteral("DELETE FROM snapshot_file_events WHERE snapshot_id IN (SELECT id FROM snapshots WHERE created_at < ?)"),
+        QStringLiteral("DELETE FROM snapshot_items WHERE snapshot_id IN (SELECT id FROM snapshots WHERE created_at < ?)"),
+        QStringLiteral("DELETE FROM snapshot_ledger WHERE snapshot_id IN (SELECT id FROM snapshots WHERE created_at < ?)"),
+        QStringLiteral("DELETE FROM snapshots WHERE created_at < ?"),
+    };
+    for (const QString &statement : statements) {
+        QSqlQuery query(m_database);
+        query.prepare(statement);
+        query.addBindValue(cutoff);
+        if (!query.exec()) {
+            if (errorMessage) {
+                *errorMessage = query.lastError().text();
+            }
+            m_database.rollback();
+            return 0;
+        }
+    }
+
+    if (!m_database.commit()) {
+        if (errorMessage) {
+            *errorMessage = m_database.lastError().text();
+        }
+        return 0;
+    }
+
+    return count;
+}
+
 SnapshotCompareResult SnapshotService::compareSnapshotToCurrent(int snapshotId, const ScanResult &current, QString *errorMessage) const
 {
     SnapshotCompareResult result;
@@ -513,14 +573,16 @@ bool SnapshotService::recordBackgroundRun(const BackgroundRunSummary &summary, Q
 {
     QSqlQuery query(m_database);
     query.prepare(
-        "INSERT INTO snapshot_background_runs(started_at, finished_at, status, roots_processed, snapshots_created, events_compacted, message) "
-        "VALUES(?, ?, ?, ?, ?, ?, ?)");
+        "INSERT INTO snapshot_background_runs(started_at, finished_at, status, roots_processed, snapshots_created, events_compacted, sweep_staged_count, sweep_staged_bytes, message) "
+        "VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?)");
     query.addBindValue(summary.startedAt);
     query.addBindValue(summary.finishedAt);
     query.addBindValue(summary.status);
     query.addBindValue(summary.rootsProcessed);
     query.addBindValue(summary.snapshotsCreated);
     query.addBindValue(summary.eventsCompacted);
+    query.addBindValue(summary.sweepStagedCount);
+    query.addBindValue(summary.sweepStagedBytes);
     query.addBindValue(summary.message);
     if (!query.exec()) {
         if (errorMessage) {
@@ -536,7 +598,7 @@ BackgroundRunSummary SnapshotService::latestBackgroundRun(QString *errorMessage)
     BackgroundRunSummary summary;
     QSqlQuery query(m_database);
     if (!query.exec(
-            "SELECT started_at, finished_at, status, roots_processed, snapshots_created, events_compacted, message "
+            "SELECT started_at, finished_at, status, roots_processed, snapshots_created, events_compacted, sweep_staged_count, sweep_staged_bytes, message "
             "FROM snapshot_background_runs ORDER BY id DESC LIMIT 1")) {
         if (errorMessage) {
             *errorMessage = query.lastError().text();
@@ -553,7 +615,9 @@ BackgroundRunSummary SnapshotService::latestBackgroundRun(QString *errorMessage)
     summary.rootsProcessed = query.value(3).toInt();
     summary.snapshotsCreated = query.value(4).toInt();
     summary.eventsCompacted = query.value(5).toInt();
-    summary.message = query.value(6).toString();
+    summary.sweepStagedCount = query.value(6).toInt();
+    summary.sweepStagedBytes = query.value(7).toLongLong();
+    summary.message = query.value(8).toString();
     return summary;
 }
 

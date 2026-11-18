@@ -21,7 +21,9 @@
 #include <QTabWidget>
 #include <QVBoxLayout>
 
+#include "ui/AddressBarAutocomplete.h"
 #include "ui/EntryActions.h"
+#include "utils/Logger.h"
 
 #include <algorithm>
 #include <cmath>
@@ -199,7 +201,9 @@ protected:
         }
 
         if (m_mode == ChartPanel::ViewMode::Treemap) {
-            if (const auto *node = m_owner->treemapNodeAt(event->pos(), m_owner->m_treemapNodes)) {
+            const auto *node = m_owner->treemapNodeAt(event->pos(), m_owner->m_treemapNodes);
+            reportHover(node ? node->entry.path : QString());
+            if (node) {
                 const double percent = m_owner->m_activeFolderSize <= 0 ? 0.0 : (100.0 * double(node->size) / double(m_owner->m_activeFolderSize));
                 const QString metricText = m_owner->m_viewMetric == ViewMetric::Files
                     ? QStringLiteral("Files: %1").arg(node->entry.kind == TreeEntryKind::Folder ? node->entry.fileCount : 1)
@@ -214,6 +218,7 @@ protected:
         }
 
         if (const auto *slice = m_owner->hoverSliceAt(m_mode, event->pos(), rect())) {
+            reportHover(slice->entry.path);
             const double percent = m_owner->m_activeFolderSize <= 0 ? 0.0 : (100.0 * double(slice->size) / double(m_owner->m_activeFolderSize));
             const QString metricText = m_owner->m_viewMetric == ViewMetric::Files
                 ? QStringLiteral("Files: %1").arg(slice->entry.kind == TreeEntryKind::Folder ? slice->entry.fileCount : 1)
@@ -221,15 +226,36 @@ protected:
             QToolTip::showText(mapToGlobal(event->pos()), QStringLiteral("%1\n%2\nPercent: %3%")
                 .arg(slice->label, metricText, QString::number(percent, 'f', 1)), this);
         } else {
+            reportHover(QString());
             QToolTip::hideText();
         }
 
         QWidget::mouseMoveEvent(event);
     }
 
+    void leaveEvent(QEvent *event) override
+    {
+        reportHover(QString());
+        QToolTip::hideText();
+        // Let the trailing repaint of the cleared highlight happen before the widget is left.
+        QWidget::leaveEvent(event);
+    }
+
 private:
+    // Emits the hover signal only when the path actually changes, so rapid mouse movement
+    // does not flood the tree with updates.
+    void reportHover(const QString &path)
+    {
+        if (!m_owner || path.compare(m_lastHoveredPath, Qt::CaseInsensitive) == 0) {
+            return;
+        }
+        m_lastHoveredPath = path;
+        emit m_owner->hoveredPathChanged(path);
+    }
+
     ChartPanel::ViewMode m_mode;
     ChartPanel *m_owner;
+    QString m_lastHoveredPath;
 };
 
 ChartPanel::ChartPanel(QWidget *parent)
@@ -308,6 +334,23 @@ void ChartPanel::setActiveFolderPath(const QString &path)
     m_activeFolderPath = path;
     m_addressBar->setText(path);
     rebuild();
+}
+
+void ChartPanel::setAddressBarPaths(const QStringList &paths)
+{
+    AddressBarAutocomplete::apply(m_addressBar, paths);
+}
+
+void ChartPanel::setHighlightedPath(const QString &path)
+{
+    if (m_highlightedPath.compare(path, Qt::CaseInsensitive) == 0) {
+        return;
+    }
+
+    m_highlightedPath = path;
+    m_pieView->update();
+    m_barView->update();
+    m_treemapView->update();
 }
 
 void ChartPanel::setOtherThresholdPercent(double percent)
@@ -650,6 +693,22 @@ void ChartPanel::paintPie(QPainter &painter, const QRect &rect) const
         painter.drawPie(pie, int(-slice.startAngle * 16.0), int(-slice.spanAngle * 16.0));
     }
 
+    // Hover/selection outline: a bright ring segment on top of the matching slice.
+    if (!m_highlightedPath.isEmpty()) {
+        for (const ChartSlice &slice : m_slices) {
+            if (!slice.activatable || slice.entry.path.compare(m_highlightedPath, Qt::CaseInsensitive) != 0) {
+                continue;
+            }
+            QColor ring = slice.color.lighter(135);
+            ring.setAlpha(230);
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(ring, 3.0));
+            const QRectF ringRect = pie.adjusted(-2.5, -2.5, 2.5, 2.5);
+            painter.drawPie(ringRect, int(-slice.startAngle * 16.0), int(-slice.spanAngle * 16.0));
+            break;
+        }
+    }
+
     painter.save();
     painter.setClipRect(fullRect.adjusted(2, 2, -2, -2));
 
@@ -866,6 +925,19 @@ void ChartPanel::paintBars(QPainter &painter, const QRect &rect) const
         painter.drawRoundedRect(QRectF(chartLeft, barTop, chartWidth, barHeight), 4, 4);
         painter.setBrush(slice.color);
         painter.drawRoundedRect(slice.barRect, 4, 4);
+
+        // Hover/selection highlight: an outline around the bar and its label row.
+        if (slice.activatable && !m_highlightedPath.isEmpty()
+            && slice.entry.path.compare(m_highlightedPath, Qt::CaseInsensitive) == 0) {
+            QColor ring = slice.color.lighter(135);
+            ring.setAlpha(230);
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(ring, 2.0));
+            painter.drawRoundedRect(QRectF(chartLeft - 2.0, barTop - 2.0, chartWidth + 4.0, barHeight + 4.0), 5, 5);
+            painter.drawRoundedRect(slice.barRect.adjusted(-2.0, -2.0, 2.0, 2.0), 5, 5);
+            painter.setPen(QPen(ring, 1.0));
+            painter.drawRect(QRectF(area.left(), top, labelWidth + chartWidth + valueWidth + gap * 2.0, rowHeight).adjusted(1, 1, -1, -1));
+        }
 
         const QString valueText = (m_viewMetric == ViewMetric::Files
                                       ? QString::number(slice.entry.kind == TreeEntryKind::Folder ? slice.entry.fileCount : 1) + QStringLiteral(" files")
@@ -1105,6 +1177,16 @@ void ChartPanel::paintTreemapNodes(QPainter &painter, const QVector<TreemapNode>
         painter.setPen(QPen(QColor(18, 22, 30), 1));
         painter.setBrush(node.color);
         painter.drawRect(node.rect);
+
+        // Hover/selection highlight: an inset bright border on the matching tile.
+        if (node.activatable && !m_highlightedPath.isEmpty()
+            && node.entry.path.compare(m_highlightedPath, Qt::CaseInsensitive) == 0) {
+            QColor ring = node.color.lighter(135);
+            ring.setAlpha(235);
+            painter.setBrush(Qt::NoBrush);
+            painter.setPen(QPen(ring, 2.5));
+            painter.drawRect(node.rect.adjusted(1.5, 1.5, -1.5, -1.5));
+        }
 
         const bool hasChildren = !node.children.isEmpty();
 

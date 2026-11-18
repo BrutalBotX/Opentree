@@ -104,6 +104,7 @@ signals:
     void copyCurrentPathRequested();
     void openConfigFolderRequested();
     void openDataFolderRequested();
+    void databaseMaintenanceRequested();
     void openLogFileRequested();
     void recentRootRequested(const QString &path);
     void expandAllRequested();
@@ -147,6 +148,7 @@ private:
     QAction *m_copyCurrentPathAction;
     QAction *m_openConfigFolderAction;
     QAction *m_openDataFolderAction;
+    QAction *m_databaseMaintenanceAction;
     QAction *m_openLogFileAction;
     QAction *m_showGraphTabAction;
     QAction *m_showChartTabAction;

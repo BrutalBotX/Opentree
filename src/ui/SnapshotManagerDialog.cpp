@@ -1,5 +1,6 @@
 #include "ui/SnapshotManagerDialog.h"
 
+#include <QDateTime>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
@@ -13,19 +14,25 @@
 
 namespace opentree {
 
-SnapshotManagerDialog::SnapshotManagerDialog(SnapshotService *snapshotService, QWidget *parent)
+SnapshotManagerDialog::SnapshotManagerDialog(SnapshotService *snapshotService, int retentionDays, QWidget *parent)
     : QDialog(parent)
     , m_snapshotService(snapshotService)
+    , m_retentionDays(retentionDays)
     , m_snapshotTable(new QTableWidget(this))
     , m_statusLabel(new QLabel(this))
     , m_deleteButton(new QPushButton(QStringLiteral("Delete Snapshot"), this))
+    , m_pruneButton(new QPushButton(QStringLiteral("Prune Old Snapshots..."), this))
 {
     setWindowTitle(QStringLiteral("Snapshot Manager"));
-    resize(720, 460);
+    resize(760, 480);
 
     // Deleting a snapshot drops its recorded history, so the button uses the destructive style.
     m_deleteButton->setObjectName(QStringLiteral("destructiveButton"));
     m_deleteButton->setToolTip(QStringLiteral("Delete the selected snapshot and its recorded changes from the database."));
+    m_pruneButton->setToolTip(m_retentionDays > 0
+                                  ? QStringLiteral("Delete every snapshot older than the %1-day retention window.").arg(m_retentionDays)
+                                  : QStringLiteral("Retention is set to keep forever, so there is nothing to prune."));
+    m_pruneButton->setEnabled(m_retentionDays > 0);
 
     auto *layout = new QVBoxLayout(this);
     auto *title = new QLabel(QStringLiteral("Manage snapshots stored in the database."), this);
@@ -60,6 +67,7 @@ SnapshotManagerDialog::SnapshotManagerDialog(SnapshotService *snapshotService, Q
     layout->addWidget(m_statusLabel);
 
     auto *buttonsRow = new QHBoxLayout();
+    buttonsRow->addWidget(m_pruneButton);
     buttonsRow->addStretch();
     buttonsRow->addWidget(m_deleteButton);
     auto *closeButton = new QPushButton(QStringLiteral("Close"), this);
@@ -67,6 +75,7 @@ SnapshotManagerDialog::SnapshotManagerDialog(SnapshotService *snapshotService, Q
     layout->addLayout(buttonsRow);
 
     connect(closeButton, &QPushButton::clicked, this, &QDialog::accept);
+    connect(m_pruneButton, &QPushButton::clicked, this, &SnapshotManagerDialog::pruneOldSnapshots);
     connect(m_deleteButton, &QPushButton::clicked, this, [this]() {
         const int snapshotId = selectedSnapshotId();
         if (snapshotId <= 0) {
@@ -81,6 +90,7 @@ SnapshotManagerDialog::SnapshotManagerDialog(SnapshotService *snapshotService, Q
             return;
         }
         refreshList();
+        emit snapshotsChanged();
     });
 
     refreshList();
@@ -153,6 +163,49 @@ void SnapshotManagerDialog::refreshList()
 
     m_statusLabel->setText(snapshots.isEmpty() ? QStringLiteral("No snapshots available.") : QStringLiteral("%1 snapshots").arg(snapshots.size()));
     m_deleteButton->setEnabled(!snapshots.isEmpty());
+}
+
+void SnapshotManagerDialog::pruneOldSnapshots()
+{
+    if (m_retentionDays <= 0) {
+        return;
+    }
+
+    QString error;
+    const QVector<SnapshotSummary> snapshots = m_snapshotService->listSnapshots(&error);
+    const QString cutoff = QDateTime::currentDateTime().addDays(-m_retentionDays).toString(Qt::ISODate);
+    int candidates = 0;
+    for (const SnapshotSummary &snapshot : snapshots) {
+        if (snapshot.createdAt < cutoff) {
+            ++candidates;
+        }
+    }
+
+    if (candidates == 0) {
+        QMessageBox::information(this, QStringLiteral("Prune Old Snapshots"),
+                                 QStringLiteral("No snapshots are older than the %1-day retention window.").arg(m_retentionDays));
+        return;
+    }
+
+    if (QMessageBox::question(
+            this,
+            QStringLiteral("Prune Old Snapshots"),
+            QStringLiteral("Delete %1 snapshot(s) older than %2 days?\n\nTheir items, file events and ledger rows are removed as well.")
+                .arg(candidates)
+                .arg(m_retentionDays))
+        != QMessageBox::Yes) {
+        return;
+    }
+
+    const int removed = m_snapshotService->pruneOldSnapshots(m_retentionDays, &error);
+    if (!error.isEmpty()) {
+        QMessageBox::warning(this, QStringLiteral("Prune Old Snapshots"), error);
+        return;
+    }
+
+    refreshList();
+    emit snapshotsChanged();
+    m_statusLabel->setText(QStringLiteral("Pruned %1 old snapshot(s).").arg(removed));
 }
 
 void SnapshotManagerDialog::accept()

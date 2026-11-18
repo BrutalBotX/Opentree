@@ -34,6 +34,7 @@
 #include "services/AnalysisService.h"
 #include "services/ReportService.h"
 #include "services/SnapshotService.h"
+#include "services/SweepService.h"
 #include "services/VirtualTrashService.h"
 #include "integrations/EverythingClient.h"
 #include "app/MainWindow.h"
@@ -127,6 +128,28 @@ int runBackgroundSnapshotMode()
                 run.message = created.message;
             }
         }
+
+        // Scheduled sweep: stage duplicate/junk candidates in the virtual trash. Staging only
+        // writes database rows; the user reviews the Trash tab before anything is deleted.
+        if (configService.sweepEnabled()) {
+            opentree::SweepService sweepService(databaseManager.database());
+            const opentree::SweepResult sweep = sweepService.run(
+                *result,
+                true,
+                true,
+                configService.sweepDuplicateMinimumBytes(),
+                configService.sweepJunkMinimumBytes());
+            run.sweepStagedCount += sweep.stagedCount;
+            run.sweepStagedBytes += sweep.stagedBytes;
+            if (sweep.stagedCount > 0) {
+                opentree::Logger::info(QStringLiteral("background snapshots: sweep for %1 staged %2 item(s)")
+                                           .arg(result->rootPath)
+                                           .arg(sweep.stagedCount));
+            } else if (!sweep.message.isEmpty()) {
+                opentree::Logger::info(QStringLiteral("background snapshots: sweep for %1: %2")
+                                           .arg(result->rootPath, sweep.message));
+            }
+        }
     }
 
     // Retention: file events belonging to snapshots older than the configured window are pruned
@@ -140,14 +163,20 @@ int runBackgroundSnapshotMode()
     }
 
     run.finishedAt = QDateTime::currentDateTime().toString(Qt::ISODate);
-    run.status = run.snapshotsCreated > 0 ? QStringLiteral("ok") : QStringLiteral("no changes");
+    run.status = (run.snapshotsCreated > 0 || run.sweepStagedCount > 0) ? QStringLiteral("ok") : QStringLiteral("no changes");
+    if (run.sweepStagedCount > 0) {
+        run.message = run.message.isEmpty()
+                          ? QStringLiteral("Sweep staged %1 item(s).").arg(run.sweepStagedCount)
+                          : QStringLiteral("%1 Sweep staged %2 item(s).").arg(run.message).arg(run.sweepStagedCount);
+    }
     QString recordError;
     if (!snapshotService.recordBackgroundRun(run, &recordError)) {
         opentree::Logger::warning("background snapshots: could not record the run: " + recordError);
     }
-    opentree::Logger::info(QStringLiteral("background snapshots: finished (%1 roots, %2 snapshots, status %3)")
+    opentree::Logger::info(QStringLiteral("background snapshots: finished (%1 roots, %2 snapshots, %3 sweep items, status %4)")
                                .arg(run.rootsProcessed)
                                .arg(run.snapshotsCreated)
+                               .arg(run.sweepStagedCount)
                                .arg(run.status));
     return 0;
 }
@@ -1271,7 +1300,7 @@ int main(int argc, char *argv[])
 {
     QApplication::setApplicationName("OpenTree");
     QApplication::setOrganizationName("OpenTree");
-    QApplication::setApplicationVersion(QStringLiteral("0.13.3"));
+    QApplication::setApplicationVersion(QStringLiteral("0.13.4"));
 
     // Qt WebEngine needs Qt::AA_ShareOpenGLContexts set before it initialises. The app does not
     // link WebEngine any more (the graph renderer is a plugin loaded on first use), so nothing

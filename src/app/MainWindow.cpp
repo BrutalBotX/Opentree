@@ -60,6 +60,8 @@ MainWindow::MainWindow(QWidget *parent)
     , m_openTerminalHereAction(nullptr)
     , m_copyCurrentPathAction(nullptr)
     , m_openConfigFolderAction(nullptr)
+    , m_openDataFolderAction(nullptr)
+    , m_databaseMaintenanceAction(nullptr)
     , m_openLogFileAction(nullptr)
     , m_showGraphTabAction(nullptr)
     , m_showChartTabAction(nullptr)
@@ -102,6 +104,7 @@ MainWindow::MainWindow(QWidget *parent)
     m_copyCurrentPathAction = new QAction("Copy Current Path", this);
     m_openConfigFolderAction = new QAction("Open Settings Folder (opentree.ini)", this);
     m_openDataFolderAction = new QAction("Open Data Folder (database)", this);
+    m_databaseMaintenanceAction = new QAction("Database Maintenance...", this);
     m_openLogFileAction = new QAction("Open Log File", this);
     m_showGraphTabAction = new QAction("Graph", this);
     m_showChartTabAction = new QAction("Chart", this);
@@ -209,6 +212,7 @@ MainWindow::MainWindow(QWidget *parent)
     toolsMenu->addSeparator();
     toolsMenu->addAction(m_openConfigFolderAction);
     toolsMenu->addAction(m_openDataFolderAction);
+    toolsMenu->addAction(m_databaseMaintenanceAction);
     toolsMenu->addAction(m_openLogFileAction);
 
     auto *viewMenu = menuBar()->addMenu("View");
@@ -274,6 +278,7 @@ MainWindow::MainWindow(QWidget *parent)
     connect(m_checkUpdatesAction, &QAction::triggered, this, &MainWindow::checkForUpdatesRequested);
     connect(m_openConfigFolderAction, &QAction::triggered, this, &MainWindow::openConfigFolderRequested);
     connect(m_openDataFolderAction, &QAction::triggered, this, &MainWindow::openDataFolderRequested);
+    connect(m_databaseMaintenanceAction, &QAction::triggered, this, &MainWindow::databaseMaintenanceRequested);
     connect(m_openLogFileAction, &QAction::triggered, this, &MainWindow::openLogFileRequested);
     connect(m_expandAllAction, &QAction::triggered, this, &MainWindow::expandAllRequested);
     connect(m_collapseAllAction, &QAction::triggered, this, &MainWindow::collapseAllRequested);

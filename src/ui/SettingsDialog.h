@@ -68,6 +68,11 @@ private:
     QSpinBox *m_retentionSpin;
     QPlainTextEdit *m_whitelistEdit;
 
+    // Scheduled sweeps (run inside the background snapshot task)
+    QCheckBox *m_sweepEnabledCheck;
+    QSpinBox *m_sweepDuplicateMinSizeSpin;
+    QSpinBox *m_sweepJunkMinSizeSpin;
+
     // Graph
     QSpinBox *m_graphMaxNodesSpin;
     QCheckBox *m_followTreeCheck;

@@ -242,6 +242,35 @@ bool DatabaseManager::initialize()
         }
     }
 
+    // 0.13.4: background runs learned to record how much the scheduled sweeps staged.
+    // Older databases predate the columns; add them in place.
+    QSqlQuery backgroundColumns(db);
+    if (!backgroundColumns.exec(QStringLiteral("PRAGMA table_info(snapshot_background_runs)"))) {
+        m_lastError = backgroundColumns.lastError().text();
+        return false;
+    }
+    bool hasSweepColumns = false;
+    while (backgroundColumns.next()) {
+        if (backgroundColumns.value(1).toString().compare(QStringLiteral("sweep_staged_count"), Qt::CaseInsensitive) == 0) {
+            hasSweepColumns = true;
+            break;
+        }
+    }
+    if (!hasSweepColumns) {
+        const QStringList sweepColumns = {
+            QStringLiteral("ALTER TABLE snapshot_background_runs ADD COLUMN sweep_staged_count INTEGER NOT NULL DEFAULT 0"),
+            QStringLiteral("ALTER TABLE snapshot_background_runs ADD COLUMN sweep_staged_bytes INTEGER NOT NULL DEFAULT 0"),
+        };
+        for (const QString &statement : sweepColumns) {
+            QSqlQuery alterQuery(db);
+            if (!alterQuery.exec(statement)) {
+                m_lastError = alterQuery.lastError().text();
+                Logger::error(QStringLiteral("Schema migration failed: %1").arg(m_lastError));
+                return false;
+            }
+        }
+    }
+
     Logger::info("Database initialized successfully");
 
     return true;

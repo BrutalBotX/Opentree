@@ -11,6 +11,7 @@
 #include <QMessageBox>
 #include <QProcess>
 #include <QPushButton>
+#include <QSet>
 #include <QGuiApplication>
 #include <QTimer>
 #include <QUrl>
@@ -22,6 +23,7 @@
 #include "integrations/EverythingClient.h"
 #include "models/FolderTreeModel.h"
 #include "services/ConfigService.h"
+#include "services/DatabaseMaintenanceService.h"
 #include "services/ScanService.h"
 #include "services/SnapshotService.h"
 #include "services/ReportService.h"
@@ -39,6 +41,7 @@
 #include "ui/InsightsPanel.h"
 #include "ui/TrashPanel.h"
 #include "ui/AboutDialog.h"
+#include "ui/DatabaseMaintenanceDialog.h"
 #include "ui/GraphPanel.h"
 #include "ui/HeatmapPanel.h"
 #include "ui/SnapshotSettingsDialog.h"
@@ -65,6 +68,51 @@ QString normalizeRootKey(const QString &path)
 bool isSameOrDescendantPath(const QString &path, const QString &rootPath)
 {
     return PathUtils::isSameOrDescendant(path, rootPath);
+}
+
+// Folder-path suggestions for the address bars: every scanned root's folders plus the
+// active result, de-duplicated case-insensitively. Capped so a whole-drive scan cannot make
+// the popup unwieldy; the most recently scanned roots are the useful ones.
+QStringList collectAddressBarPaths(const ScanResultPtr &activeResult, const QVector<RootSession> &sessions)
+{
+    constexpr int kMaxPaths = 20000;
+
+    QStringList paths;
+    QSet<QString> seen;
+    paths.reserve(qMin(kMaxPaths, 256));
+
+    auto append = [&paths, &seen](const ScanResultPtr &result) {
+        if (!result || result->rootPath.isEmpty()) {
+            return;
+        }
+        const QString rootKey = result->rootPath.toLower();
+        if (!seen.contains(rootKey)) {
+            seen.insert(rootKey);
+            paths << result->rootPath;
+        }
+        for (const FolderEntry &folder : result->folders) {
+            if (paths.size() >= kMaxPaths) {
+                return;
+            }
+            const QString key = folder.path.toLower();
+            if (!seen.contains(key)) {
+                seen.insert(key);
+                paths << folder.path;
+            }
+        }
+    };
+
+    append(activeResult);
+    for (const RootSession &session : sessions) {
+        if (paths.size() >= kMaxPaths) {
+            break;
+        }
+        if (session.result != activeResult) {
+            append(session.result);
+        }
+    }
+
+    return paths;
 }
 
 template <typename Fn>
@@ -161,6 +209,11 @@ void AppController::attachWindow(MainWindow *window)
         applyThemeToGraphPanel(graph);
         graph->setMaxNodes(m_configService->graphMaxNodes());
         graph->setFollowTreeExpansion(m_configService->graphFollowTreeExpansion());
+        // The panel is created lazily the first time the tab is shown, so it missed the
+        // address-bar path list that syncActiveResultUi pushes to the other panels.
+        if (m_currentResult && !m_currentResult->rootPath.isEmpty()) {
+            graph->setAddressBarPaths(collectAddressBarPaths(m_currentResult, m_rootSessions));
+        }
         connect(graph, &GraphPanel::followTreeExpansionChanged, this, [this](bool follow) {
             m_configService->setGraphFollowTreeExpansion(follow);
             if (m_window) {
@@ -184,6 +237,9 @@ void AppController::attachWindow(MainWindow *window)
     });
     connect(m_window, &MainWindow::openDataFolderRequested, this, [this]() {
         handleOpenDataFolderRequest();
+    });
+    connect(m_window, &MainWindow::databaseMaintenanceRequested, this, [this]() {
+        handleDatabaseMaintenanceRequest();
     });
     connect(m_window, &MainWindow::exportDetailsCsvRequested, this, [this]() {
         handleExportDetailsCsvRequest();
@@ -233,6 +289,11 @@ void AppController::attachWindow(MainWindow *window)
     connect(m_window->treePanel(), &TreePanel::entryActivated, this, &AppController::handleEntryActivated);
     connect(m_window->treePanel(), &TreePanel::entryOpened, this, &AppController::handleGraphEntryOpened);
     connect(m_window->chartPanel(), &ChartPanel::entryActivated, this, &AppController::handleChartEntryActivated);
+    // Hovering a chart item highlights the same item in the tree; moving off clears it.
+    connect(m_window->chartPanel(), &ChartPanel::hoveredPathChanged, this, [this](const QString &path) {
+        m_window->chartPanel()->setHighlightedPath(path);
+        m_window->treePanel()->highlightEntryPath(path);
+    });
     connect(m_window->chartPanel(), &ChartPanel::entryOpenInGraphRequested, this, &AppController::handleChartOpenInGraphRequested);
     connect(m_window->detailsTablePanel(), &DetailsTablePanel::entryActivated, this, &AppController::handleChartEntryActivated);
     m_duplicatesPanel = new DuplicatesPanel(m_configService, m_window);
@@ -996,6 +1057,18 @@ void AppController::handleEverythingSettingsRequest()
     handleSettingsRequest(SettingsDialog::ScanningTab);
 }
 
+void AppController::handleDatabaseMaintenanceRequest()
+{
+    if (!m_window || !m_databaseManager || !m_databaseManager->database().isValid()) {
+        return;
+    }
+
+    DatabaseMaintenanceService maintenanceService(m_databaseManager->database(), m_databaseManager->databasePath());
+    const int retentionDays = m_snapshotService ? m_configService->snapshotRetentionDays() : 0;
+    DatabaseMaintenanceDialog dialog(&maintenanceService, retentionDays, m_window);
+    dialog.exec();
+}
+
 void AppController::updateTimelineFolderHistory()
 {
     if (!m_window || !m_snapshotService) {
@@ -1252,9 +1325,11 @@ void AppController::syncActiveResultUi(const ScanResultPtr &result, const QStrin
 
     m_window->treePanel()->setRootSessions(m_rootSessions);
     m_window->treePanel()->selectEntryPath(activeFolderPath);
+    const QStringList addressPaths = collectAddressBarPaths(result, m_rootSessions);
     m_window->chartPanel()->setScanResult(result);
     m_window->chartPanel()->setOtherThresholdPercent(m_otherThresholdPercent);
     m_window->chartPanel()->setActiveFolderPath(activeFolderPath);
+    m_window->chartPanel()->setAddressBarPaths(addressPaths);
     m_window->extensionsPanel()->setScanResult(result);
     m_window->extensionsPanel()->setActiveFolderPath(activeFolderPath);
     m_window->detailsTablePanel()->setScanResult(result);
@@ -1272,6 +1347,7 @@ void AppController::syncActiveResultUi(const ScanResultPtr &result, const QStrin
     }
     updateGraphPanel(ensureGraphPanel(m_window), [&](GraphPanel *graph) {
         graph->beginBatchUpdate();
+        graph->setAddressBarPaths(addressPaths);
         graph->setVisiblePaths(m_window->treePanel()->visibleFolderPaths());
         graph->setOtherThresholdPercent(m_otherThresholdPercent);
         graph->setGraphData(result->rootPath, result->treeEntries, compareRows);
@@ -1305,6 +1381,7 @@ void AppController::syncFolderFocusUi(const TreeEntry &entry, bool showGraphTab)
     m_window->treePanel()->selectEntryPath(entry.path);
     m_window->detailsPanel()->setEntry(entry);
     m_window->chartPanel()->setActiveFolderPath(entry.path);
+    m_window->chartPanel()->setHighlightedPath(entry.path);
     m_window->detailsTablePanel()->setActiveFolderPath(entry.path);
     m_window->extensionsPanel()->setActiveFolderPath(entry.path);
     m_window->heatmapPanel()->setActiveFolderPath(entry.path);
@@ -1624,7 +1701,10 @@ void AppController::handleSnapshotManagementRequest()
         return;
     }
 
-    SnapshotManagerDialog dialog(m_snapshotService, m_window);
+    SnapshotManagerDialog dialog(m_snapshotService, m_configService->snapshotRetentionDays(), m_window);
+    connect(&dialog, &SnapshotManagerDialog::snapshotsChanged, this, [this]() {
+        refreshTimeline();
+    });
     dialog.exec();
 }
 

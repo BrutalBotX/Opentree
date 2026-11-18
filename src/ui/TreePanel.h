@@ -12,6 +12,7 @@ QT_FORWARD_DECLARE_CLASS(QTreeView)
 namespace opentree {
 
 class FolderTreeModel;
+class HighlightItemDelegate;
 
 class TreePanel : public QWidget {
     Q_OBJECT
@@ -23,6 +24,8 @@ public:
     void setScanResult(const ScanResultPtr &result);
     void setRootSessions(const QVector<RootSession> &sessions);
     void selectEntryPath(const QString &path);
+    // Soft highlight for the row matching a chart hover; the selection is untouched.
+    void highlightEntryPath(const QString &path);
     void expandAll();
     void collapseAll();
     QStringList visibleFolderPaths() const;
@@ -41,6 +44,8 @@ private:
     QLineEdit *m_filterEdit;
     QTreeView *m_treeView;
     QSortFilterProxyModel *m_proxyModel;
+    HighlightItemDelegate *m_highlightDelegate = nullptr;
+    QString m_highlightedPath;
     FolderTreeModel *m_model = nullptr;
 };
 

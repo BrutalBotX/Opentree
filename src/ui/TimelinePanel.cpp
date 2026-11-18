@@ -323,6 +323,9 @@ void TimelinePanel::setDiagnosticsState(const DiagnosticsState &state)
                       .arg(state.latestRun.rootsProcessed)
                       .arg(state.latestRun.snapshotsCreated)
                       .arg(state.latestRun.eventsCompacted);
+        if (state.latestRun.sweepStagedCount > 0) {
+            runText += QStringLiteral(" | sweep staged: %1").arg(state.latestRun.sweepStagedCount);
+        }
         if (!state.latestRun.message.isEmpty()) {
             runText += QStringLiteral(" | %1").arg(state.latestRun.message);
         }

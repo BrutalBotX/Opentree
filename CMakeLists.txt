@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 
-project(OpenTree VERSION 0.13.3 LANGUAGES CXX)
+project(OpenTree VERSION 0.13.4 LANGUAGES CXX)
 
 # Qt writes its CMake packages into the user package registry as well, so a MinGW build could
 # pick up the MSVC WebEngine packages (or the other way around) and then try to link import
@@ -62,8 +62,12 @@ qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/domain/ScanTypes.h
     src/services/ConfigService.h
     src/services/ConfigService.cpp
+    src/services/DatabaseMaintenanceService.h
+    src/services/DatabaseMaintenanceService.cpp
     src/services/SnapshotService.h
     src/services/SnapshotService.cpp
+    src/services/SweepService.h
+    src/services/SweepService.cpp
     src/services/ScanService.h
     src/services/ScanService.cpp
     src/services/DedupService.h
@@ -80,6 +84,8 @@ qt_add_executable(OpenTree MANUAL_FINALIZATION
     src/services/UpdateChecker.cpp
     src/ui/AboutDialog.h
     src/ui/AboutDialog.cpp
+    src/ui/DatabaseMaintenanceDialog.h
+    src/ui/DatabaseMaintenanceDialog.cpp
     src/ui/EntryActions.h
     src/ui/EntryActions.cpp
     src/ui/RobustMenuBar.h
@@ -210,9 +216,12 @@ if (TARGET Qt6::Test)
         src/services/ReportService.cpp
         src/services/PdfReportWriter.cpp
         src/services/SnapshotService.cpp
+        src/services/SweepService.cpp
+        src/services/DatabaseMaintenanceService.cpp
         src/services/UpdateChecker.cpp
         src/services/VirtualTrashService.cpp
         src/integrations/EverythingClient.cpp
+        src/ui/AddressBarAutocomplete.h
         src/ui/EntryActions.cpp
         src/ui/ThemeManager.cpp
         src/utils/Logger.cpp

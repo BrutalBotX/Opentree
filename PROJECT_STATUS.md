@@ -36,6 +36,27 @@ This file tracks what is done, what is intentionally deferred, and what the next
 - The repository root is now the git working tree (release docs, CI workflow, assets and the
   installer live alongside the sources); the old `github/` export folder is ignored.
 
+## 0.13.4 follow-up (database maintenance)
+
+- Added a Tools > "Database Maintenance..." dialog that reports the local database's on-disk
+  size, page/free-list counts and per-table row counts, with two actions:
+  - **VACUUM Database** rebuilds the file (on the live connection, after rolling back any
+    open transaction and folding the WAL) so pages freed by deleted rows return to disk, and
+    reports the reclaimed size.
+  - **Prune Old File Events** drops `snapshot_file_events` belonging to snapshots older than
+    the configured retention window (disabled when retention is "Keep forever").
+- Address bar autocomplete in the Chart and Graph tabs: folder paths from every scanned root
+  are offered as you type (case-insensitive, substring match, capped at 20,000 suggestions).
+- Chart highlighting: hovering a pie slice, bar or treemap tile outlines it in the chart and
+  soft-highlights the matching tree row; selecting an item keeps its outline.
+- Scheduled sweeps (Settings > Snapshots, "Scheduled sweep"): the background snapshot task
+  stages duplicate and junk candidates in the virtual trash after each scan, with separate
+  minimum sizes for both candidate kinds. The run summary reports the staged count.
+- Snapshot Manager gained "Prune Old Snapshots...", replacing the old retention-only pruning
+  workflow with an explicit, confirm-first bulk delete. The retention setting still drives the
+  background pruning of file events.
+- Core tests extended (`TestDatabaseMaintenance`, `TestAddressBarAutocomplete`, `TestSweep`).
+
 ## 0.13.3 follow-up (timeline and snapshots check)
 
 - A full pass over the snapshot/timeline feature, end to end against the real database:
@@ -174,10 +195,6 @@ This file tracks what is done, what is intentionally deferred, and what the next
 
 ### Next phase focus
 
-- Address bar autocomplete using scanned paths
-- Scheduled automatic duplicate/junk sweeps built on the virtual trash staging flow
-- Database maintenance action (VACUUM + retention pruning) ÃƒÆ’Ã†â€™Ãƒâ€šÃ‚Â¢ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â€šÂ¬Ã…Â¡Ãƒâ€šÃ‚Â¬ÃƒÆ’Ã‚Â¢ÃƒÂ¢Ã¢â‚¬Å¡Ã‚Â¬Ãƒâ€šÃ‚Â the local database can grow to
-  several hundred MB on heavily snapshotted roots
 - Cached-root fast reload polish for very large roots
 - Installer/release pipeline: versioned artifacts, clean-machine validation, titlebar icon
 - Multi-root workflow polish across the right-hand panels
@@ -635,15 +652,19 @@ Recommended order:
 ## Practical Backlog
 
 Recently completed (see the sections above): sortable details table, drive selector with
-free/used bars, free-space chart toggle, and extension category families.
+free/used bars, free-space chart toggle, extension category families, address bar
+autocomplete, chart click/hover highlighting, snapshot pruning UI, database maintenance, and
+scheduled duplicate/junk sweeps.
 
 Implement next when useful:
 
-1. Timeline/history charting for size vs allocated space
-2. Chart view should support click/hover highlighting of the matching tree item
-3. Optional alternate chart presentation once the current pie/bars are considered done
-4. Report export (CSV / HTML) for the details table and chart data
-5. Snapshot pruning UI for old snapshots beyond the retention window
+1. Timeline/history charting for size vs allocated space (needs allocated-size capture
+   in `ScanResult` first)
+2. Optional alternate chart presentation once the current pie/bars are considered done
+3. Report export of chart data (the details table already exports CSV; HTML/PDF reports
+   cover the summary charts)
+4. Cached-root fast reload polish for very large roots
+5. Multi-root workflow polish across the right-hand panels
 
 Explicitly skipped for now:
 

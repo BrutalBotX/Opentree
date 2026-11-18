@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS snapshot_background_runs (
     roots_processed INTEGER NOT NULL DEFAULT 0,
     snapshots_created INTEGER NOT NULL DEFAULT 0,
     events_compacted INTEGER NOT NULL DEFAULT 0,
+    sweep_staged_count INTEGER NOT NULL DEFAULT 0,
+    sweep_staged_bytes INTEGER NOT NULL DEFAULT 0,
     message TEXT
 );
 

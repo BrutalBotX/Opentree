@@ -43,6 +43,9 @@ SettingsDialog::SettingsDialog(ConfigService *configService, const QMap<QString,
     , m_thresholdSpin(new QSpinBox(this))
     , m_retentionSpin(new QSpinBox(this))
     , m_whitelistEdit(new QPlainTextEdit(this))
+    , m_sweepEnabledCheck(new QCheckBox(QStringLiteral("Stage duplicate and junk candidates automatically"), this))
+    , m_sweepDuplicateMinSizeSpin(new QSpinBox(this))
+    , m_sweepJunkMinSizeSpin(new QSpinBox(this))
     , m_graphMaxNodesSpin(new QSpinBox(this))
     , m_followTreeCheck(new QCheckBox(QStringLiteral("Graph follows the tree expansion"), this))
     , m_dedupMinSizeSpin(new QSpinBox(this))
@@ -96,16 +99,28 @@ SettingsDialog::SettingsDialog(ConfigService *configService, const QMap<QString,
     m_scheduleTimeEdit->setDisplayFormat(QStringLiteral("HH:mm"));
     m_thresholdSpin->setRange(1, 100000);
     m_thresholdSpin->setSuffix(QStringLiteral(" MB"));
-    m_retentionSpin->setRange(7, 90);
+    m_retentionSpin->setRange(0, 365);
     m_retentionSpin->setSuffix(QStringLiteral(" days"));
+    // 0 prunes nothing: the file event log is kept forever.
+    m_retentionSpin->setSpecialValueText(QStringLiteral("Keep forever"));
     m_whitelistEdit->setPlaceholderText(QStringLiteral("One folder per line"));
     m_whitelistEdit->setMaximumHeight(120);
+    m_sweepDuplicateMinSizeSpin->setRange(1, 4096);
+    m_sweepDuplicateMinSizeSpin->setSuffix(QStringLiteral(" MB"));
+    m_sweepJunkMinSizeSpin->setRange(0, 4096);
+    m_sweepJunkMinSizeSpin->setSuffix(QStringLiteral(" MB"));
+    m_sweepEnabledCheck->setToolTip(QStringLiteral(
+        "Stages duplicates and junk files in the Trash tab during the scheduled run.\n"
+        "Nothing is deleted: items stay staged until you confirm them in the Trash tab."));
     snapshotForm->addRow(QString(), m_scheduleEnabledCheck);
     snapshotForm->addRow(QStringLiteral("Cadence:"), m_cadenceCombo);
     snapshotForm->addRow(QStringLiteral("Run at:"), m_scheduleTimeEdit);
     snapshotForm->addRow(QStringLiteral("Change threshold:"), m_thresholdSpin);
     snapshotForm->addRow(QStringLiteral("Retention:"), m_retentionSpin);
     snapshotForm->addRow(QStringLiteral("Tracked folders:"), m_whitelistEdit);
+    snapshotForm->addRow(QStringLiteral("Scheduled sweep:"), m_sweepEnabledCheck);
+    snapshotForm->addRow(QStringLiteral("Duplicate candidates at least:"), m_sweepDuplicateMinSizeSpin);
+    snapshotForm->addRow(QStringLiteral("Junk candidates at least:"), m_sweepJunkMinSizeSpin);
     m_tabs->addTab(snapshotTab, QStringLiteral("Snapshots"));
 
     // ---- Graph ----
@@ -172,6 +187,10 @@ void SettingsDialog::loadFromConfig()
     m_retentionSpin->setValue(m_configService->snapshotRetentionDays());
     m_whitelistEdit->setPlainText(m_configService->snapshotWhitelist().join(QLatin1Char('\n')));
 
+    m_sweepEnabledCheck->setChecked(m_configService->sweepEnabled());
+    m_sweepDuplicateMinSizeSpin->setValue(int(std::max<qint64>(1, m_configService->sweepDuplicateMinimumBytes() / (1024 * 1024))));
+    m_sweepJunkMinSizeSpin->setValue(int(std::max<qint64>(0, m_configService->sweepJunkMinimumBytes() / (1024 * 1024))));
+
     m_graphMaxNodesSpin->setValue(m_configService->graphMaxNodes());
     m_followTreeCheck->setChecked(m_configService->graphFollowTreeExpansion());
 
@@ -203,6 +222,10 @@ void SettingsDialog::saveToConfig()
     m_configService->setSnapshotThresholdBytes(qint64(m_thresholdSpin->value()) * 1024LL * 1024LL);
     m_configService->setSnapshotRetentionDays(m_retentionSpin->value());
     m_configService->setSnapshotWhitelist(m_whitelistEdit->toPlainText().split(QLatin1Char('\n'), Qt::SkipEmptyParts));
+
+    m_configService->setSweepEnabled(m_sweepEnabledCheck->isChecked());
+    m_configService->setSweepDuplicateMinimumBytes(qint64(m_sweepDuplicateMinSizeSpin->value()) * 1024LL * 1024LL);
+    m_configService->setSweepJunkMinimumBytes(qint64(m_sweepJunkMinSizeSpin->value()) * 1024LL * 1024LL);
 
     m_configService->setGraphMaxNodes(m_graphMaxNodesSpin->value());
     m_configService->setGraphFollowTreeExpansion(m_followTreeCheck->isChecked());

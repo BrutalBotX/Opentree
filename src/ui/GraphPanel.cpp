@@ -16,6 +16,7 @@
 #include <algorithm>
 #include <cmath>
 
+#include "ui/AddressBarAutocomplete.h"
 #include "ui/EntryActions.h"
 #include "utils/MemoryProbe.h"
 #include "utils/PathUtils.h"
@@ -272,6 +273,11 @@ void GraphPanel::setGraphData(const QString &rootPath, const QVector<TreeEntry> 
         return;
     }
     renderGraph();
+}
+
+void GraphPanel::setAddressBarPaths(const QStringList &paths)
+{
+    AddressBarAutocomplete::apply(m_addressBar, paths);
 }
 
 void GraphPanel::setNodeSizeMode(NodeSizeMode mode)

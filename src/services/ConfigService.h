@@ -72,6 +72,12 @@ public:
     void setSnapshotScheduleTime(const QTime &time);
     QStringList snapshotWhitelist() const;
     void setSnapshotWhitelist(const QStringList &paths);
+    bool sweepEnabled() const;
+    void setSweepEnabled(bool enabled);
+    qint64 sweepDuplicateMinimumBytes() const;
+    void setSweepDuplicateMinimumBytes(qint64 bytes);
+    qint64 sweepJunkMinimumBytes() const;
+    void setSweepJunkMinimumBytes(qint64 bytes);
 
 private:
     void ensureDefaults();

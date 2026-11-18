@@ -29,6 +29,9 @@ public:
 
     void setScanResult(const ScanResultPtr &result);
     void setActiveFolderPath(const QString &path);
+    void setAddressBarPaths(const QStringList &paths);
+    // Highlights the slice/tile for a path (used to mirror the active folder and hover).
+    void setHighlightedPath(const QString &path);
     void setOtherThresholdPercent(double percent);
     void setViewMetric(ViewMetric metric);
     void setTreemapDepth(int depth);
@@ -42,6 +45,9 @@ signals:
     void entryShowInExplorerRequested(const TreeEntry &entry);
     void entryCopyPathRequested(const TreeEntry &entry);
     void pathEntered(const QString &path);
+    // The item under the mouse moved (empty when the pointer leaves a chart item), so the
+    // tree can mirror the highlight.
+    void hoveredPathChanged(const QString &path);
 
 private:
     friend class ChartCanvas;
@@ -103,6 +109,7 @@ private:
     double m_otherThresholdPercent = 1.0;
     ViewMetric m_viewMetric = ViewMetric::Size;
     int m_treemapDepth = 1;
+    QString m_highlightedPath;
 };
 
 }

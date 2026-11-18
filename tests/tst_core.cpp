@@ -1,20 +1,27 @@
 // Core logic tests. These cover the non-UI pieces: path helpers, size formatting, duplicate
 // detection, analysis, report generation and the snapshot ledger with its three-tier routing.
 #include <QtTest>
+#include <QCompleter>
 #include <QDir>
+#include <QLineEdit>
 #include <QMenu>
 #include <QRegularExpression>
 #include <QSqlDatabase>
 #include <QSqlQuery>
+#include <QStringListModel>
 #include <QTemporaryDir>
 
 #include "domain/ScanTypes.h"
 #include "services/AnalysisService.h"
+#include "services/DatabaseMaintenanceService.h"
 #include "services/DedupService.h"
 #include "services/ReportService.h"
 #include "services/SnapshotService.h"
+#include "services/SweepService.h"
 #include "services/UpdateChecker.h"
+#include "services/VirtualTrashService.h"
 #include "integrations/EverythingClient.h"
+#include "ui/AddressBarAutocomplete.h"
 #include "ui/EntryActions.h"
 #include "ui/TableItems.h"
 #include "ui/ThemeManager.h"
@@ -25,10 +32,61 @@ using namespace opentree;
 
 namespace {
 
+// A scratch directory for tests that must not hit Windows "system path" filters
+// (QTemporaryDir lives under AppData/Local/Temp, which the duplicate scanner excludes).
+class ScopedTestDir {
+public:
+    ScopedTestDir()
+    {
+        const QString base = QDir::current().absoluteFilePath(QStringLiteral("opentree-test-scratch"));
+        m_path = base + QStringLiteral("-") + QString::number(QCoreApplication::applicationPid());
+        QDir().mkpath(m_path);
+    }
+
+    ~ScopedTestDir()
+    {
+        QDir(m_path).removeRecursively();
+    }
+
+    QString path() const { return m_path; }
+    QString filePath(const QString &name) const { return m_path + QLatin1Char('/') + name; }
+    bool isValid() const { return QDir(m_path).exists(); }
+
+private:
+    QString m_path;
+};
+
 QSqlDatabase openSchemaDatabase(const QString &connectionName)
 {
     QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
     database.setDatabaseName(QStringLiteral(":memory:"));
+    if (!database.open()) {
+        return database;
+    }
+
+    QFile schema(QStringLiteral(":/sql/schema.sql"));
+    if (!schema.open(QIODevice::ReadOnly | QIODevice::Text)) {
+        return database;
+    }
+
+    const QStringList statements = QString::fromUtf8(schema.readAll()).split(QLatin1Char(';'), Qt::SkipEmptyParts);
+    for (const QString &statement : statements) {
+        const QString trimmed = statement.trimmed();
+        if (trimmed.isEmpty()) {
+            continue;
+        }
+        QSqlQuery query(database);
+        query.exec(trimmed);
+    }
+    return database;
+}
+
+// A file-backed schema database, needed by the maintenance service because VACUUM and the
+// on-disk size accounting operate on a real file rather than an in-memory database.
+QSqlDatabase openFileSchemaDatabase(const QString &connectionName, const QString &path)
+{
+    QSqlDatabase database = QSqlDatabase::addDatabase(QStringLiteral("QSQLITE"), connectionName);
+    database.setDatabaseName(path);
     if (!database.open()) {
         return database;
     }
@@ -558,6 +616,235 @@ private slots:
         QCOMPARE(service.compactFileEvents(7, nullptr), 0); // nothing left to prune
         QCOMPARE(service.listSnapshots(nullptr).size(), 1); // pruning keeps the snapshot
 
+        // Snapshot pruning removes the whole old snapshot (items, events, ledger rows) and
+        // leaves newer ones alone.
+        ScanResult recent = result;
+        recent.files.clear();
+        recent.files << makeFile(root + QStringLiteral("/b.bin"), 20);
+        QVERIFY(service.createSnapshot(recent, 0, nullptr).created);
+        QCOMPARE(service.listSnapshots(nullptr).size(), 2);
+
+        // "Keep forever" prunes nothing.
+        QCOMPARE(service.pruneOldSnapshots(0, nullptr), 0);
+        QCOMPARE(service.listSnapshots(nullptr).size(), 2);
+
+        QCOMPARE(service.pruneOldSnapshots(7, nullptr), 1);
+        const QVector<SnapshotSummary> remaining = service.listSnapshots(nullptr);
+        QCOMPARE(remaining.size(), 1);
+        QVERIFY(remaining.first().createdAt >= QDateTime::currentDateTime().addDays(-7).toString(Qt::ISODate));
+
+        QSqlQuery orphanCheck(database);
+        QVERIFY(orphanCheck.exec(QStringLiteral("SELECT COUNT(*) FROM snapshot_items WHERE snapshot_id NOT IN (SELECT id FROM snapshots)")));
+        QVERIFY(orphanCheck.next());
+        QCOMPARE(orphanCheck.value(0).toInt(), 0);
+        QSqlQuery ledgerCheck(database);
+        QVERIFY(ledgerCheck.exec(QStringLiteral("SELECT COUNT(*) FROM snapshot_ledger WHERE snapshot_id NOT IN (SELECT id FROM snapshots)")));
+        QVERIFY(ledgerCheck.next());
+        QCOMPARE(ledgerCheck.value(0).toInt(), 0);
+
+        database.close();
+    }
+};
+
+class TestDatabaseMaintenance : public QObject {
+    Q_OBJECT
+
+private slots:
+    void statsPruneAndVacuum()
+    {
+        QTemporaryDir dir;
+        QVERIFY(dir.isValid());
+        const QString dbPath = dir.filePath(QStringLiteral("maintenance.db"));
+
+        {
+            QSqlDatabase database = openFileSchemaDatabase(QStringLiteral("maintenance-test"), dbPath);
+            QVERIFY(database.isOpen());
+            DatabaseMaintenanceService service(database, dbPath);
+
+            // One old snapshot (past the retention window) and one recent snapshot.
+            QSqlQuery oldSnapshot(database);
+            oldSnapshot.prepare(QStringLiteral("INSERT INTO snapshots(created_at, root_path, total_size, file_count) VALUES(?, ?, ?, ?)"));
+            oldSnapshot.addBindValue(QDateTime::currentDateTime().addDays(-30).toString(Qt::ISODate));
+            oldSnapshot.addBindValue(QStringLiteral("C:/old"));
+            oldSnapshot.addBindValue(qint64(1000));
+            oldSnapshot.addBindValue(1);
+            QVERIFY(oldSnapshot.exec());
+
+            QSqlQuery recentSnapshot(database);
+            recentSnapshot.prepare(QStringLiteral("INSERT INTO snapshots(created_at, root_path, total_size, file_count) VALUES(?, ?, ?, ?)"));
+            recentSnapshot.addBindValue(QDateTime::currentDateTime().toString(Qt::ISODate));
+            recentSnapshot.addBindValue(QStringLiteral("C:/recent"));
+            recentSnapshot.addBindValue(qint64(2000));
+            recentSnapshot.addBindValue(1);
+            QVERIFY(recentSnapshot.exec());
+
+            QSqlQuery events(database);
+            events.prepare(QStringLiteral(
+                "INSERT INTO snapshot_file_events(snapshot_id, event_type, path, parent_path, name, old_size, new_size) "
+                "VALUES(1, 'MODIFY', 'C:/old/a.bin', 'C:/old', 'a.bin', 0, 10),"
+                       "(2, 'ADD', 'C:/recent/b.bin', 'C:/recent', 'b.bin', 0, 20)"));
+            QVERIFY(events.exec());
+
+            // Stats reflect the schema tables and a non-zero on-disk size.
+            DatabaseStats stats = service.collectStats(nullptr);
+            QVERIFY(stats.fileSizeBytes > 0);
+            QVERIFY(stats.tables.size() >= 10);
+            auto rowCount = [&stats](const QString &name) -> qint64 {
+                for (const DatabaseTableStats &table : stats.tables) {
+                    if (table.name == name) {
+                        return table.rowCount;
+                    }
+                }
+                return -1;
+            };
+            QCOMPARE(rowCount(QStringLiteral("snapshots")), qint64(2));
+            QCOMPARE(rowCount(QStringLiteral("snapshot_file_events")), qint64(2));
+
+            // Pruning drops only the events belonging to snapshots past the window.
+            QCOMPARE(service.pruneFileEvents(7, nullptr), 1);
+            {
+                QSqlQuery remaining(database);
+                QVERIFY(remaining.exec(QStringLiteral("SELECT COUNT(*) FROM snapshot_file_events")));
+                QVERIFY(remaining.next());
+                QCOMPARE(remaining.value(0).toInt(), 1);
+            }
+
+            // VACUUM succeeds on the file-backed database.
+            QString vacuumError;
+            const DatabaseMaintenanceResult vacuum = service.vacuum(&vacuumError);
+            QVERIFY2(vacuum.ok, qPrintable(QStringLiteral("VACUUM failed: %1").arg(vacuumError)));
+
+            database.close();
+        }
+        QSqlDatabase::removeDatabase(QStringLiteral("maintenance-test"));
+    }
+};
+
+class TestAddressBarAutocomplete : public QObject {
+    Q_OBJECT
+
+private slots:
+    void installsAndRefreshesTheCompleter()
+    {
+        QLineEdit addressBar;
+        QVERIFY(addressBar.completer() == nullptr);
+
+        AddressBarAutocomplete::apply(&addressBar, {QStringLiteral("C:/alpha"), QStringLiteral("C:/beta")});
+        QCompleter *completer = addressBar.completer();
+        QVERIFY(completer != nullptr);
+        QCOMPARE(addressBar.findChild<QCompleter *>(QStringLiteral("addressCompleter")), completer);
+        QCOMPARE(completer->model()->rowCount(), 2);
+
+        // Applying again replaces the model instead of stacking completers.
+        AddressBarAutocomplete::apply(&addressBar, {QStringLiteral("C:/gamma")});
+        QCOMPARE(addressBar.completer(), completer);
+        QCOMPARE(completer->model()->rowCount(), 1);
+
+        // Empty entries are dropped and duplicates (case-insensitive) collapse.
+        AddressBarAutocomplete::apply(&addressBar, {QString(), QStringLiteral("C:/beta"),
+                                                    QStringLiteral("c:/BETA"), QStringLiteral("C:/delta")});
+        QCOMPARE(completer->model()->rowCount(), 2);
+    }
+
+    void capsTheSuggestionList()
+    {
+        QLineEdit addressBar;
+        QStringList many;
+        many.reserve(AddressBarAutocomplete::kMaxSuggestions + 50);
+        for (int index = 0; index < AddressBarAutocomplete::kMaxSuggestions + 50; ++index) {
+            many << QStringLiteral("C:/folder-%1").arg(index);
+        }
+
+        AddressBarAutocomplete::apply(&addressBar, many);
+        QCOMPARE(addressBar.completer()->model()->rowCount(), AddressBarAutocomplete::kMaxSuggestions);
+    }
+
+    void nullBarIsIgnored()
+    {
+        AddressBarAutocomplete::apply(nullptr, {QStringLiteral("C:/anything")});
+    }
+};
+
+class TestSweep : public QObject {
+    Q_OBJECT
+
+private slots:
+    void stagesDuplicatesAndJunk()
+    {
+        QSqlDatabase database = openSchemaDatabase(QStringLiteral("sweep-test"));
+        QVERIFY(database.isOpen());
+
+        ScopedTestDir dir;
+        QVERIFY(dir.isValid());
+        // Two identical 64 KB files (over the 16 KB duplicate threshold), one unique file,
+        // and one junk-named file that should be staged as a junk candidate. Names avoid
+        // the junk patterns ("temp", "log", ...) so only the intended file is junk.
+        writeFile(dir.filePath("alpha.bin"), 64 * 1024);
+        writeFile(dir.filePath("bravo.bin"), 64 * 1024);
+        writeFile(dir.filePath("unique.dat"), 4096);
+        writeFile(dir.filePath("reports.cache"), 32 * 1024);
+
+        ScanResult result;
+        result.rootPath = dir.path();
+        result.files << makeFile(dir.filePath("alpha.bin"), 64 * 1024)
+                     << makeFile(dir.filePath("bravo.bin"), 64 * 1024)
+                     << makeFile(dir.filePath("unique.dat"), 4096)
+                     << makeFile(dir.filePath("reports.cache"), 32 * 1024);
+
+        SweepService sweep(database);
+        const SweepResult staged = sweep.run(result, true, true, 16 * 1024, 0);
+
+        QCOMPARE(staged.duplicateCandidates, 1);
+        QCOMPARE(staged.junkCandidates, 1);
+        QCOMPARE(staged.stagedCount, 2);          // one duplicate copy + one junk file
+        QVERIFY(staged.stagedBytes > 0);
+
+        VirtualTrashService trash(database);
+        const QVector<TrashItem> items = trash.stagedItems(nullptr);
+        QCOMPARE(items.size(), 2);
+        QStringList paths;
+        for (const TrashItem &item : items) {
+            paths << item.path;
+            QVERIFY(item.reason.startsWith(QStringLiteral("Scheduled sweep")));
+        }
+        QVERIFY(paths.contains(dir.filePath("reports.cache")));
+        // The duplicate pair must contribute exactly one copy, never both.
+        const bool stagedA = paths.contains(dir.filePath("alpha.bin"));
+        const bool stagedB = paths.contains(dir.filePath("bravo.bin"));
+        QVERIFY2(stagedA != stagedB, "exactly one duplicate copy is staged");
+
+        // A second run stages nothing new (same paths upsert) and stays within the cap.
+        const SweepResult again = sweep.run(result, true, true, 16 * 1024, 0);
+        QCOMPARE(trash.stagedItems(nullptr).size(), 2);
+        QVERIFY(again.stagedCount <= 2);
+
+        database.close();
+    }
+
+    void honorsTheJunkMinimumSize()
+    {
+        QSqlDatabase database = openSchemaDatabase(QStringLiteral("sweep-junkmin-test"));
+        QVERIFY(database.isOpen());
+
+        ScopedTestDir dir;
+        QVERIFY(dir.isValid());
+        writeFile(dir.filePath("small.cache"), 1024);
+        writeFile(dir.filePath("large.cache"), 512 * 1024);
+
+        ScanResult result;
+        result.rootPath = dir.path();
+        result.files << makeFile(dir.filePath("small.cache"), 1024)
+                     << makeFile(dir.filePath("large.cache"), 512 * 1024);
+
+        SweepService sweep(database);
+        const SweepResult staged = sweep.run(result, false, true, 0, 256 * 1024);
+        QCOMPARE(staged.stagedCount, 1);
+
+        VirtualTrashService trash(database);
+        const QVector<TrashItem> items = trash.stagedItems(nullptr);
+        QCOMPARE(items.size(), 1);
+        QCOMPARE(items.first().path, dir.filePath("large.cache"));
+
         database.close();
     }
 };
@@ -776,6 +1063,9 @@ int main(int argc, char *argv[])
         {new TestAnalysis, "analysis"},
         {new TestReport, "report"},
         {new TestLedger, "ledger"},
+        {new TestDatabaseMaintenance, "databasemaintenance"},
+        {new TestAddressBarAutocomplete, "addressbarautocomplete"},
+        {new TestSweep, "sweep"},
         {new TestTheme, "theme"},
         {new TestTableItems, "tableitems"},
         {new TestEntryActions, "entryactions"},

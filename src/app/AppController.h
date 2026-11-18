@@ -88,6 +88,7 @@ private:
     void handleAboutRequest(bool checkForUpdates);
     void maybeCheckForUpdates();
     void handleOpenDataFolderRequest();
+    void handleDatabaseMaintenanceRequest();
     void handleSnapshotSettingsRequest();
     void handleSnapshotManagementRequest();
     void handleCompareSnapshotRequest(int snapshotId);

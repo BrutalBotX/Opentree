@@ -4,6 +4,33 @@ All notable changes to this project should be documented in this file.
 
 The format is loosely based on Keep a Changelog.
 
+## [0.13.4] - 2026-10-12
+
+### Added
+
+- **Scheduled sweeps**: the background snapshot task can now stage duplicate and junk
+  candidates in the virtual trash after each scan (Settings > Snapshots, "Scheduled sweep").
+  Staging only writes database rows — nothing is deleted until the user reviews the Trash tab
+  and confirms. Duplicate candidates respect a minimum size (default 50 MB); junk candidates
+  respect their own minimum (default 1 MB). The Timeline's "Last run" line reports how many
+  items a sweep staged.
+- **Database Maintenance** (Tools menu): shows the local database's on-disk size, page and
+  free-list counts, and per-table row counts, and offers two actions — **VACUUM Database**
+  (rebuild the file so pages freed by deleted rows are returned to disk) and **Prune Old File
+  Events** (drop snapshot file events older than the configured retention window). VACUUM
+  reports how much space it reclaimed.
+- **Address bar autocomplete** for the Chart and Graph tabs: typing shows folder paths from
+  the scanned roots (case-insensitive, substring match, capped at 20,000 suggestions).
+- **Prune Old Snapshots** in the Snapshot Manager: deletes every snapshot older than the
+  configured retention window (with its items, file events and ledger rows) after a
+  confirmation that shows how many snapshots are affected. Disabled when retention is "Keep
+  forever".
+- **Chart highlighting**: the item under the mouse gets a bright outline in the pie, bars and
+  treemap, and the matching row is highlighted in the tree (folder rows; file rows have no
+  tree entry). Selecting an item keeps its outline in the chart.
+- Tests for the new maintenance service (stats, retention pruning, VACUUM on a file-backed
+  database) and for the address-bar autocomplete.
+
 ## [0.13.3] - 2026-09-29
 
 ### Fixed

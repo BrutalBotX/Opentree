@@ -9,9 +9,11 @@
 #include <QFileInfo>
 #include <QGuiApplication>
 #include <QClipboard>
+#include <QPainter>
 #include <QProcess>
 #include <QSignalBlocker>
 #include <QSortFilterProxyModel>
+#include <QStyledItemDelegate>
 #include <QTreeView>
 #include <QUrl>
 #include <QVBoxLayout>
@@ -21,6 +23,45 @@
 #include "utils/Logger.h"
 
 namespace opentree {
+
+// Draws the chart-hover highlight as a soft row band, leaving the real selection alone.
+class HighlightItemDelegate : public QStyledItemDelegate {
+public:
+    using QStyledItemDelegate::QStyledItemDelegate;
+
+    void setHighlightedPath(const QString &path)
+    {
+        m_path = path;
+    }
+
+protected:
+    void paint(QPainter *painter, const QStyleOptionViewItem &option, const QModelIndex &index) const override
+    {
+        QStyledItemDelegate::paint(painter, option, index);
+
+        if (m_path.isEmpty()) {
+            return;
+        }
+
+        const QString path = index.data(Qt::ToolTipRole).toString();
+        if (path.compare(m_path, Qt::CaseInsensitive) != 0) {
+            return;
+        }
+
+        QColor band = option.palette.color(QPalette::Highlight);
+        band.setAlpha(64);
+        painter->save();
+        painter->fillRect(option.rect, band);
+        QColor border = option.palette.color(QPalette::Highlight);
+        border.setAlpha(170);
+        painter->setPen(QPen(border, 1));
+        painter->drawRect(option.rect.adjusted(0, 0, -1, -1));
+        painter->restore();
+    }
+
+private:
+    QString m_path;
+};
 
 namespace {
 
@@ -99,6 +140,9 @@ TreePanel::TreePanel(QWidget *parent)
     m_treeView->setExpandsOnDoubleClick(false);
     m_treeView->setContextMenuPolicy(Qt::CustomContextMenu);
     layout->addWidget(m_treeView);
+
+    m_highlightDelegate = new HighlightItemDelegate(m_treeView);
+    m_treeView->setItemDelegate(m_highlightDelegate);
 
     connect(m_treeView, &QTreeView::clicked, this, [this](const QModelIndex &index) {
         if (!m_model) {
@@ -257,6 +301,19 @@ void TreePanel::collapseAll()
 {
     m_treeView->collapseAll();
     emit visiblePathsChanged(visibleFolderPaths());
+}
+
+void TreePanel::highlightEntryPath(const QString &path)
+{
+    if (m_highlightedPath.compare(path, Qt::CaseInsensitive) == 0) {
+        return;
+    }
+
+    m_highlightedPath = path;
+    if (m_highlightDelegate) {
+        m_highlightDelegate->setHighlightedPath(path);
+    }
+    m_treeView->viewport()->update();
 }
 
 QStringList TreePanel::visibleFolderPaths() const

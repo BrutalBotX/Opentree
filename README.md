@@ -14,6 +14,11 @@ desktop app.
   per-folder history (which folders grew, which shrank).
 - Finds duplicate files and junk files, and gives you a staged "maybe delete this" list. Nothing
   is ever removed without you confirming it in the Trash tab.
+- Can stage duplicate and junk candidates automatically on a schedule (Settings > Snapshots >
+  "Scheduled sweep"); the candidates land in the Trash tab for review, still without deleting
+  anything on their own.
+- Keeps the local database in shape with Tools > Database Maintenance (VACUUM to reclaim freed
+  pages, and pruning of old snapshot events), and lets the Snapshot Manager prune old snapshots.
 - Exports a report as HTML or PDF, with charts.
 
 The views:
